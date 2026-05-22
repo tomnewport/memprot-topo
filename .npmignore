@@ -1,0 +1,15 @@
+test/
+docs/
+examples/
+.github/
+.husky/
+scripts/
+coverage/
+*.config.ts
+*.config.cjs
+.eslintrc.cjs
+.prettierrc
+.lintstagedrc.cjs
+commitlint.config.cjs
+.releaserc.json
+index.html
