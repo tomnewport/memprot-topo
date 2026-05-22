@@ -9,6 +9,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +31,21 @@ jobs:
       - name: Generate comparison page
         run: node scripts/gallery-compare.mjs
       - uses: actions/upload-artifact@v4
+        id: upload
         with:
           name: gallery
           path: gallery-output/
           retention-days: 30
+      - name: Post / update sticky PR comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: gallery
+          message: |
+            ## Gallery Report
+
+            Visual diff for this PR is available on the [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#summary-${{ github.job }}) — scroll to "Gallery Report" to see screenshots inline.
+
+            **Reference proteins:** 3K19 (A2A), 2OMF (OmpF), 7AHL (alpha-hemolysin)
+
+            [Download full artifact](${{ steps.upload.outputs.artifact-url }}) for the standalone HTML report.

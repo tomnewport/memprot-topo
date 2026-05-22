@@ -8,9 +8,9 @@
  * Writes:
  *   gallery-output/index.html — comparison report
  */
-import { mkdir, writeFile, readdir } from 'fs/promises';
+import { mkdir, writeFile, readFile, appendFile } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, basename } from 'path';
+import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
 import { GALLERY_PROTEINS } from './gallery-data.mjs';
@@ -131,6 +131,58 @@ async function main() {
 
   await writeFile(OUT_HTML, html, 'utf-8');
   console.log('Gallery report written to', OUT_HTML);
+
+  await writeJobSummary({ hasPrev, hasNoPrevMarker });
+}
+
+async function writeJobSummary({ hasPrev, hasNoPrevMarker }) {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+
+  const lines = [];
+  lines.push('## Gallery Report');
+  lines.push('');
+  lines.push(`Generated: ${TODAY}`);
+  lines.push('');
+
+  if (!hasPrev || hasNoPrevMarker) {
+    lines.push('> No baseline available — showing current screenshots only.');
+    lines.push('');
+  }
+
+  lines.push('<table>');
+  lines.push('<tr><th>Protein</th><th>Previous (base)</th><th>Current (this branch)</th></tr>');
+
+  for (const protein of GALLERY_PROTEINS) {
+    const currentPath = join(ROOT, 'gallery-output', 'current', `${protein.pdbId}.png`);
+    const prevPath = join(ROOT, 'gallery-output', 'previous', `${protein.pdbId}.png`);
+
+    const currentImg = existsSync(currentPath)
+      ? `<img src="${await dataUri(currentPath)}" alt="${protein.pdbId} current" width="320" />`
+      : '<em>Not generated</em>';
+
+    const prevImg =
+      hasPrev && !hasNoPrevMarker && existsSync(prevPath)
+        ? `<img src="${await dataUri(prevPath)}" alt="${protein.pdbId} previous" width="320" />`
+        : `<em>${hasNoPrevMarker ? 'No baseline' : 'Not available'}</em>`;
+
+    lines.push(
+      `<tr><td><strong>${protein.label}</strong><br/><code>${protein.pdbId.toUpperCase()}</code></td><td>${prevImg}</td><td>${currentImg}</td></tr>`,
+    );
+  }
+
+  lines.push('</table>');
+  lines.push('');
+  lines.push('Download the full `gallery` artifact for the standalone HTML report.');
+  lines.push('');
+
+  await appendFile(summaryPath, lines.join('\n'), 'utf-8');
+  console.log('Job summary written to', summaryPath);
+}
+
+async function dataUri(filePath) {
+  const buf = await readFile(filePath);
+  return `data:image/png;base64,${buf.toString('base64')}`;
 }
 
 main().catch((err) => {
