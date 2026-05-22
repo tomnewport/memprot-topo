@@ -35,7 +35,7 @@ async function pathExists(branch, path) {
 }
 
 function imgTag(sanitizedBranch, pdbId, alt) {
-  const url = `https://raw.githubusercontent.com/${REPO}/gallery-images/${sanitizedBranch}/${pdbId}.png`;
+  const url = `https://github.com/${REPO}/raw/gallery-images/${sanitizedBranch}/${pdbId}.png`;
   return `<img src="${url}" width="280" alt="${alt}" />`;
 }
 
