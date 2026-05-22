@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
-      contents: read
+      contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,20 @@ jobs:
       - run: npm run build:demo
       - name: Screenshot current branch
         run: node scripts/gallery-screenshot.mjs
+      - name: Compute sanitized branch name
+        id: branch
+        run: |
+          HEAD="${{ github.head_ref || github.ref_name }}"
+          echo "sanitized=$(echo "$HEAD" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+      - name: Publish current screenshots to gallery-images branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gallery-images
+          publish_dir: ./gallery-output/current
+          destination_dir: ${{ steps.branch.outputs.sanitized }}
+          keep_files: true
+          commit_message: 'gallery: update ${{ steps.branch.outputs.sanitized }} [skip ci]'
       - name: Download base branch gallery (PRs only)
         if: github.event_name == 'pull_request'
         run: node scripts/gallery-download-base.mjs
@@ -36,16 +50,18 @@ jobs:
           name: gallery
           path: gallery-output/
           retention-days: 30
+      - name: Generate sticky comment markdown
+        if: github.event_name == 'pull_request'
+        run: node scripts/gallery-comment.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
       - name: Post / update sticky PR comment
         if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: gallery
-          message: |
-            ## Gallery Report
-
-            Visual diff for this PR is available on the [workflow run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#summary-${{ github.job }}) — scroll to "Gallery Report" to see screenshots inline.
-
-            **Reference proteins:** 3K19 (A2A), 2OMF (OmpF), 7AHL (alpha-hemolysin)
-
-            [Download full artifact](${{ steps.upload.outputs.artifact-url }}) for the standalone HTML report.
+          path: gallery-comment.md
