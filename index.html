@@ -79,18 +79,8 @@
       footer a:hover {
         text-decoration: underline;
       }
-
-      .note {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        border-radius: 6px;
-        padding: 0.75rem 1rem;
-        margin-bottom: 1.5rem;
-        font-size: 0.9rem;
-        color: #664d03;
-      }
     </style>
-    <script type="module" src="/src/index.ts"></script>
+    <script type="module" src="/src/demo.ts"></script>
   </head>
   <body>
     <header>
@@ -98,30 +88,27 @@
       <p>Membrane protein 2D topology viewer — development demo</p>
     </header>
     <main>
-      <p class="note">
-        This demo fetches live data from
-        <a href="https://memprotmd.bioch.ox.ac.uk">MemProtMD</a> and
-        <a href="https://pdb-redo.eu">PDB-REDO</a>. Network errors are displayed inline.
-      </p>
       <div class="protein-grid">
         <section>
           <h2>A2A Adenosine Receptor (3K19)</h2>
-          <topology-loader pdb-id="3k19"></topology-loader>
+          <topology-display id="td-3k19"></topology-display>
         </section>
         <section>
           <h2>OmpF Porin (2OMF)</h2>
-          <topology-loader pdb-id="2omf"></topology-loader>
+          <topology-display id="td-2omf"></topology-display>
         </section>
         <section>
           <h2>Alpha-Hemolysin (7AHL)</h2>
-          <topology-loader pdb-id="7ahl"></topology-loader>
+          <topology-display id="td-7ahl"></topology-display>
         </section>
       </div>
     </main>
     <footer>
       <p>
-        Data fetched from <a href="https://memprotmd.bioch.ox.ac.uk">MemProtMD</a> and
-        <a href="https://pdb-redo.eu">PDB-REDO</a>
+        Structure data from <a href="https://memprotmd.bioch.ox.ac.uk">MemProtMD</a>
+        (Newport, Sansom &amp; Stansfeld; CC BY 4.0) and
+        <a href="https://pdb-redo.eu">PDB-REDO</a> (Vriend et al.; copyright-free). Underlying PDB
+        entries: <a href="https://www.wwpdb.org/about/usage-policies">wwPDB CC0</a>.
       </p>
     </footer>
   </body>
