@@ -4,14 +4,44 @@ function countSegments(segments: SecondaryStructureSegment[], type: 'helix' | 's
   return segments.filter((s) => s.type === type).length;
 }
 
+const STYLES = `
+  :host {
+    display: block;
+    font-family: sans-serif;
+    padding: 0.5rem;
+  }
+  .protein-id {
+    font-size: 1.1rem;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+  }
+  .chain-line {
+    font-family: monospace;
+    font-size: 0.9rem;
+    margin: 0.2rem 0 0.2rem 1rem;
+    color: #333;
+  }
+  .placeholder {
+    font-style: italic;
+    color: #888;
+  }
+`;
+
 export class TopologyDisplay extends HTMLElement {
   static observedAttributes = ['protein-data'];
 
   private _data: ProteinData | null = null;
+  private _styleEl: HTMLStyleElement;
+  private _contentEl: HTMLDivElement;
 
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
+    const shadow = this.attachShadow({ mode: 'open' });
+    this._styleEl = document.createElement('style');
+    this._styleEl.textContent = STYLES;
+    this._contentEl = document.createElement('div');
+    shadow.append(this._styleEl, this._contentEl);
   }
 
   get proteinData(): ProteinData | null {
@@ -24,15 +54,17 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, _old: string | null, value: string | null) {
-    if (name === 'protein-data' && value) {
+    if (name !== 'protein-data') return;
+    if (value === null) {
+      this._data = null;
+    } else {
       try {
         this._data = JSON.parse(value) as ProteinData;
-        this.render();
       } catch {
         this._data = null;
-        this.render();
       }
     }
+    this.render();
   }
 
   connectedCallback() {
@@ -40,56 +72,40 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   private render() {
-    const shadow = this.shadowRoot;
-    if (!shadow) return;
-
-    const styles = `
-      <style>
-        :host {
-          display: block;
-          font-family: sans-serif;
-          padding: 0.5rem;
-        }
-        .protein-id {
-          font-size: 1.1rem;
-          font-weight: bold;
-          margin-bottom: 0.5rem;
-          text-transform: uppercase;
-        }
-        .chain-line {
-          font-family: monospace;
-          font-size: 0.9rem;
-          margin: 0.2rem 0 0.2rem 1rem;
-          color: #333;
-        }
-        .placeholder {
-          font-style: italic;
-          color: #888;
-        }
-      </style>
-    `;
+    this._contentEl.replaceChildren();
 
     if (!this._data) {
-      shadow.innerHTML = `${styles}<div class="placeholder">Loading…</div>`;
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder';
+      placeholder.textContent = 'Loading…';
+      this._contentEl.appendChild(placeholder);
       return;
     }
 
-    const chainLines = this._data.chains
-      .map((chain) => {
-        const helices = countSegments(chain.segments, 'helix');
-        const strands = countSegments(chain.segments, 'strand');
-        return `<div class="chain-line">Chain ${chain.chainId}: ${helices} alpha ${helices === 1 ? 'helix' : 'helices'}, ${strands} beta ${strands === 1 ? 'strand' : 'strands'} (${chain.residueCount} residues)</div>`;
-      })
-      .join('');
+    const region = document.createElement('div');
+    region.setAttribute('role', 'region');
+    region.setAttribute('aria-label', 'Protein topology summary');
 
-    shadow.innerHTML = `
-      ${styles}
-      <div role="region" aria-label="Protein topology summary">
-        <div class="protein-id">${this._data.pdbId}</div>
-        ${chainLines}
-      </div>
-    `;
+    const titleEl = document.createElement('div');
+    titleEl.className = 'protein-id';
+    titleEl.textContent = this._data.pdbId;
+    region.appendChild(titleEl);
+
+    for (const chain of this._data.chains) {
+      const helices = countSegments(chain.segments, 'helix');
+      const strands = countSegments(chain.segments, 'strand');
+      const line = document.createElement('div');
+      line.className = 'chain-line';
+      line.textContent = `Chain ${chain.chainId}: ${helices} alpha ${
+        helices === 1 ? 'helix' : 'helices'
+      }, ${strands} beta ${strands === 1 ? 'strand' : 'strands'} (${chain.residueCount} residues)`;
+      region.appendChild(line);
+    }
+
+    this._contentEl.appendChild(region);
   }
 }
 
-customElements.define('topology-display', TopologyDisplay);
+if (!customElements.get('topology-display')) {
+  customElements.define('topology-display', TopologyDisplay);
+}

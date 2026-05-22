@@ -137,9 +137,13 @@ function parseMmcifLoop(content: string, category: string): Array<Record<string,
 export function parseDsspMmcif(content: string): RawSSSegment[] {
   const segments: RawSSSegment[] = [];
 
-  // Parse helices from _struct_conf
+  // Parse helices from _struct_conf. _struct_conf can also contain TURN_P and
+  // other non-helix conformations — filter on conf_type_id starting with 'HELX'.
   const confRows = parseMmcifLoop(content, '_struct_conf');
   for (const row of confRows) {
+    const confType = row['conf_type_id'] ?? '';
+    if (!confType.startsWith('HELX')) continue;
+
     const chainId = row['beg_auth_asym_id'];
     const startStr = row['beg_auth_seq_id'];
     const endStr = row['end_auth_seq_id'];

@@ -3,8 +3,11 @@ import { mergeProteinData } from '../../../src/parser/merge.js';
 import type { RawChain, RawSSSegment } from '../../../src/parser/types.js';
 
 describe('mergeProteinData', () => {
-  const chainA: RawChain = { chainId: 'A', residues: new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) };
-  const chainB: RawChain = { chainId: 'B', residues: new Set([1, 2, 3, 4, 5]) };
+  const chainA: RawChain = {
+    chainId: 'A',
+    residues: new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']),
+  };
+  const chainB: RawChain = { chainId: 'B', residues: new Set(['1', '2', '3', '4', '5']) };
 
   const ssSegments: RawSSSegment[] = [
     { chainId: 'A', start: 2, end: 5, type: 'helix' },

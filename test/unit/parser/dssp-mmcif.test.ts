@@ -75,6 +75,31 @@ describe('parseDsspMmcif', () => {
     expect(parseDsspMmcif('data_TEST\n#\n')).toHaveLength(0);
   });
 
+  it('filters out non-helix _struct_conf entries (TURN_P, etc.)', () => {
+    const mmcif = `\
+data_TEST
+#
+loop_
+_struct_conf.conf_type_id
+_struct_conf.id
+_struct_conf.beg_auth_asym_id
+_struct_conf.beg_auth_seq_id
+_struct_conf.pdbx_beg_PDB_ins_code
+_struct_conf.end_auth_asym_id
+_struct_conf.end_auth_seq_id
+_struct_conf.pdbx_end_PDB_ins_code
+HELX_P  H1 A 10 . A 24 .
+TURN_P  T1 A 25 . A 27 .
+HELX_RH_3T_P H2 A 30 . A 33 .
+TURN_P  T2 A 40 . A 42 .
+#
+`;
+    const segments = parseDsspMmcif(mmcif);
+    expect(segments).toHaveLength(2);
+    expect(segments.every((s) => s.type === 'helix')).toBe(true);
+    expect(segments.map((s) => s.start).sort((a, b) => a - b)).toEqual([10, 30]);
+  });
+
   it('handles absent/unknown values (. and ?)', () => {
     const mmcif = `\
 data_TEST

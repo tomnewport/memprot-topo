@@ -1,6 +1,6 @@
 export interface RawChain {
   chainId: string;
-  residues: Set<number>;
+  residues: Set<string>;
 }
 
 export interface RawSSSegment {
