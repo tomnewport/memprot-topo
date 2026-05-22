@@ -12,10 +12,12 @@ const STYLES = `
 `;
 
 export class TopologyLoader extends HTMLElement {
-  static observedAttributes = ['pdb-id', 'sim-id'];
+  static observedAttributes = ['pdb-id', 'sim-id', 'pdb-url', 'dssp-url'];
 
   private _pdbId: string | null = null;
   private _simId: string | null = null;
+  private _pdbUrl: string | null = null;
+  private _dsspUrl: string | null = null;
   private _generation = 0;
   private _abortController: AbortController | null = null;
   private _styleEl: HTMLStyleElement;
@@ -34,6 +36,8 @@ export class TopologyLoader extends HTMLElement {
     if (oldValue === value) return;
     if (name === 'pdb-id') this._pdbId = value;
     else if (name === 'sim-id') this._simId = value;
+    else if (name === 'pdb-url') this._pdbUrl = value;
+    else if (name === 'dssp-url') this._dsspUrl = value;
     if (this.isConnected) this.load();
   }
 
@@ -84,8 +88,8 @@ export class TopologyLoader extends HTMLElement {
 
     const pdbId = this._pdbId;
     const simId = this._simId ?? `${pdbId}_default_dppc`;
-    const pdbUrl = `https://memprotmd.bioch.ox.ac.uk/data/memprotmd/simulations/${simId}/files/structures/at.pdb`;
-    const dsspUrl = `https://pdb-redo.eu/dssp/get?pdb-id=${pdbId}&format=mmcif`;
+    const pdbUrl = this._pdbUrl ?? `https://memprotmd.bioch.ox.ac.uk/data/memprotmd/simulations/${simId}/files/structures/at.pdb`;
+    const dsspUrl = this._dsspUrl ?? `https://pdb-redo.eu/dssp/get?pdb-id=${pdbId}&format=mmcif`;
 
     try {
       const [pdbResp, dsspResp] = await Promise.all([
