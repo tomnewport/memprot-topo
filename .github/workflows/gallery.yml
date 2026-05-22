@@ -6,6 +6,9 @@ on:
 jobs:
   gallery:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -13,9 +16,21 @@ jobs:
           node-version: '20.19'
           cache: npm
       - run: npm ci
-      - name: Generate placeholder gallery
-        run: node scripts/gallery-stub.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build:demo
+      - name: Screenshot current branch
+        run: node scripts/gallery-screenshot.mjs
+      - name: Download base branch gallery (PRs only)
+        if: github.event_name == 'pull_request'
+        run: node scripts/gallery-download-base.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          REPO: ${{ github.repository }}
+      - name: Generate comparison page
+        run: node scripts/gallery-compare.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: gallery
           path: gallery-output/
+          retention-days: 30
