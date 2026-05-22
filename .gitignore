@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.env
+.DS_Store
+*.local
+gallery-output/
+playwright-report/
+test-results/
