@@ -8,9 +8,9 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 
 ## Component Status
 
-| Component | Status | Notes |
-| --------- | ------ | ----- |
-|           |        |       |
+| Component    | Status | Notes                     |
+| ------------ | ------ | ------------------------- |
+| _(none yet)_ | —      | No domain code exists yet |
 
 ## Disclosure Guidelines
 

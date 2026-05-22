@@ -23,7 +23,10 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --pass-with-no-tests",
-    "prepare": "husky install"
+    "prepare": "husky"
+  },
+  "engines": {
+    "node": ">=20.19.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.3.0",

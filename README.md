@@ -6,6 +6,7 @@
 [![Test](https://github.com/tomnewport/memprot-topo/actions/workflows/test.yml/badge.svg)](https://github.com/tomnewport/memprot-topo/actions/workflows/test.yml)
 [![E2E](https://github.com/tomnewport/memprot-topo/actions/workflows/e2e.yml/badge.svg)](https://github.com/tomnewport/memprot-topo/actions/workflows/e2e.yml)
 [![Release](https://github.com/tomnewport/memprot-topo/actions/workflows/release.yml/badge.svg)](https://github.com/tomnewport/memprot-topo/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/tomnewport/memprot-topo/branch/main/graph/badge.svg)](https://codecov.io/gh/tomnewport/memprot-topo)
 [![npm version](https://img.shields.io/npm/v/memprot2d.svg)](https://www.npmjs.com/package/memprot2d)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
