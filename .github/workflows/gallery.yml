@@ -6,6 +6,10 @@ on:
 jobs:
   gallery:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -13,9 +17,51 @@ jobs:
           node-version: '20.19'
           cache: npm
       - run: npm ci
-      - name: Generate placeholder gallery
-        run: node scripts/gallery-stub.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build:demo
+      - name: Screenshot current branch
+        run: node scripts/gallery-screenshot.mjs
+      - name: Compute sanitized branch name
+        id: branch
+        run: |
+          HEAD="${{ github.head_ref || github.ref_name }}"
+          echo "sanitized=$(echo "$HEAD" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+      - name: Publish current screenshots to gallery-images branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gallery-images
+          publish_dir: ./gallery-output/current
+          destination_dir: ${{ steps.branch.outputs.sanitized }}
+          keep_files: true
+          commit_message: 'gallery: update ${{ steps.branch.outputs.sanitized }} [skip ci]'
+      - name: Download base branch gallery (PRs only)
+        if: github.event_name == 'pull_request'
+        run: node scripts/gallery-download-base.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          REPO: ${{ github.repository }}
+      - name: Generate comparison page
+        run: node scripts/gallery-compare.mjs
       - uses: actions/upload-artifact@v4
+        id: upload
         with:
           name: gallery
           path: gallery-output/
+          retention-days: 30
+      - name: Generate sticky comment markdown
+        if: github.event_name == 'pull_request'
+        run: node scripts/gallery-comment.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+      - name: Post / update sticky PR comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: gallery
+          path: gallery-comment.md

@@ -3,10 +3,126 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MemProt2D — Dev</title>
+    <title>MemProt2D — Demo</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #f8f9fa;
+        color: #212529;
+        line-height: 1.5;
+      }
+
+      header {
+        background: #1a1a2e;
+        color: #fff;
+        padding: 1.5rem 2rem;
+      }
+
+      header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.75rem;
+      }
+
+      header p {
+        margin: 0;
+        opacity: 0.75;
+        font-size: 0.95rem;
+      }
+
+      main {
+        padding: 2rem;
+      }
+
+      .protein-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+      }
+
+      section {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+
+      section h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #495057;
+        border-bottom: 1px solid #e9ecef;
+        padding-bottom: 0.5rem;
+      }
+
+      footer {
+        padding: 1.5rem 2rem;
+        font-size: 0.85rem;
+        color: #6c757d;
+        border-top: 1px solid #dee2e6;
+        text-align: center;
+      }
+
+      footer a {
+        color: #0d6efd;
+        text-decoration: none;
+      }
+
+      footer a:hover {
+        text-decoration: underline;
+      }
+
+      .note {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.9rem;
+        color: #664d03;
+      }
+    </style>
+    <script type="module" src="/src/index.ts"></script>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/index.ts"></script>
+    <header>
+      <h1>MemProt2D</h1>
+      <p>Membrane protein 2D topology viewer — development demo</p>
+    </header>
+    <main>
+      <p class="note">
+        This demo fetches live data from
+        <a href="https://memprotmd.bioch.ox.ac.uk">MemProtMD</a> and
+        <a href="https://pdb-redo.eu">PDB-REDO</a>. Network errors are displayed inline.
+      </p>
+      <div class="protein-grid">
+        <section>
+          <h2>A2A Adenosine Receptor (3K19)</h2>
+          <topology-loader pdb-id="3k19"></topology-loader>
+        </section>
+        <section>
+          <h2>OmpF Porin (2OMF)</h2>
+          <topology-loader pdb-id="2omf"></topology-loader>
+        </section>
+        <section>
+          <h2>Alpha-Hemolysin (7AHL)</h2>
+          <topology-loader pdb-id="7ahl"></topology-loader>
+        </section>
+      </div>
+    </main>
+    <footer>
+      <p>
+        Data fetched from <a href="https://memprotmd.bioch.ox.ac.uk">MemProtMD</a> and
+        <a href="https://pdb-redo.eu">PDB-REDO</a>
+      </p>
+    </footer>
   </body>
 </html>

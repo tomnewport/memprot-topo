@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --pass-with-no-tests",
+    "build:demo": "vite build --config vite.config.demo.ts",
     "prepare": "husky"
   },
   "engines": {
