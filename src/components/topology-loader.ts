@@ -88,7 +88,9 @@ export class TopologyLoader extends HTMLElement {
 
     const pdbId = this._pdbId;
     const simId = this._simId ?? `${pdbId}_default_dppc`;
-    const pdbUrl = this._pdbUrl ?? `https://memprotmd.bioch.ox.ac.uk/data/memprotmd/simulations/${simId}/files/structures/at.pdb`;
+    const pdbUrl =
+      this._pdbUrl ??
+      `https://memprotmd.bioch.ox.ac.uk/data/memprotmd/simulations/${simId}/files/structures/at.pdb`;
     const dsspUrl = this._dsspUrl ?? `https://pdb-redo.eu/dssp/get?pdb-id=${pdbId}&format=mmcif`;
 
     try {
