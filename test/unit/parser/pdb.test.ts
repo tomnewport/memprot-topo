@@ -55,6 +55,17 @@ ATOM      3  C   ALA A   5       2.000   0.000   0.000  1.00  0.00           C
     expect(chains[0].residues.has('5')).toBe(true);
   });
 
+  it('assigns blank chain IDs to chain A (MemProtMD-style stripped PDBs)', () => {
+    const content = `\
+ATOM      1  CA  ALA     1      83.420  74.130  47.160  1.00  0.00
+ATOM      2  CA  GLY     2      85.000  74.000  47.500  1.00  0.00
+`;
+    const chains = parsePdb(content);
+    expect(chains).toHaveLength(1);
+    expect(chains[0].chainId).toBe('A');
+    expect(chains[0].residues.size).toBe(2);
+  });
+
   it('keeps insertion-coded residues distinct from base resSeq', () => {
     const content = `\
 ATOM      1  CA  GLY A 100       0.000   0.000   0.000  1.00  0.00           C

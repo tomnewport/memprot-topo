@@ -1,4 +1,4 @@
-import type { ProteinData, ChainData, SecondaryStructureSegment } from '../types.js';
+import type { ChainData, ProteinData, SecondaryStructureSegment } from '../types.js';
 import type { RawChain, RawSSSegment } from './types.js';
 
 export function mergeProteinData(
@@ -16,6 +16,7 @@ export function mergeProteinData(
       chainId: chain.chainId,
       residueCount: chain.residues.size,
       segments: chainSegments,
+      residues: chain.caResidues && chain.caResidues.length > 0 ? chain.caResidues : undefined,
     };
   });
 

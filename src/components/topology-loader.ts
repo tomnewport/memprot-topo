@@ -3,6 +3,7 @@ import { parsePdb } from '../parser/pdb.js';
 import { parseDsspMmcif } from '../parser/dssp-mmcif.js';
 import { mergeProteinData } from '../parser/merge.js';
 import { TopologyDisplay } from './topology-display.js';
+import { TopologyRenderer } from './topology-renderer.js';
 
 const STYLES = `
   :host { display: block; font-family: sans-serif; padding: 0.5rem; }
@@ -67,9 +68,13 @@ export class TopologyLoader extends HTMLElement {
   }
 
   private renderData(data: ProteinData) {
-    const display = document.createElement('topology-display') as TopologyDisplay;
-    display.proteinData = data;
-    this._contentEl.replaceChildren(display);
+    const renderer = document.createElement('topology-renderer') as TopologyRenderer;
+    renderer.proteinData = data;
+
+    const summary = document.createElement('topology-display') as TopologyDisplay;
+    summary.proteinData = data;
+
+    this._contentEl.replaceChildren(renderer, summary);
   }
 
   private async load() {
