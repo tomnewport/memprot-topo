@@ -5,12 +5,12 @@ import { parseDsspMmcif } from '../src/parser/dssp-mmcif.js';
 import { mergeProteinData } from '../src/parser/merge.js';
 import type { ProteinData } from '../src/types.js';
 
-const PROTEINS: { id: string; simId: string }[] = [
-  { id: '3k19', simId: '3k19_default_dppc' },
-  { id: '2omf', simId: '2omf_default_dppc' },
-  { id: '7ahl', simId: '7ahl_default_dppc' },
-  { id: '2j1n', simId: '2j1n_default_dppc' },
-  { id: '5g53', simId: '5g53_default_dppc' },
+const PROTEINS: { id: string }[] = [
+  { id: '3k19' },
+  { id: '2omf' },
+  { id: '7ahl' },
+  { id: '2j1n' },
+  { id: '5g53' },
 ];
 
 async function fetchText(url: string): Promise<string> {
@@ -22,9 +22,9 @@ async function fetchText(url: string): Promise<string> {
 async function main(): Promise<void> {
   const results: Record<string, ProteinData> = {};
 
-  for (const { id, simId } of PROTEINS) {
+  for (const { id } of PROTEINS) {
     process.stdout.write(`Fetching ${id}… `);
-    const pdbUrl = `https://memprotmd.bioch.ox.ac.uk/data/memprotmd/simulations/${simId}/files/structures/at.pdb`;
+    const pdbUrl = `https://opm-assets.storage.googleapis.com/pdb/${id.toLowerCase()}.pdb`;
     const dsspUrl = `https://pdb-redo.eu/dssp/get?pdb-id=${id}&format=mmcif`;
 
     const [pdbText, dsspText] = await Promise.all([fetchText(pdbUrl), fetchText(dsspUrl)]);
