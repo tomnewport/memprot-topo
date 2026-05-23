@@ -484,7 +484,11 @@ function toRoman(n: number): string {
   const vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
   const syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
   let out = '';
-  for (let i = 0; i < vals.length; i++) while (n >= vals[i]) { out += syms[i]; n -= vals[i]; }
+  for (let i = 0; i < vals.length; i++)
+    while (n >= vals[i]) {
+      out += syms[i];
+      n -= vals[i];
+    }
   return out;
 }
 
@@ -515,7 +519,11 @@ function buildChainLabels(chains: ChainData[]): Map<string, ChainLabel> {
     const g = groups.get(c.residueCount)!;
     if (g.length > 1) {
       const roman = toRoman(g.indexOf(c) + 1);
-      labels.set(c.chainId, { base: g[0].chainId, suffix: roman, text: `${g[0].chainId}(${roman})` });
+      labels.set(c.chainId, {
+        base: g[0].chainId,
+        suffix: roman,
+        text: `${g[0].chainId}(${roman})`,
+      });
     } else {
       labels.set(c.chainId, { base: c.chainId, suffix: null, text: c.chainId });
     }
@@ -571,10 +579,7 @@ function renderChainPicker(
     button.type = 'button';
     button.className = 'chain-violin' + (chain.chainId === selectedId ? ' selected' : '');
     button.setAttribute('aria-pressed', chain.chainId === selectedId ? 'true' : 'false');
-    button.setAttribute(
-      'aria-label',
-      `Select chain ${lbl.text} (${chain.residueCount} residues)`,
-    );
+    button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
     button.appendChild(renderViolin(binData[i], maxBinTotal, zMin, zMax));
 
     const label = document.createElement('div');
@@ -737,7 +742,7 @@ export class TopologyDisplay extends HTMLElement {
     const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
     const strands = selectedChain.segments.filter((s) => s.type === 'strand').length;
     label.append(
-      'Chain ',
+      'Chain ',
       chainLabelNode(selectedLabel),
       ` · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`,
     );
