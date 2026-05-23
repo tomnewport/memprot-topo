@@ -47,9 +47,9 @@ describe('selectTransmembraneChains', () => {
   const soluble = chain('S', 150, [ca(30), ca(35), ca(40)]);
 
   it('keeps only TM chains by default and returns one representative', () => {
-    const { selected, rejected } = selectTransmembraneChains([tmA, soluble]);
+    const { selected, nonTransmembrane } = selectTransmembraneChains([tmA, soluble]);
     expect(selected.map((c) => c.chainId)).toEqual(['A']);
-    expect(rejected.map((c) => c.chainId)).toEqual(['S']);
+    expect(nonTransmembrane.map((c) => c.chainId)).toEqual(['S']);
   });
 
   it('picks the largest TM chain when max=1', () => {
@@ -64,10 +64,19 @@ describe('selectTransmembraneChains', () => {
     expect(selected).toHaveLength(3);
   });
 
-  it('marks soluble chains as rejected for a multi-chain selection', () => {
-    const { rejected, selected } = selectTransmembraneChains([tmA, tmB, soluble], { max: 2 });
+  it('does not put TM chains dropped by the max cap into nonTransmembrane', () => {
+    // With max=1, only chain A is selected — but B and C are still TM, so
+    // they must not appear in nonTransmembrane (only the truly soluble one).
+    const { nonTransmembrane } = selectTransmembraneChains([tmA, tmB, tmC, soluble], { max: 1 });
+    expect(nonTransmembrane.map((c) => c.chainId)).toEqual(['S']);
+  });
+
+  it('lists soluble chains in nonTransmembrane for a multi-chain selection', () => {
+    const { nonTransmembrane, selected } = selectTransmembraneChains([tmA, tmB, soluble], {
+      max: 2,
+    });
     expect(selected.map((c) => c.chainId).sort()).toEqual(['A', 'B']);
-    expect(rejected.map((c) => c.chainId)).toEqual(['S']);
+    expect(nonTransmembrane.map((c) => c.chainId)).toEqual(['S']);
   });
 
   it('falls back to the largest non-TM chain when no chain crosses the membrane', () => {

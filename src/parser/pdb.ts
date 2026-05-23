@@ -37,6 +37,9 @@ export function parsePdb(content: string): RawChain[] {
     if (!Number.isFinite(resSeq)) continue;
 
     const iCode = line[26] === ' ' ? '' : line[26];
+    // Build the dedup key from the *raw* PDB string so the column 22–26 slice
+    // is preserved verbatim. `${resSeq}${iCode}` would collapse e.g. " 100"
+    // and "100" — they're equivalent here, but the string form is canonical.
     const resKey = `${resSeqStr}${iCode}`;
 
     const x = Number.parseFloat(line.slice(30, 38));

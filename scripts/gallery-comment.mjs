@@ -79,6 +79,12 @@ async function main() {
 
 Reference proteins rendered with this PR's \`<topology-display>\` component.
 
+> **Note:** Gallery screenshots are rendered from *idealised* synthetic Cα
+> coordinates derived from the curated SS ranges in
+> \`scripts/gallery-data.mjs\` — not from real PDB / MemProtMD structures.
+> They exist as a visual regression target for the rendering pipeline. The
+> in-browser demo (\`npm run dev\`) uses real prebuilt MemProtMD coordinates.
+
 ${sections.join('\n\n---\n\n')}
 ${artifactLine}
 `;

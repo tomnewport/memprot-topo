@@ -54,7 +54,12 @@ export interface UnrollOptions {
 
 const DEFAULTS = {
   samplesPerSegment: 16,
-  breakDistance: 4.5,
+  // 5.5 Å gives comfortable headroom over the canonical 3.8 Å Cα–Cα spacing
+  // for trans peptides while still catching real chain breaks (typically
+  // ≥ 8 Å). Proline kinks, modified residues, and slightly distorted
+  // backbones can push neighbour distances past 4.5 Å in real PDBs without
+  // representing a true break.
+  breakDistance: 5.5,
   membraneCentre: 0,
 };
 
@@ -85,6 +90,12 @@ function splitOnBreaks(calphas: Calpha[], breakDistance: number): Calpha[][] {
 
 /**
  * Unroll a chain's Cα coordinates into the (arc, z) "membrane-side view".
+ *
+ * **Coordinate frame.** The input Cα must already be in the membrane frame —
+ * z is interpreted as height relative to the bilayer midplane, with the
+ * membrane normal aligned to z. MemProtMD prebuilt structures are pre-aligned
+ * this way. For raw RCSB PDB input you must first apply an orientation
+ * transform (see the `orientation` module) or the output will be meaningless.
  *
  * Algorithm:
  *  1. Split the Cα list on long jumps (chain breaks).

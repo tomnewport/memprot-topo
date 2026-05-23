@@ -155,11 +155,11 @@ function pathFromPoints(samples: UnrolledPoint[], startIdx: number, endIdx: numb
   return parts.join(' ');
 }
 
-function renderChainSvg(chain: ChainData, totalArcMax: number): SVGSVGElement {
+function renderChainSvg(chain: ChainData): SVGSVGElement {
   const unroll = unrollChain(chain.calphas);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
-  const plotWidth = Math.max(200, totalArcMax * PLOT.arcPxPerA);
+  const plotWidth = Math.max(200, unroll.totalArcLength * PLOT.arcPxPerA);
   const plotHeight = zRange * 2 * PLOT.zPxPerA;
   const svgWidth = PLOT.margin.left + plotWidth + PLOT.margin.right;
   const svgHeight = PLOT.margin.top + plotHeight + PLOT.margin.bottom;
@@ -596,15 +596,14 @@ export class TopologyDisplay extends HTMLElement {
     titleEl.textContent = this._data.pdbId;
     region.appendChild(titleEl);
 
-    // Defensive: external callers may pass chains without coordinates (e.g.
-    // older JSON payloads). Treat missing calphas as an empty array so the
-    // component renders an empty topology rather than throwing.
-    for (const chain of this._data.chains) {
-      if (!Array.isArray(chain.calphas)) chain.calphas = [];
-    }
+    // Don't mutate the caller's proteinData — build a normalised local view
+    // so consumers can safely share or memoise the input. Drops chains whose
+    // `calphas` field is missing or empty.
+    const chainsWithCoords = this._data.chains.filter(
+      (c) => Array.isArray(c.calphas) && c.calphas.length > 0,
+    );
 
-    const allEmpty = this._data.chains.every((c) => c.calphas.length === 0);
-    if (allEmpty) {
+    if (chainsWithCoords.length === 0) {
       const placeholder = document.createElement('div');
       placeholder.className = 'placeholder';
       placeholder.textContent = 'No Cα coordinates available for this protein.';
@@ -612,8 +611,6 @@ export class TopologyDisplay extends HTMLElement {
       this._contentEl.appendChild(region);
       return;
     }
-
-    const chainsWithCoords = this._data.chains.filter((c) => c.calphas.length > 0);
 
     // Pick a default chain: largest transmembrane chain, falling back to the
     // largest chain overall if nothing crosses the bilayer.
@@ -661,18 +658,6 @@ export class TopologyDisplay extends HTMLElement {
       region.appendChild(note);
     }
 
-    // Arc length for the selected chain (used only by this single chain — kept
-    // here for parity with the previous shared-scale logic if we ever show
-    // multiple chains stacked).
-    let arcMax = 0;
-    for (let i = 1; i < selectedChain.calphas.length; i++) {
-      const a = selectedChain.calphas[i - 1];
-      const b = selectedChain.calphas[i];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      arcMax += Math.sqrt(dx * dx + dy * dy);
-    }
-
     const block = document.createElement('div');
     block.className = 'chain-block';
 
@@ -685,7 +670,11 @@ export class TopologyDisplay extends HTMLElement {
 
     const scroll = document.createElement('div');
     scroll.className = 'svg-scroll';
-    scroll.appendChild(renderChainSvg(selectedChain, arcMax));
+    // renderChainSvg now sizes itself from the smoothed-curve arc length so
+    // the membrane slab and the trace stay aligned (the slab used to be drawn
+    // out to `unroll.totalArcLength` but the plot width was sized from the raw
+    // chord sum, which is strictly shorter, so the slab over-extended).
+    scroll.appendChild(renderChainSvg(selectedChain));
     block.appendChild(scroll);
     region.appendChild(block);
 

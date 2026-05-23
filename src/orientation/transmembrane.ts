@@ -39,8 +39,12 @@ export interface SelectChainsOptions extends TransmembraneOptions {
 export interface ChainSelectionResult {
   /** Chains chosen for display, ordered largest-first. */
   selected: ChainData[];
-  /** Chains filtered out because they did not cross the membrane. */
-  rejected: ChainData[];
+  /**
+   * Chains that failed the transmembrane test (Cα did not reach both sides
+   * of the bilayer). Distinct from "everything that wasn't selected" — TM
+   * chains dropped because of the `max` cap do not appear here.
+   */
+  nonTransmembrane: ChainData[];
   /** True if no TM chains were found and we fell back to the largest chain. */
   fellBackToLargest: boolean;
 }
@@ -63,6 +67,8 @@ export function selectTransmembraneChains(
 
   const byBiggest = [...chains].sort((a, b) => b.residueCount - a.residueCount);
   const tmChains = byBiggest.filter((c) => isTransmembrane(c.calphas, options));
+  const tmIds = new Set(tmChains.map((c) => c.chainId));
+  const nonTransmembrane = chains.filter((c) => !tmIds.has(c.chainId));
 
   let fellBackToLargest = false;
   let pool = tmChains;
@@ -72,8 +78,6 @@ export function selectTransmembraneChains(
   }
 
   const selected = pool.slice(0, max);
-  const selectedIds = new Set(selected.map((c) => c.chainId));
-  const rejected = chains.filter((c) => !selectedIds.has(c.chainId));
 
-  return { selected, rejected, fellBackToLargest };
+  return { selected, nonTransmembrane, fellBackToLargest };
 }
