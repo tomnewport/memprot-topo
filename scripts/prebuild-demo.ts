@@ -9,6 +9,8 @@ const PROTEINS: { id: string; simId: string }[] = [
   { id: '3k19', simId: '3k19_default_dppc' },
   { id: '2omf', simId: '2omf_default_dppc' },
   { id: '7ahl', simId: '7ahl_default_dppc' },
+  { id: '2j1n', simId: '2j1n_default_dppc' },
+  { id: '5g53', simId: '5g53_default_dppc' },
 ];
 
 async function fetchText(url: string): Promise<string> {
