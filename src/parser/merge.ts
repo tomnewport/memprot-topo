@@ -16,6 +16,7 @@ export function mergeProteinData(
       chainId: chain.chainId,
       residueCount: chain.residues.size,
       segments: chainSegments,
+      calphas: chain.calphas,
     };
   });
 

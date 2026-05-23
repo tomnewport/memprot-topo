@@ -1,12 +1,178 @@
 /**
- * Hardcoded reference protein data for gallery screenshots.
- * Uses synthetic but plausible secondary structure assignments
- * derived from published topology literature for each protein.
+ * Reference protein data for gallery screenshots.
+ *
+ * Each entry has hand-curated secondary structure ranges from the published
+ * topology literature. Cα coordinates are *synthesised* from those ranges
+ * (idealised TM helices arranged on a ring, or strands on a barrel surface
+ * with a ~37° tilt) so the gallery renders without needing network access in
+ * CI. This is a visual regression target for the rendering pipeline rather
+ * than a faithful representation of the real structure.
  */
-export const GALLERY_PROTEINS = [
+
+const HELIX_RADIUS = 2.3;
+const HELIX_RES_PER_TURN = 3.6;
+const HELIX_RISE_PER_RES = 1.5; // Å per residue along the helix axis
+const STRAND_RISE_PER_RES = 3.4; // Å between consecutive Cα along the strand axis
+const MEMBRANE_HALF = 18;
+const LOOP_LIFT = 6;
+const BARREL_TILT_DEG = 37;
+
+/**
+ * Generate one Cα position inside a TM segment.
+ *
+ * Each residue advances by a fixed rise along the secondary-structure axis
+ * (not by "force this strand to span the whole bilayer"). For helices the axis
+ * is normal to the membrane (so Δz per residue ≈ 1.5 Å). For β-strands the
+ * axis is tilted by ~37° to the membrane normal, so each Cα step is
+ * 3.4·cos(37°) ≈ 2.7 Å in z and 3.4·sin(37°) ≈ 2.0 Å tangentially around the
+ * barrel — i.e. real β-strand geometry. The strand is centred on z = 0; short
+ * strands therefore don't fully span the bilayer (which is correct).
+ */
+function tmResiduePosition(tm, posInTm, tmLen, { topology, ringRadius, centre, dir }) {
+  const dirSign = dir === 'up' ? 1 : -1;
+  // Centre the segment on z = 0 so loops sit at the membrane interface.
+  const centred = posInTm - (tmLen - 1) / 2;
+
+  if (topology === 'bundle') {
+    const z = dirSign * centred * HELIX_RISE_PER_RES;
+    const theta = centre.theta + (posInTm * 2 * Math.PI) / HELIX_RES_PER_TURN;
+    return {
+      x: centre.x + HELIX_RADIUS * Math.cos(theta),
+      y: centre.y + HELIX_RADIUS * Math.sin(theta),
+      z,
+    };
+  }
+
+  // β-strand on the barrel surface, tilted ~37° to z.
+  const tilt = (BARREL_TILT_DEG * Math.PI) / 180;
+  const dz = STRAND_RISE_PER_RES * Math.cos(tilt);
+  const dTangential = STRAND_RISE_PER_RES * Math.sin(tilt);
+  const z = dirSign * centred * dz;
+  const dTheta = (dirSign * dTangential) / ringRadius;
+  const theta = centre.theta + centred * dTheta;
+  return {
+    x: ringRadius * Math.cos(theta),
+    y: ringRadius * Math.sin(theta),
+    z,
+  };
+}
+
+/**
+ * Generate synthetic Cα coordinates from a chain's secondary structure ranges.
+ *
+ * topology: 'bundle' — TM helices arranged radially round a centre point.
+ * topology: 'barrel' — strands placed on the surface of a cylinder, alternating
+ *           up/down with a ~37° tilt to the membrane normal.
+ *
+ * Loop residues connect the *endpoints* of adjacent TM segments with a smooth
+ * cubic Hermite arc lifted to the cytoplasmic / extracellular side of the
+ * bilayer. Connecting endpoints (rather than segment centres) avoids the big
+ * Cα–Cα jumps at strand-loop boundaries that would otherwise be detected as
+ * chain breaks by the unroll algorithm.
+ */
+function synthesiseCalphas(chain, { topology, ringRadius }) {
+  const wantedType = topology === 'barrel' ? 'strand' : 'helix';
+  const tmSegments = chain.segments.filter((s) => s.type === wantedType);
+  if (tmSegments.length === 0) return [];
+
+  const centres = tmSegments.map((_, i) => {
+    const theta = (i / tmSegments.length) * 2 * Math.PI;
+    return { theta, x: ringRadius * Math.cos(theta), y: ringRadius * Math.sin(theta) };
+  });
+  // Alternate up/down across the membrane along the chain.
+  const directions = tmSegments.map((_, i) => (i % 2 === 0 ? 'up' : 'down'));
+
+  // Precompute every TM segment's first / last Cα so loops can connect to them.
+  const tmEndpoints = tmSegments.map((tm, idx) => {
+    const tmLen = tm.end - tm.start + 1;
+    const params = { topology, ringRadius, centre: centres[idx], dir: directions[idx] };
+    return {
+      first: tmResiduePosition(tm, 0, tmLen, params),
+      last: tmResiduePosition(tm, tmLen - 1, tmLen, params),
+    };
+  });
+
+  const calphas = [];
+  for (let resSeq = 1; resSeq <= chain.residueCount; resSeq++) {
+    const tmIdx = tmSegments.findIndex((s) => resSeq >= s.start && resSeq <= s.end);
+
+    if (tmIdx >= 0) {
+      const tm = tmSegments[tmIdx];
+      const tmLen = tm.end - tm.start + 1;
+      const params = {
+        topology,
+        ringRadius,
+        centre: centres[tmIdx],
+        dir: directions[tmIdx],
+      };
+      const pos = tmResiduePosition(tm, resSeq - tm.start, tmLen, params);
+      calphas.push({ resSeq, iCode: '', ...pos });
+      continue;
+    }
+
+    // Loop residue.
+    const prevTm = [...tmSegments].reverse().find((s) => s.end < resSeq) ?? null;
+    const nextTm = tmSegments.find((s) => s.start > resSeq) ?? null;
+    const prevIdx = prevTm ? tmSegments.indexOf(prevTm) : -1;
+    const nextIdx = nextTm ? tmSegments.indexOf(nextTm) : -1;
+
+    if (prevTm && nextTm) {
+      const start = tmEndpoints[prevIdx].last;
+      const end = tmEndpoints[nextIdx].first;
+      const total = nextTm.start - prevTm.end;
+      const t = (resSeq - prevTm.end) / total;
+      const liftSign = directions[prevIdx] === 'up' ? 1 : -1;
+      // Cubic-Hermite-ish loop: smooth start/end, peak away from the membrane
+      // at the midpoint. Plus a small tangential arc around the barrel/bundle
+      // so consecutive loops don't all overlap.
+      const sin = Math.sin(t * Math.PI);
+      const peak = sin * (LOOP_LIFT + (topology === 'barrel' ? 4 : 8));
+      const x = start.x + (end.x - start.x) * t;
+      const y = start.y + (end.y - start.y) * t;
+      const z = start.z + (end.z - start.z) * t + liftSign * peak;
+      calphas.push({ resSeq, iCode: '', x, y, z });
+      continue;
+    }
+
+    // N- or C-terminal tail: extend from the nearest TM endpoint along the
+    // bilayer-adjacent side.
+    const anchor = prevTm ? tmEndpoints[prevIdx].last : tmEndpoints[nextIdx].first;
+    const lift = (prevTm ? directions[prevIdx] === 'up' : directions[nextIdx] === 'down') ? 1 : -1;
+    const tailIdx = prevTm ? resSeq - prevTm.end : nextTm.start - resSeq;
+    calphas.push({
+      resSeq,
+      iCode: '',
+      x: anchor.x + tailIdx * 1.2,
+      y: anchor.y,
+      z: anchor.z + lift * Math.min(LOOP_LIFT, tailIdx * 1.5),
+    });
+  }
+
+  return calphas;
+}
+
+function withCalphas(protein) {
+  return {
+    ...protein,
+    data: {
+      ...protein.data,
+      chains: protein.data.chains.map((chain) => ({
+        ...chain,
+        calphas: synthesiseCalphas(chain, {
+          topology: protein.topology,
+          ringRadius: protein.ringRadius,
+        }),
+      })),
+    },
+  };
+}
+
+const PROTEINS = [
   {
     pdbId: '3k19',
     label: 'A2A Adenosine Receptor',
+    topology: 'bundle',
+    ringRadius: 8,
     data: {
       pdbId: '3k19',
       chains: [
@@ -27,31 +193,95 @@ export const GALLERY_PROTEINS = [
     },
   },
   {
+    pdbId: '5g53',
+    label: 'A2A Adenosine Receptor with engineered G-protein',
+    topology: 'bundle',
+    ringRadius: 8,
+    data: {
+      pdbId: '5g53',
+      chains: [
+        {
+          chainId: 'A',
+          residueCount: 308,
+          segments: [
+            { start: 6, end: 32, type: 'helix' },
+            { start: 41, end: 67, type: 'helix' },
+            { start: 78, end: 109, type: 'helix' },
+            { start: 121, end: 142, type: 'helix' },
+            { start: 173, end: 205, type: 'helix' },
+            { start: 222, end: 252, type: 'helix' },
+            { start: 261, end: 290, type: 'helix' },
+          ],
+        },
+      ],
+    },
+  },
+  {
     pdbId: '2omf',
     label: 'OmpF Porin',
+    topology: 'barrel',
+    ringRadius: 11,
     data: {
       pdbId: '2omf',
       chains: [
         {
           chainId: 'A',
+          // 16 TM β-strands, each ~11 residues long. The synthetic ranges below
+          // give one full transmembrane crossing per strand at 37° tilt — wider
+          // than strict DSSP definitions (which only cover the core hairpin)
+          // and matching the conventional "TM strand" view used by topology
+          // figures.
           residueCount: 340,
           segments: [
-            { start: 1, end: 5, type: 'strand' },
-            { start: 25, end: 32, type: 'strand' },
-            { start: 40, end: 47, type: 'strand' },
-            { start: 60, end: 68, type: 'strand' },
-            { start: 76, end: 84, type: 'strand' },
-            { start: 95, end: 103, type: 'strand' },
-            { start: 111, end: 119, type: 'strand' },
-            { start: 128, end: 136, type: 'strand' },
-            { start: 145, end: 152, type: 'strand' },
-            { start: 163, end: 171, type: 'strand' },
-            { start: 180, end: 188, type: 'strand' },
-            { start: 200, end: 208, type: 'strand' },
-            { start: 218, end: 226, type: 'strand' },
-            { start: 234, end: 242, type: 'strand' },
-            { start: 250, end: 258, type: 'strand' },
-            { start: 267, end: 275, type: 'strand' },
+            { start: 2, end: 12, type: 'strand' },
+            { start: 22, end: 32, type: 'strand' },
+            { start: 40, end: 50, type: 'strand' },
+            { start: 58, end: 68, type: 'strand' },
+            { start: 76, end: 86, type: 'strand' },
+            { start: 94, end: 104, type: 'strand' },
+            { start: 112, end: 122, type: 'strand' },
+            { start: 130, end: 140, type: 'strand' },
+            { start: 148, end: 158, type: 'strand' },
+            { start: 166, end: 176, type: 'strand' },
+            { start: 184, end: 194, type: 'strand' },
+            { start: 202, end: 212, type: 'strand' },
+            { start: 220, end: 230, type: 'strand' },
+            { start: 238, end: 248, type: 'strand' },
+            { start: 256, end: 266, type: 'strand' },
+            { start: 274, end: 284, type: 'strand' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    pdbId: '2j1n',
+    label: 'OmpC Osmoporin',
+    topology: 'barrel',
+    ringRadius: 11,
+    data: {
+      pdbId: '2j1n',
+      chains: [
+        {
+          chainId: 'A',
+          residueCount: 346,
+          segments: [
+            { start: 2, end: 12, type: 'strand' },
+            { start: 24, end: 34, type: 'strand' },
+            { start: 43, end: 53, type: 'strand' },
+            { start: 62, end: 72, type: 'strand' },
+            { start: 80, end: 90, type: 'strand' },
+            { start: 102, end: 112, type: 'strand' },
+            { start: 122, end: 132, type: 'strand' },
+            { start: 144, end: 154, type: 'strand' },
+            { start: 164, end: 174, type: 'strand' },
+            { start: 184, end: 194, type: 'strand' },
+            { start: 206, end: 216, type: 'strand' },
+            { start: 230, end: 240, type: 'strand' },
+            { start: 250, end: 260, type: 'strand' },
+            { start: 274, end: 284, type: 'strand' },
+            { start: 294, end: 304, type: 'strand' },
+            { start: 316, end: 326, type: 'strand' },
           ],
         },
       ],
@@ -60,22 +290,28 @@ export const GALLERY_PROTEINS = [
   {
     pdbId: '7ahl',
     label: 'Alpha-Hemolysin',
+    topology: 'barrel',
+    ringRadius: 14,
     data: {
       pdbId: '7ahl',
       chains: [
         {
           chainId: 'A',
+          // α-hemolysin's β-stem hairpin: 2 strands per protomer crossing the
+          // membrane. (The 7-residue ranges in published topology figures only
+          // cover the core; the synthetic TM ranges below are extended to span
+          // the full bilayer.)
           residueCount: 293,
           segments: [
-            { start: 108, end: 113, type: 'strand' },
-            { start: 116, end: 121, type: 'strand' },
-            { start: 126, end: 131, type: 'strand' },
-            { start: 134, end: 139, type: 'strand' },
-            { start: 258, end: 263, type: 'strand' },
-            { start: 265, end: 270, type: 'strand' },
+            { start: 106, end: 116, type: 'strand' },
+            { start: 124, end: 134, type: 'strand' },
+            { start: 256, end: 266, type: 'strand' },
+            { start: 274, end: 284, type: 'strand' },
           ],
         },
       ],
     },
   },
 ];
+
+export const GALLERY_PROTEINS = PROTEINS.map(withCalphas);

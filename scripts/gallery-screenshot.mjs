@@ -119,7 +119,10 @@ async function main() {
 
   const browser = await chromium.launch();
   const page = await browser.newPage();
-  await page.setViewportSize({ width: 600, height: 400 });
+  // Viewport wide enough to fit the natural-width unrolled SVGs of long
+  // β-barrels (~1500 user units) without horizontal scroll, so element.screenshot()
+  // captures the full diagram rather than a cropped portion.
+  await page.setViewportSize({ width: 1800, height: 600 });
 
   for (const protein of GALLERY_PROTEINS) {
     console.log(`Screenshotting ${protein.pdbId}...`);

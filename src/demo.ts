@@ -13,4 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
   populate('td-3k19', '3k19');
   populate('td-2omf', '2omf');
   populate('td-7ahl', '7ahl');
+  populate('td-2j1n', '2j1n');
+  populate('td-5g53', '5g53');
 });

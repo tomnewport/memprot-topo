@@ -36,14 +36,17 @@ async function pathExists(branch, path) {
 
 function imgTag(sanitizedBranch, pdbId, alt) {
   const url = `https://github.com/${REPO}/raw/gallery-images/${sanitizedBranch}/${pdbId}.png`;
-  return `<img src="${url}" width="280" alt="${alt}" />`;
+  // Use the comment's full width — the unrolled view is fundamentally
+  // wide-and-short and cramping it into a narrow table cell makes β-barrels
+  // unreadable.
+  return `<img src="${url}" alt="${alt}" style="max-width:100%;" />`;
 }
 
 async function main() {
   const sanitizedHead = sanitize(HEAD_BRANCH);
   const sanitizedBase = BASE_BRANCH ? sanitize(BASE_BRANCH) : null;
 
-  const rows = [];
+  const sections = [];
   for (const protein of GALLERY_PROTEINS) {
     let prev = '<em>(no baseline yet)</em>';
     if (sanitizedBase) {
@@ -53,8 +56,18 @@ async function main() {
       }
     }
     const curr = imgTag(sanitizedHead, protein.pdbId, `${protein.pdbId} on ${HEAD_BRANCH}`);
-    rows.push(
-      `| **${protein.label}**<br/><code>${protein.pdbId.toUpperCase()}</code> | ${prev} | ${curr} |`,
+    sections.push(
+      [
+        `### ${protein.label} \`${protein.pdbId.toUpperCase()}\``,
+        '',
+        `**Current (\`${HEAD_BRANCH}\`):**`,
+        '',
+        curr,
+        '',
+        `**Previous (\`${BASE_BRANCH || 'n/a'}\`):**`,
+        '',
+        prev,
+      ].join('\n'),
     );
   }
 
@@ -66,9 +79,13 @@ async function main() {
 
 Reference proteins rendered with this PR's \`<topology-display>\` component.
 
-| Protein | Previous (\`${BASE_BRANCH || 'n/a'}\`) | Current (\`${HEAD_BRANCH}\`) |
-|---------|------------------------|----------------------|
-${rows.join('\n')}
+> **Note:** Gallery screenshots are rendered from *idealised* synthetic Cα
+> coordinates derived from the curated SS ranges in
+> \`scripts/gallery-data.mjs\` — not from real PDB / MemProtMD structures.
+> They exist as a visual regression target for the rendering pipeline. The
+> in-browser demo (\`npm run dev\`) uses real prebuilt MemProtMD coordinates.
+
+${sections.join('\n\n---\n\n')}
 ${artifactLine}
 `;
 

@@ -6,8 +6,13 @@ describe('mergeProteinData', () => {
   const chainA: RawChain = {
     chainId: 'A',
     residues: new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']),
+    calphas: [],
   };
-  const chainB: RawChain = { chainId: 'B', residues: new Set(['1', '2', '3', '4', '5']) };
+  const chainB: RawChain = {
+    chainId: 'B',
+    residues: new Set(['1', '2', '3', '4', '5']),
+    calphas: [],
+  };
 
   const ssSegments: RawSSSegment[] = [
     { chainId: 'A', start: 2, end: 5, type: 'helix' },
