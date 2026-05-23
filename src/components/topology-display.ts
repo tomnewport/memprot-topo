@@ -193,8 +193,9 @@ function drawStrandArrow(
   const px = -uy,
     py = ux; // perpendicular
 
-  const aLen = 40,
-    aHalf = 20; // arrowhead size in screen pixels
+  const strokeWidth = 8;
+  const aHalf = (strokeWidth * 1.25) / 2; // 25% wider than the line, halved for polygon
+  const aLen = aHalf * 4; // 2:1 length-to-width aspect ratio
 
   // Tip and wing vertices in relative screen space (origin = plot group origin).
   const tipSx = tip.arc * PLOT.arcPxPerA;
@@ -330,7 +331,7 @@ function drawSegment(
     path.setAttribute('d', d);
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', COLOURS[run.type]);
-    path.setAttribute('stroke-width', run.type === 'coil' ? '1.8' : '4');
+    path.setAttribute('stroke-width', run.type === 'coil' ? '1.8' : '8');
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
