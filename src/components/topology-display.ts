@@ -122,6 +122,17 @@ const COLOURS = {
   break: '#aaa',
 };
 
+function isBetaBarrel(chain: ChainData): boolean {
+  let helixRes = 0,
+    strandRes = 0;
+  for (const seg of chain.segments) {
+    const len = seg.end - seg.start + 1;
+    if (seg.type === 'helix') helixRes += len;
+    else if (seg.type === 'strand') strandRes += len;
+  }
+  return strandRes > helixRes && strandRes > 0;
+}
+
 function ssTypeAt(segments: SecondaryStructureSegment[], resSeq: number): SecondaryStructureType {
   for (const s of segments) {
     if (resSeq >= s.start && resSeq <= s.end) return s.type;
@@ -153,6 +164,55 @@ function runsBySs(
     endSample: residues[residues.length - 1].sampleIndex,
   });
   return runs;
+}
+
+/**
+ * Draw an arrowhead polygon at the C-terminal end of a strand run. Vertices
+ * are computed in screen space (accounting for the non-uniform plot scale) then
+ * back-projected into user space so the polygon appears correctly shaped after
+ * the plot group transform is applied.
+ */
+function drawStrandArrow(
+  plot: SVGGElement,
+  samples: UnrolledPoint[],
+  startIdx: number,
+  endIdx: number,
+): void {
+  if (endIdx <= startIdx || endIdx >= samples.length) return;
+  const tip = samples[endIdx];
+  const prev = samples[Math.max(startIdx, endIdx - 1)];
+
+  // Direction vector in screen space (plot group has scale(arcPxPerA, -zPxPerA)).
+  const dxS = (tip.arc - prev.arc) * PLOT.arcPxPerA;
+  const dyS = -(tip.z - prev.z) * PLOT.zPxPerA;
+  const len = Math.sqrt(dxS * dxS + dyS * dyS);
+  if (len < 0.5) return;
+
+  const ux = dxS / len,
+    uy = dyS / len; // unit forward direction
+  const px = -uy,
+    py = ux; // perpendicular
+
+  const aLen = 10,
+    aHalf = 5; // arrowhead size in screen pixels
+
+  // Tip and wing vertices in relative screen space (origin = plot group origin).
+  const tipSx = tip.arc * PLOT.arcPxPerA;
+  const tipSy = -tip.z * PLOT.zPxPerA;
+
+  // Back-project to user space: arc = sx / arcPxPerA, z = -sy / zPxPerA.
+  const pts = [
+    [tipSx, tipSy],
+    [tipSx - ux * aLen + px * aHalf, tipSy - uy * aLen + py * aHalf],
+    [tipSx - ux * aLen - px * aHalf, tipSy - uy * aLen - py * aHalf],
+  ]
+    .map(([sx, sy]) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
+    .join(' ');
+
+  const arrow = document.createElementNS(SVG_NS, 'polygon');
+  arrow.setAttribute('points', pts);
+  arrow.setAttribute('fill', COLOURS.strand);
+  plot.appendChild(arrow);
 }
 
 function pathFromPoints(samples: UnrolledPoint[], startIdx: number, endIdx: number): string {
@@ -225,11 +285,13 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
   mid.setAttribute('vector-effect', 'non-scaling-stroke');
   plot.appendChild(mid);
 
+  const barrel = isBetaBarrel(chain);
+
   // For each contiguous chain segment, draw the smoothed (arc, z) trace,
   // segmented by secondary structure type for colouring.
   for (let s = 0; s < unroll.segments.length; s++) {
     const segment = unroll.segments[s];
-    drawSegment(plot, segment, chain.segments);
+    drawSegment(plot, segment, chain.segments, barrel);
     // Dashed connector across chain breaks.
     if (s > 0) {
       const prev = unroll.segments[s - 1];
@@ -254,6 +316,7 @@ function drawSegment(
   plot: SVGGElement,
   segment: UnrolledSegment,
   ssSegments: SecondaryStructureSegment[],
+  isBarrel: boolean,
 ): void {
   const runs = runsBySs(segment.residues, ssSegments);
   for (const run of runs) {
@@ -263,11 +326,14 @@ function drawSegment(
     path.setAttribute('d', d);
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', COLOURS[run.type]);
-    path.setAttribute('stroke-width', run.type === 'coil' ? '1.2' : '2.2');
+    path.setAttribute('stroke-width', run.type === 'coil' ? '1.8' : '4');
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
     plot.appendChild(path);
+    if (isBarrel && run.type === 'strand') {
+      drawStrandArrow(plot, segment.samples, run.startSample, run.endSample);
+    }
   }
 }
 

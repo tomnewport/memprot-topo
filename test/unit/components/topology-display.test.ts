@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
-import type { ProteinData } from '../../../src/types.js';
+import type { ProteinData, ChainData } from '../../../src/types.js';
 
 function tmHelixProtein(): ProteinData {
   // 28-residue chain: idealised TM helix with z spanning -20 → +20, then a
@@ -40,6 +40,49 @@ function tmHelixProtein(): ProteinData {
       },
     ],
   };
+}
+
+function betaBarrelChain(): ChainData {
+  // 4-strand antiparallel beta barrel with 3-residue loops.
+  // Strands are ~3 Å/residue in z, well within the 5.5 Å break threshold.
+  const calphas = [];
+  const segments = [];
+  let resSeq = 1;
+
+  for (let s = 0; s < 4; s++) {
+    const strandStart = resSeq;
+    const xBase = s * 5;
+    const goingUp = s % 2 === 0;
+
+    for (let j = 0; j < 10; j++) {
+      calphas.push({
+        resSeq: resSeq++,
+        iCode: '',
+        x: xBase,
+        y: 0,
+        z: goingUp ? -15 + j * (30 / 9) : 15 - j * (30 / 9),
+      });
+    }
+    segments.push({ start: strandStart, end: resSeq - 1, type: 'strand' as const });
+
+    if (s < 3) {
+      const loopStart = resSeq;
+      const loopZ = goingUp ? 18 : -18;
+      const nextX = (s + 1) * 5;
+      for (let j = 0; j < 3; j++) {
+        calphas.push({
+          resSeq: resSeq++,
+          iCode: '',
+          x: xBase + ((j + 1) * (nextX - xBase)) / 4,
+          y: 0,
+          z: loopZ,
+        });
+      }
+      segments.push({ start: loopStart, end: resSeq - 1, type: 'coil' as const });
+    }
+  }
+
+  return { chainId: 'A', residueCount: resSeq - 1, segments, calphas };
 }
 
 describe('TopologyDisplay (unrolled SVG)', () => {
@@ -133,6 +176,29 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(mainLabel).toContain('AII');
     const selected = el.shadowRoot!.querySelector('.chain-violin.selected');
     expect(selected!.getAttribute('aria-label')).toContain('A(II)');
+  });
+
+  it('renders direction-arrow polygons on strand runs for a beta barrel chain', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    expect(svg).not.toBeNull();
+    const polygons = svg!.querySelectorAll('polygon');
+    expect(polygons.length).toBeGreaterThan(0);
+    const fills = Array.from(polygons).map((p) => p.getAttribute('fill'));
+    expect(fills.every((f) => f === '#2ca02c')).toBe(true);
+  });
+
+  it('does not render strand arrows for a purely helical chain', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tmHelixProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    expect(svg).not.toBeNull();
+    expect(svg!.querySelectorAll('polygon').length).toBe(0);
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {
