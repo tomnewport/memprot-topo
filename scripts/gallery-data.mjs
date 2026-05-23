@@ -11,17 +11,30 @@
 
 const HELIX_RADIUS = 2.3;
 const HELIX_RES_PER_TURN = 3.6;
+const HELIX_RISE_PER_RES = 1.5; // Å per residue along the helix axis
+const STRAND_RISE_PER_RES = 3.4; // Å between consecutive Cα along the strand axis
 const MEMBRANE_HALF = 18;
 const LOOP_LIFT = 6;
 const BARREL_TILT_DEG = 37;
 
+/**
+ * Generate one Cα position inside a TM segment.
+ *
+ * Each residue advances by a fixed rise along the secondary-structure axis
+ * (not by "force this strand to span the whole bilayer"). For helices the axis
+ * is normal to the membrane (so Δz per residue ≈ 1.5 Å). For β-strands the
+ * axis is tilted by ~37° to the membrane normal, so each Cα step is
+ * 3.4·cos(37°) ≈ 2.7 Å in z and 3.4·sin(37°) ≈ 2.0 Å tangentially around the
+ * barrel — i.e. real β-strand geometry. The strand is centred on z = 0; short
+ * strands therefore don't fully span the bilayer (which is correct).
+ */
 function tmResiduePosition(tm, posInTm, tmLen, { topology, ringRadius, centre, dir }) {
-  const u = posInTm / Math.max(1, tmLen - 1);
-  const zStart = dir === 'up' ? -MEMBRANE_HALF : MEMBRANE_HALF;
-  const zEnd = dir === 'up' ? MEMBRANE_HALF : -MEMBRANE_HALF;
-  const z = zStart + u * (zEnd - zStart);
+  const dirSign = dir === 'up' ? 1 : -1;
+  // Centre the segment on z = 0 so loops sit at the membrane interface.
+  const centred = posInTm - (tmLen - 1) / 2;
 
   if (topology === 'bundle') {
+    const z = dirSign * centred * HELIX_RISE_PER_RES;
     const theta = centre.theta + (posInTm * 2 * Math.PI) / HELIX_RES_PER_TURN;
     return {
       x: centre.x + HELIX_RADIUS * Math.cos(theta),
@@ -30,10 +43,13 @@ function tmResiduePosition(tm, posInTm, tmLen, { topology, ringRadius, centre, d
     };
   }
 
-  // Strand on the barrel surface, tilted ~37° to z.
+  // β-strand on the barrel surface, tilted ~37° to z.
   const tilt = (BARREL_TILT_DEG * Math.PI) / 180;
-  const tangentialShear = (Math.tan(tilt) * (2 * MEMBRANE_HALF)) / ringRadius;
-  const theta = centre.theta + (dir === 'up' ? 1 : -1) * tangentialShear * (u - 0.5);
+  const dz = STRAND_RISE_PER_RES * Math.cos(tilt);
+  const dTangential = STRAND_RISE_PER_RES * Math.sin(tilt);
+  const z = dirSign * centred * dz;
+  const dTheta = (dirSign * dTangential) / ringRadius;
+  const theta = centre.theta + centred * dTheta;
   return {
     x: ringRadius * Math.cos(theta),
     y: ringRadius * Math.sin(theta),
@@ -210,24 +226,29 @@ const PROTEINS = [
       chains: [
         {
           chainId: 'A',
+          // 16 TM β-strands, each ~11 residues long. The synthetic ranges below
+          // give one full transmembrane crossing per strand at 37° tilt — wider
+          // than strict DSSP definitions (which only cover the core hairpin)
+          // and matching the conventional "TM strand" view used by topology
+          // figures.
           residueCount: 340,
           segments: [
-            { start: 1, end: 5, type: 'strand' },
-            { start: 25, end: 32, type: 'strand' },
-            { start: 40, end: 47, type: 'strand' },
-            { start: 60, end: 68, type: 'strand' },
-            { start: 76, end: 84, type: 'strand' },
-            { start: 95, end: 103, type: 'strand' },
-            { start: 111, end: 119, type: 'strand' },
-            { start: 128, end: 136, type: 'strand' },
-            { start: 145, end: 152, type: 'strand' },
-            { start: 163, end: 171, type: 'strand' },
-            { start: 180, end: 188, type: 'strand' },
-            { start: 200, end: 208, type: 'strand' },
-            { start: 218, end: 226, type: 'strand' },
-            { start: 234, end: 242, type: 'strand' },
-            { start: 250, end: 258, type: 'strand' },
-            { start: 267, end: 275, type: 'strand' },
+            { start: 2, end: 12, type: 'strand' },
+            { start: 22, end: 32, type: 'strand' },
+            { start: 40, end: 50, type: 'strand' },
+            { start: 58, end: 68, type: 'strand' },
+            { start: 76, end: 86, type: 'strand' },
+            { start: 94, end: 104, type: 'strand' },
+            { start: 112, end: 122, type: 'strand' },
+            { start: 130, end: 140, type: 'strand' },
+            { start: 148, end: 158, type: 'strand' },
+            { start: 166, end: 176, type: 'strand' },
+            { start: 184, end: 194, type: 'strand' },
+            { start: 202, end: 212, type: 'strand' },
+            { start: 220, end: 230, type: 'strand' },
+            { start: 238, end: 248, type: 'strand' },
+            { start: 256, end: 266, type: 'strand' },
+            { start: 274, end: 284, type: 'strand' },
           ],
         },
       ],
@@ -245,22 +266,22 @@ const PROTEINS = [
           chainId: 'A',
           residueCount: 346,
           segments: [
-            { start: 1, end: 8, type: 'strand' },
-            { start: 26, end: 33, type: 'strand' },
-            { start: 45, end: 52, type: 'strand' },
-            { start: 64, end: 71, type: 'strand' },
-            { start: 80, end: 88, type: 'strand' },
-            { start: 102, end: 110, type: 'strand' },
-            { start: 122, end: 130, type: 'strand' },
-            { start: 145, end: 153, type: 'strand' },
-            { start: 165, end: 173, type: 'strand' },
-            { start: 185, end: 193, type: 'strand' },
-            { start: 207, end: 215, type: 'strand' },
-            { start: 232, end: 240, type: 'strand' },
-            { start: 252, end: 260, type: 'strand' },
-            { start: 277, end: 285, type: 'strand' },
-            { start: 295, end: 303, type: 'strand' },
-            { start: 317, end: 325, type: 'strand' },
+            { start: 2, end: 12, type: 'strand' },
+            { start: 24, end: 34, type: 'strand' },
+            { start: 43, end: 53, type: 'strand' },
+            { start: 62, end: 72, type: 'strand' },
+            { start: 80, end: 90, type: 'strand' },
+            { start: 102, end: 112, type: 'strand' },
+            { start: 122, end: 132, type: 'strand' },
+            { start: 144, end: 154, type: 'strand' },
+            { start: 164, end: 174, type: 'strand' },
+            { start: 184, end: 194, type: 'strand' },
+            { start: 206, end: 216, type: 'strand' },
+            { start: 230, end: 240, type: 'strand' },
+            { start: 250, end: 260, type: 'strand' },
+            { start: 274, end: 284, type: 'strand' },
+            { start: 294, end: 304, type: 'strand' },
+            { start: 316, end: 326, type: 'strand' },
           ],
         },
       ],
@@ -270,20 +291,22 @@ const PROTEINS = [
     pdbId: '7ahl',
     label: 'Alpha-Hemolysin',
     topology: 'barrel',
-    ringRadius: 7,
+    ringRadius: 14,
     data: {
       pdbId: '7ahl',
       chains: [
         {
           chainId: 'A',
+          // α-hemolysin's β-stem hairpin: 2 strands per protomer crossing the
+          // membrane. (The 7-residue ranges in published topology figures only
+          // cover the core; the synthetic TM ranges below are extended to span
+          // the full bilayer.)
           residueCount: 293,
           segments: [
-            { start: 108, end: 113, type: 'strand' },
-            { start: 116, end: 121, type: 'strand' },
-            { start: 126, end: 131, type: 'strand' },
-            { start: 134, end: 139, type: 'strand' },
-            { start: 258, end: 263, type: 'strand' },
-            { start: 265, end: 270, type: 'strand' },
+            { start: 106, end: 116, type: 'strand' },
+            { start: 124, end: 134, type: 'strand' },
+            { start: 256, end: 266, type: 'strand' },
+            { start: 274, end: 284, type: 'strand' },
           ],
         },
       ],

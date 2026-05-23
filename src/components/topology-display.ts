@@ -188,13 +188,16 @@ function renderChainSvg(chain: ChainData, totalArcMax: number): SVGSVGElement {
   );
   svg.appendChild(plot);
 
-  // Membrane slab.
+  // Membrane slab. Drawn first so the trace appears on top; kept faint and
+  // semi-transparent so the in-membrane portion of the trace remains clearly
+  // visible (β-strand sections in particular spend most of their length here).
   const slab = document.createElementNS(SVG_NS, 'rect');
   slab.setAttribute('x', '0');
   slab.setAttribute('y', `${-PLOT.membraneHalf}`);
   slab.setAttribute('width', `${unroll.totalArcLength.toFixed(2)}`);
   slab.setAttribute('height', `${PLOT.membraneHalf * 2}`);
   slab.setAttribute('fill', COLOURS.membraneFill);
+  slab.setAttribute('fill-opacity', '0.55');
   slab.setAttribute('stroke', COLOURS.membraneEdge);
   // Stroke gets multiplied by the (non-uniform) scale, so use vector-effect to
   // keep it 1px regardless of zoom.
@@ -264,21 +267,54 @@ const VIOLIN = {
   margin: { top: 6, right: 6, bottom: 6, left: 6 },
   /** Minimum z half-range shown (Å); auto-expands to fit data. */
   zRangeMin: 30,
-  /** Number of z-bins for the histogram. */
-  bins: 28,
+  /**
+   * Number of z-bins for the density estimate. Higher = smoother curve at
+   * the cost of more vertices in the SVG.
+   */
+  bins: 60,
+  /** Gaussian smoothing kernel σ, in bins. */
+  smoothingSigma: 1.8,
 };
 
 interface ChainSsBins {
   helix: number[];
   strand: number[];
   coil: number[];
+  total: number[];
   maxBinTotal: number;
 }
 
+function smoothBins(values: number[], sigma: number): number[] {
+  if (sigma <= 0 || values.length === 0) return values.slice();
+  const half = Math.max(1, Math.ceil(sigma * 3));
+  const kernel: number[] = [];
+  for (let i = -half; i <= half; i++) {
+    kernel.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
+  }
+  const ksum = kernel.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < kernel.length; i++) kernel[i] /= ksum;
+
+  const out = new Array<number>(values.length).fill(0);
+  for (let i = 0; i < values.length; i++) {
+    let acc = 0;
+    let weight = 0;
+    for (let k = -half; k <= half; k++) {
+      const j = i + k;
+      if (j < 0 || j >= values.length) continue;
+      const w = kernel[k + half];
+      acc += values[j] * w;
+      weight += w;
+    }
+    // Renormalise at edges so the boundary doesn't pull the density to zero.
+    out[i] = weight > 0 ? acc / weight : 0;
+  }
+  return out;
+}
+
 function binChainBySs(chain: ChainData, bins: number, zMin: number, zMax: number): ChainSsBins {
-  const helix = new Array<number>(bins).fill(0);
-  const strand = new Array<number>(bins).fill(0);
-  const coil = new Array<number>(bins).fill(0);
+  const helixRaw = new Array<number>(bins).fill(0);
+  const strandRaw = new Array<number>(bins).fill(0);
+  const coilRaw = new Array<number>(bins).fill(0);
   const range = zMax - zMin;
   if (range > 0) {
     for (const ca of chain.calphas) {
@@ -286,16 +322,53 @@ function binChainBySs(chain: ChainData, bins: number, zMin: number, zMax: number
       const t = (ca.z - zMin) / range;
       const b = Math.min(bins - 1, Math.max(0, Math.floor(t * bins)));
       const ss = ssTypeAt(chain.segments, ca.resSeq);
-      if (ss === 'helix') helix[b]++;
-      else if (ss === 'strand') strand[b]++;
-      else coil[b]++;
+      if (ss === 'helix') helixRaw[b]++;
+      else if (ss === 'strand') strandRaw[b]++;
+      else coilRaw[b]++;
     }
   }
+
+  const sigma = VIOLIN.smoothingSigma;
+  const helix = smoothBins(helixRaw, sigma);
+  const strand = smoothBins(strandRaw, sigma);
+  const coil = smoothBins(coilRaw, sigma);
+  const total = new Array<number>(bins);
   let maxBinTotal = 0;
   for (let i = 0; i < bins; i++) {
-    maxBinTotal = Math.max(maxBinTotal, helix[i] + strand[i] + coil[i]);
+    total[i] = helix[i] + strand[i] + coil[i];
+    if (total[i] > maxBinTotal) maxBinTotal = total[i];
   }
-  return { helix, strand, coil, maxBinTotal };
+  return { helix, strand, coil, total, maxBinTotal };
+}
+
+/**
+ * Build a smooth half-violin polygon path: outer envelope walks one side from
+ * bottom to top through the density values, then closes along the centreline.
+ *
+ * `side` = -1 for the left half, +1 for the right half. `widths[i]` is the
+ * unsigned width of the violin at bin i. `centreOffset` lets us push the
+ * envelope outwards by another density (e.g. coil) so layers stack cleanly.
+ */
+function halfViolinPath(
+  widths: number[],
+  centreOffset: number[],
+  side: -1 | 1,
+  yForBin: (b: number) => number,
+): string {
+  const bins = widths.length;
+  if (bins === 0) return '';
+  const parts: string[] = [];
+  parts.push(`M ${side * centreOffset[0]} ${yForBin(-0.5)}`);
+  for (let b = 0; b < bins; b++) {
+    parts.push(`L ${side * (centreOffset[b] + widths[b])} ${yForBin(b)}`);
+  }
+  parts.push(`L ${side * (centreOffset[bins - 1] + widths[bins - 1])} ${yForBin(bins - 0.5)}`);
+  parts.push(`L ${side * centreOffset[bins - 1]} ${yForBin(bins - 0.5)}`);
+  for (let b = bins - 1; b >= 0; b--) {
+    parts.push(`L ${side * centreOffset[b]} ${yForBin(b)}`);
+  }
+  parts.push('Z');
+  return parts.join(' ');
 }
 
 function renderViolin(
@@ -304,8 +377,7 @@ function renderViolin(
   zMin: number,
   zMax: number,
 ): SVGSVGElement {
-  const { width: W, height: H, margin, bins, zRangeMin } = VIOLIN;
-  void zRangeMin;
+  const { width: W, height: H, margin, bins } = VIOLIN;
   const plotW = W - margin.left - margin.right;
   const plotH = H - margin.top - margin.bottom;
 
@@ -321,20 +393,19 @@ function renderViolin(
   const xScale = maxBinTotal > 0 ? plotW / 2 / maxBinTotal : 0;
   const cx = margin.left + plotW / 2;
   const cy = margin.top + plotH / 2;
-  const binH = plotH / bins;
 
   const plot = document.createElementNS(SVG_NS, 'g');
   plot.setAttribute('transform', `translate(${cx}, ${cy})`);
   svg.appendChild(plot);
 
-  // Membrane band — a faint grey background showing the bilayer slab so
-  // membrane-spanning chains are obvious vs. soluble ones.
+  // Membrane band — faint grey slab so membrane-spanning chains are obvious
+  // vs. soluble ones.
   const slab = document.createElementNS(SVG_NS, 'rect');
   slab.setAttribute('x', `${-plotW / 2}`);
   slab.setAttribute('y', `${-PLOT.membraneHalf * yScale}`);
   slab.setAttribute('width', `${plotW}`);
   slab.setAttribute('height', `${PLOT.membraneHalf * 2 * yScale}`);
-  slab.setAttribute('fill', '#eaeaea');
+  slab.setAttribute('fill', '#e8edf3');
   plot.appendChild(slab);
 
   // Midplane.
@@ -347,43 +418,57 @@ function renderViolin(
   mid.setAttribute('stroke-dasharray', '2 3');
   plot.appendChild(mid);
 
-  for (let b = 0; b < bins; b++) {
-    const zCenter = zMin + ((b + 0.5) * (zMax - zMin)) / bins;
-    const yTop = -zCenter * yScale - binH / 2;
-    const helixW = binned.helix[b] * xScale;
-    const strandW = binned.strand[b] * xScale;
-    const coilW = binned.coil[b] * xScale;
-    const coilHalf = coilW / 2;
+  // Density-bin centres in z, mapped to SVG y.
+  const binCentreY = (b: number) => -(zMin + ((b + 0.5) * (zMax - zMin)) / bins) * yScale;
 
-    if (helixW > 0) {
-      const r = document.createElementNS(SVG_NS, 'rect');
-      r.setAttribute('x', `${-coilHalf - helixW}`);
-      r.setAttribute('y', `${yTop}`);
-      r.setAttribute('width', `${helixW}`);
-      r.setAttribute('height', `${binH}`);
-      r.setAttribute('fill', COLOURS.helix);
-      plot.appendChild(r);
-    }
-    if (strandW > 0) {
-      const r = document.createElementNS(SVG_NS, 'rect');
-      r.setAttribute('x', `${coilHalf}`);
-      r.setAttribute('y', `${yTop}`);
-      r.setAttribute('width', `${strandW}`);
-      r.setAttribute('height', `${binH}`);
-      r.setAttribute('fill', COLOURS.strand);
-      plot.appendChild(r);
-    }
-    if (coilW > 0) {
-      const r = document.createElementNS(SVG_NS, 'rect');
-      r.setAttribute('x', `${-coilHalf}`);
-      r.setAttribute('y', `${yTop}`);
-      r.setAttribute('width', `${coilW}`);
-      r.setAttribute('height', `${binH}`);
-      r.setAttribute('fill', COLOURS.coil);
-      r.setAttribute('opacity', '0.4');
-      plot.appendChild(r);
-    }
+  // Each side of the violin is the stacked total density of helix + strand +
+  // coil. Helix goes innermost (against the centreline), strand next, coil
+  // outermost as a faint outline — so the dominant SS type drives the colour
+  // and the outer envelope is always the *total* residue density.
+  const helixW = binned.helix.map((v) => v * xScale);
+  const strandW = binned.strand.map((v) => v * xScale);
+  const coilW = binned.coil.map((v) => v * xScale);
+  const zeroes = new Array<number>(bins).fill(0);
+  const helixOffsets = zeroes;
+  const strandOffsets = helixW;
+  const coilOffsets = helixW.map((h, i) => h + strandW[i]);
+
+  for (const side of [-1, 1] as const) {
+    // Coil — drawn first as a faint outer envelope.
+    const coilPath = document.createElementNS(SVG_NS, 'path');
+    coilPath.setAttribute('d', halfViolinPath(coilW, coilOffsets, side, binCentreY));
+    coilPath.setAttribute('fill', COLOURS.coil);
+    coilPath.setAttribute('opacity', '0.35');
+    plot.appendChild(coilPath);
+
+    // Strand.
+    const strandPath = document.createElementNS(SVG_NS, 'path');
+    strandPath.setAttribute('d', halfViolinPath(strandW, strandOffsets, side, binCentreY));
+    strandPath.setAttribute('fill', COLOURS.strand);
+    plot.appendChild(strandPath);
+
+    // Helix — innermost so the colour reads as "blue body" for helical bundles.
+    const helixPath = document.createElementNS(SVG_NS, 'path');
+    helixPath.setAttribute('d', halfViolinPath(helixW, helixOffsets, side, binCentreY));
+    helixPath.setAttribute('fill', COLOURS.helix);
+    plot.appendChild(helixPath);
   }
+
+  // Subtle outline around the total density envelope to make small violins
+  // (soluble chains) easier to see.
+  const totalW = binned.total.map((v) => v * xScale);
+  const outlinePath = document.createElementNS(SVG_NS, 'path');
+  outlinePath.setAttribute(
+    'd',
+    halfViolinPath(totalW, zeroes, 1, binCentreY) +
+      ' ' +
+      halfViolinPath(totalW, zeroes, -1, binCentreY),
+  );
+  outlinePath.setAttribute('fill', 'none');
+  outlinePath.setAttribute('stroke', '#5b6f8a');
+  outlinePath.setAttribute('stroke-width', '0.8');
+  outlinePath.setAttribute('stroke-linejoin', 'round');
+  plot.appendChild(outlinePath);
 
   return svg;
 }
