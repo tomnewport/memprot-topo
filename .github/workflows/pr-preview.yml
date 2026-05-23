@@ -18,14 +18,22 @@ jobs:
       - run: npm ci
       - run: npm run prebuild:demo
       - run: npm run build:demo
-      - uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: ./dist-demo
-          destination_dir: pr-${{ github.event.pull_request.number }}
-          keep_files: true
-          commit_message: 'deploy: PR #${{ github.event.pull_request.number }} preview [skip ci]'
+      - name: Deploy preview to gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages
+          git checkout gh-pages
+          PR_DIR="pr-${{ github.event.pull_request.number }}"
+          rm -rf "$PR_DIR"
+          cp -r dist-demo "$PR_DIR"
+          git add "$PR_DIR"
+          if git diff --staged --quiet; then
+            echo "No changes to deploy"
+          else
+            git commit -m "deploy: PR #${{ github.event.pull_request.number }} preview [skip ci]"
+            git push origin gh-pages
+          fi
       - uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: pr-preview
