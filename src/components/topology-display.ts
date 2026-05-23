@@ -77,6 +77,7 @@ const STYLES = `
   .violin-label .residues { color: #777; font-size: 0.7rem; }
   .svg-scroll {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     background: #fff;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
@@ -84,7 +85,6 @@ const STYLES = `
   svg {
     display: block;
     max-width: none;
-    height: auto;
   }
   .placeholder { font-style: italic; color: #888; }
 `;

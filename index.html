@@ -17,6 +17,7 @@
         background: #f8f9fa;
         color: #212529;
         line-height: 1.5;
+        overflow-x: hidden;
       }
 
       header {
@@ -78,6 +79,18 @@
 
       footer a:hover {
         text-decoration: underline;
+      }
+
+      @media (max-width: 640px) {
+        header {
+          padding: 1rem;
+        }
+        main {
+          padding: 1rem;
+        }
+        section {
+          padding: 0.75rem;
+        }
       }
     </style>
     <script type="module" src="/src/demo.ts"></script>
