@@ -264,6 +264,23 @@ export class TopologyDisplay extends HTMLElement {
     titleEl.textContent = this._data.pdbId;
     region.appendChild(titleEl);
 
+    // Defensive: external callers may pass chains without coordinates (e.g.
+    // older JSON payloads). Treat missing calphas as an empty array so the
+    // component renders an empty topology rather than throwing.
+    for (const chain of this._data.chains) {
+      if (!Array.isArray(chain.calphas)) chain.calphas = [];
+    }
+
+    const allEmpty = this._data.chains.every((c) => c.calphas.length === 0);
+    if (allEmpty) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder';
+      placeholder.textContent = 'No Cα coordinates available for this protein.';
+      region.appendChild(placeholder);
+      this._contentEl.appendChild(region);
+      return;
+    }
+
     // Pre-compute the max arc length across chains so all chains in the same
     // protein render at the same horizontal scale.
     const arcMaxByChain = this._data.chains.map((c) => {
