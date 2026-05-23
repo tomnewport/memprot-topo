@@ -14,6 +14,7 @@ const STYLES = `
     display: block;
     font-family: sans-serif;
     padding: 0.5rem;
+    max-width: 100%;
   }
   .protein-id {
     font-size: 1.1rem;
@@ -92,6 +93,8 @@ const STYLES = `
   svg {
     display: block;
     max-width: none;
+    /* no height: auto — inside overflow-x:auto containers it causes the browser
+       to compute height from container width, producing a huge whitespace gap */
   }
   .placeholder { font-style: italic; color: #888; }
 `;
@@ -515,17 +518,19 @@ function buildChainLabels(chains: ChainData[]): Map<string, ChainLabel> {
     groups.set(c.residueCount, g);
   }
   const labels = new Map<string, ChainLabel>();
-  for (const c of chains) {
-    const g = groups.get(c.residueCount)!;
-    if (g.length > 1) {
-      const roman = toRoman(g.indexOf(c) + 1);
-      labels.set(c.chainId, {
-        base: g[0].chainId,
-        suffix: roman,
-        text: `${g[0].chainId}(${roman})`,
-      });
-    } else {
-      labels.set(c.chainId, { base: c.chainId, suffix: null, text: c.chainId });
+  for (const group of groups.values()) {
+    for (let i = 0; i < group.length; i++) {
+      const c = group[i];
+      if (group.length > 1) {
+        const roman = toRoman(i + 1);
+        labels.set(c.chainId, {
+          base: group[0].chainId,
+          suffix: roman,
+          text: `${group[0].chainId}(${roman})`,
+        });
+      } else {
+        labels.set(c.chainId, { base: c.chainId, suffix: null, text: c.chainId });
+      }
     }
   }
   return labels;
@@ -544,15 +549,13 @@ function chainLabelNode(lbl: ChainLabel): HTMLSpanElement {
 
 function renderChainPicker(
   chains: ChainData[],
+  chainLabels: Map<string, ChainLabel>,
   selectedId: string,
   onSelect: (chainId: string) => void,
 ): HTMLDivElement {
   const container = document.createElement('div');
   container.className = 'chain-picker';
   container.setAttribute('role', 'group');
-  container.setAttribute('aria-label', 'Chain selector');
-
-  const chainLabels = buildChainLabels(chains);
 
   let zMin = Infinity;
   let zMax = -Infinity;
@@ -598,9 +601,12 @@ function renderChainPicker(
   return container;
 }
 
+let _instanceCounter = 0;
+
 export class TopologyDisplay extends HTMLElement {
   static observedAttributes = ['protein-data'];
 
+  private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
   private _selectedChainId: string | null = null;
   private _styleEl: HTMLStyleElement;
@@ -689,20 +695,24 @@ export class TopologyDisplay extends HTMLElement {
         chainsWithCoords.find((c) => c.chainId === this._selectedChainId)?.chainId) ||
       defaultId;
 
+    const displayLabels = buildChainLabels(chainsWithCoords);
+
     // Chain picker — only shown when there are multiple chains to choose between.
     // A single-chain protein has nothing to pick, and the violin would look like
     // a standalone protein figure rather than a UI control.
     if (chainsWithCoords.length > 1 && selectedId) {
+      const labelId = `chain-picker-label-${this._instanceId}`;
       const pickerLabel = document.createElement('div');
       pickerLabel.className = 'chain-picker-label';
+      pickerLabel.id = labelId;
       pickerLabel.textContent = 'Select chain';
       region.appendChild(pickerLabel);
-      region.appendChild(
-        renderChainPicker(chainsWithCoords, selectedId, (chainId) => {
-          this._selectedChainId = chainId;
-          this.render();
-        }),
-      );
+      const picker = renderChainPicker(chainsWithCoords, displayLabels, selectedId, (chainId) => {
+        this._selectedChainId = chainId;
+        this.render();
+      });
+      picker.setAttribute('aria-labelledby', labelId);
+      region.appendChild(picker);
     }
 
     const selectedChain =
@@ -713,8 +723,11 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
 
-    const displayLabels = buildChainLabels(chainsWithCoords);
-    const selectedLabel = displayLabels.get(selectedChain.chainId)!;
+    const selectedLabel = displayLabels.get(selectedChain.chainId) ?? {
+      base: selectedChain.chainId,
+      suffix: null,
+      text: selectedChain.chainId,
+    };
 
     // Note when the user is viewing a non-TM chain — useful for double-checking
     // why a chain doesn't look "right" in the unrolled view.
