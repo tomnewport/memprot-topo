@@ -480,6 +480,60 @@ function renderViolin(
   return svg;
 }
 
+function toRoman(n: number): string {
+  const vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+  const syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
+  let out = '';
+  for (let i = 0; i < vals.length; i++) while (n >= vals[i]) { out += syms[i]; n -= vals[i]; }
+  return out;
+}
+
+interface ChainLabel {
+  /** The protomer letter shown as the base, e.g. "A" */
+  base: string;
+  /** Roman numeral suffix when multiple chains share the same residue count, else null */
+  suffix: string | null;
+  /** Plain-text representation for aria labels etc., e.g. "A(II)" */
+  text: string;
+}
+
+/**
+ * When chains share the same residue count they are almost certainly identical
+ * monomers. Rather than showing arbitrary letters (A, B, C for a trimer) we
+ * label them A(I), A(II), A(III) — the base letter is that of the first chain
+ * in the group, and the suffix is a Roman numeral copy index.
+ */
+function buildChainLabels(chains: ChainData[]): Map<string, ChainLabel> {
+  const groups = new Map<number, ChainData[]>();
+  for (const c of chains) {
+    const g = groups.get(c.residueCount) ?? [];
+    g.push(c);
+    groups.set(c.residueCount, g);
+  }
+  const labels = new Map<string, ChainLabel>();
+  for (const c of chains) {
+    const g = groups.get(c.residueCount)!;
+    if (g.length > 1) {
+      const roman = toRoman(g.indexOf(c) + 1);
+      labels.set(c.chainId, { base: g[0].chainId, suffix: roman, text: `${g[0].chainId}(${roman})` });
+    } else {
+      labels.set(c.chainId, { base: c.chainId, suffix: null, text: c.chainId });
+    }
+  }
+  return labels;
+}
+
+function chainLabelNode(lbl: ChainLabel): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.textContent = lbl.base;
+  if (lbl.suffix) {
+    const sub = document.createElement('sub');
+    sub.textContent = lbl.suffix;
+    span.appendChild(sub);
+  }
+  return span;
+}
+
 function renderChainPicker(
   chains: ChainData[],
   selectedId: string,
@@ -489,6 +543,8 @@ function renderChainPicker(
   container.className = 'chain-picker';
   container.setAttribute('role', 'group');
   container.setAttribute('aria-label', 'Chain selector');
+
+  const chainLabels = buildChainLabels(chains);
 
   let zMin = Infinity;
   let zMax = -Infinity;
@@ -510,24 +566,24 @@ function renderChainPicker(
 
   for (let i = 0; i < chains.length; i++) {
     const chain = chains[i];
+    const lbl = chainLabels.get(chain.chainId)!;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'chain-violin' + (chain.chainId === selectedId ? ' selected' : '');
     button.setAttribute('aria-pressed', chain.chainId === selectedId ? 'true' : 'false');
     button.setAttribute(
       'aria-label',
-      `Select chain ${chain.chainId} (${chain.residueCount} residues)`,
+      `Select chain ${lbl.text} (${chain.residueCount} residues)`,
     );
     button.appendChild(renderViolin(binData[i], maxBinTotal, zMin, zMax));
 
     const label = document.createElement('div');
     label.className = 'violin-label';
-    const id = document.createElement('span');
-    id.textContent = chain.chainId;
+    const idNode = chainLabelNode(lbl);
     const residues = document.createElement('span');
     residues.className = 'residues';
     residues.textContent = `${chain.residueCount} aa`;
-    label.append(id, residues);
+    label.append(idNode, residues);
     button.appendChild(label);
 
     button.addEventListener('click', () => onSelect(chain.chainId));
@@ -652,6 +708,9 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
 
+    const displayLabels = buildChainLabels(chainsWithCoords);
+    const selectedLabel = displayLabels.get(selectedChain.chainId)!;
+
     // Note when the user is viewing a non-TM chain — useful for double-checking
     // why a chain doesn't look "right" in the unrolled view.
     if (
@@ -661,7 +720,7 @@ export class TopologyDisplay extends HTMLElement {
     ) {
       const note = document.createElement('div');
       note.className = 'chain-note';
-      note.textContent = `Chain ${selectedChain.chainId} does not appear to span the membrane.`;
+      note.textContent = `Chain ${selectedLabel.text} does not appear to span the membrane.`;
       region.appendChild(note);
     } else if (autoPick.fellBackToLargest) {
       const note = document.createElement('div');
@@ -677,7 +736,11 @@ export class TopologyDisplay extends HTMLElement {
     label.className = 'chain-label';
     const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
     const strands = selectedChain.segments.filter((s) => s.type === 'strand').length;
-    label.textContent = `Chain ${selectedChain.chainId} · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`;
+    label.append(
+      'Chain ',
+      chainLabelNode(selectedLabel),
+      ` · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`,
+    );
     block.appendChild(label);
 
     const scroll = document.createElement('div');
