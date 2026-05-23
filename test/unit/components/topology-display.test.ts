@@ -81,4 +81,43 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     document.body.appendChild(el);
     expect(el.shadowRoot!.querySelector('.placeholder')).not.toBeNull();
   });
+
+  it('selects only the transmembrane chain when given a fusion-partner multi-chain protein', () => {
+    const tm = tmHelixProtein().chains[0];
+    const solubleChain = {
+      chainId: 'S',
+      residueCount: 50,
+      segments: [],
+      calphas: Array.from({ length: 50 }, (_, i) => ({
+        resSeq: i + 1,
+        iCode: '',
+        x: i,
+        y: 0,
+        z: 35,
+      })),
+    };
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'fusion', chains: [tm, solubleChain] };
+
+    const labels = Array.from(el.shadowRoot!.querySelectorAll('.chain-label')).map(
+      (n) => n.textContent,
+    );
+    expect(labels).toHaveLength(1);
+    expect(labels[0]).toContain('Chain A');
+    const note = el.shadowRoot!.querySelector('.chain-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('S');
+  });
+
+  it('shows one representative chain for a homo-oligomer', () => {
+    const tm = tmHelixProtein().chains[0];
+    const chainB = { ...tm, chainId: 'B' };
+    const chainC = { ...tm, chainId: 'C' };
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'trimer', chains: [tm, chainB, chainC] };
+    const labels = el.shadowRoot!.querySelectorAll('.chain-label');
+    expect(labels).toHaveLength(1);
+  });
 });

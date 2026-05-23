@@ -5,6 +5,7 @@ import type {
   SecondaryStructureType,
 } from '../types.js';
 import { unrollChain, type UnrolledSegment, type UnrolledPoint } from '../unroll/index.js';
+import { selectTransmembraneChains } from '../orientation/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -26,6 +27,12 @@ const STYLES = `
     font-size: 0.85rem;
     color: #444;
     margin-bottom: 0.25rem;
+  }
+  .chain-note {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-style: italic;
+    margin-top: 0.25rem;
   }
   .svg-scroll {
     overflow-x: auto;
@@ -290,24 +297,43 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
 
-    // Pre-compute the max arc length across chains so all chains in the same
-    // protein render at the same horizontal scale.
-    const arcMaxByChain = this._data.chains.map((c) => {
-      if (c.calphas.length < 2) return 0;
-      let arc = 0;
-      for (let i = 1; i < c.calphas.length; i++) {
-        const a = c.calphas[i - 1];
-        const b = c.calphas[i];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        arc += Math.sqrt(dx * dx + dy * dy);
-      }
-      return arc;
-    });
-    const arcMax = Math.max(0, ...arcMaxByChain);
+    // Auto-select the representative transmembrane chain. For homo-oligomers
+    // (OmpF/OmpC trimers, α-hemolysin heptamer) this avoids rendering the same
+    // diagram 3–7 times; for proteins with non-TM fusion partners (e.g. 5G53's
+    // engineered apocytochrome) it excludes the soluble chain that has no
+    // meaningful unrolled topology.
+    const { selected, rejected, fellBackToLargest } = selectTransmembraneChains(
+      this._data.chains.filter((c) => c.calphas.length > 0),
+      { max: 1 },
+    );
 
-    for (const chain of this._data.chains) {
-      if (chain.calphas.length === 0) continue;
+    if (rejected.length > 0) {
+      const note = document.createElement('div');
+      note.className = 'chain-note';
+      const rejectedIds = rejected.map((c) => c.chainId).join(', ');
+      note.textContent = fellBackToLargest
+        ? `No chain crosses the bilayer; showing largest chain. (other chains: ${rejectedIds})`
+        : `Showing representative transmembrane chain. (other chains hidden: ${rejectedIds})`;
+      region.appendChild(note);
+    }
+
+    const arcMax = Math.max(
+      0,
+      ...selected.map((c) => {
+        if (c.calphas.length < 2) return 0;
+        let arc = 0;
+        for (let i = 1; i < c.calphas.length; i++) {
+          const a = c.calphas[i - 1];
+          const b = c.calphas[i];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          arc += Math.sqrt(dx * dx + dy * dy);
+        }
+        return arc;
+      }),
+    );
+
+    for (const chain of selected) {
       const block = document.createElement('div');
       block.className = 'chain-block';
 
