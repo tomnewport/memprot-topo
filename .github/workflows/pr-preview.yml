@@ -23,7 +23,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin gh-pages
-          git checkout gh-pages
+          # prebuild:demo writes src/demo-data.ts (a tracked stub); discard that
+          # so checkout doesn't refuse due to uncommitted changes.
+          git checkout --force gh-pages
           PR_DIR="pr-${{ github.event.pull_request.number }}"
           rm -rf "$PR_DIR"
           cp -r dist-demo "$PR_DIR"
