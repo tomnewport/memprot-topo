@@ -34,6 +34,47 @@ const STYLES = `
     font-style: italic;
     margin-top: 0.25rem;
   }
+  .chain-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: #fafafa;
+    border-radius: 4px;
+    border: 1px solid #efefef;
+  }
+  .chain-violin {
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    padding: 0.25rem 0.4rem 0.3rem;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: inherit;
+  }
+  .chain-violin:hover { background: #eef3f8; }
+  .chain-violin.selected {
+    background: #e6f2ff;
+    border-color: #1f77b4;
+  }
+  .chain-violin:focus-visible {
+    outline: 2px solid #1f77b4;
+    outline-offset: 1px;
+  }
+  .violin-label {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #333;
+    margin-top: 0.2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.1;
+  }
+  .violin-label .residues { color: #777; font-size: 0.7rem; }
   .svg-scroll {
     overflow-x: auto;
     background: #fff;
@@ -217,10 +258,198 @@ function drawSegment(
   }
 }
 
+const VIOLIN = {
+  width: 64,
+  height: 180,
+  margin: { top: 6, right: 6, bottom: 6, left: 6 },
+  /** Minimum z half-range shown (Å); auto-expands to fit data. */
+  zRangeMin: 30,
+  /** Number of z-bins for the histogram. */
+  bins: 28,
+};
+
+interface ChainSsBins {
+  helix: number[];
+  strand: number[];
+  coil: number[];
+  maxBinTotal: number;
+}
+
+function binChainBySs(chain: ChainData, bins: number, zMin: number, zMax: number): ChainSsBins {
+  const helix = new Array<number>(bins).fill(0);
+  const strand = new Array<number>(bins).fill(0);
+  const coil = new Array<number>(bins).fill(0);
+  const range = zMax - zMin;
+  if (range > 0) {
+    for (const ca of chain.calphas) {
+      if (ca.z < zMin || ca.z > zMax) continue;
+      const t = (ca.z - zMin) / range;
+      const b = Math.min(bins - 1, Math.max(0, Math.floor(t * bins)));
+      const ss = ssTypeAt(chain.segments, ca.resSeq);
+      if (ss === 'helix') helix[b]++;
+      else if (ss === 'strand') strand[b]++;
+      else coil[b]++;
+    }
+  }
+  let maxBinTotal = 0;
+  for (let i = 0; i < bins; i++) {
+    maxBinTotal = Math.max(maxBinTotal, helix[i] + strand[i] + coil[i]);
+  }
+  return { helix, strand, coil, maxBinTotal };
+}
+
+function renderViolin(
+  binned: ChainSsBins,
+  maxBinTotal: number,
+  zMin: number,
+  zMax: number,
+): SVGSVGElement {
+  const { width: W, height: H, margin, bins, zRangeMin } = VIOLIN;
+  void zRangeMin;
+  const plotW = W - margin.left - margin.right;
+  const plotH = H - margin.top - margin.bottom;
+
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('xmlns', SVG_NS);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', `${W}`);
+  svg.setAttribute('height', `${H}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const yScale = plotH / (zMax - zMin);
+  const xScale = maxBinTotal > 0 ? plotW / 2 / maxBinTotal : 0;
+  const cx = margin.left + plotW / 2;
+  const cy = margin.top + plotH / 2;
+  const binH = plotH / bins;
+
+  const plot = document.createElementNS(SVG_NS, 'g');
+  plot.setAttribute('transform', `translate(${cx}, ${cy})`);
+  svg.appendChild(plot);
+
+  // Membrane band — a faint grey background showing the bilayer slab so
+  // membrane-spanning chains are obvious vs. soluble ones.
+  const slab = document.createElementNS(SVG_NS, 'rect');
+  slab.setAttribute('x', `${-plotW / 2}`);
+  slab.setAttribute('y', `${-PLOT.membraneHalf * yScale}`);
+  slab.setAttribute('width', `${plotW}`);
+  slab.setAttribute('height', `${PLOT.membraneHalf * 2 * yScale}`);
+  slab.setAttribute('fill', '#eaeaea');
+  plot.appendChild(slab);
+
+  // Midplane.
+  const mid = document.createElementNS(SVG_NS, 'line');
+  mid.setAttribute('x1', `${-plotW / 2}`);
+  mid.setAttribute('x2', `${plotW / 2}`);
+  mid.setAttribute('y1', '0');
+  mid.setAttribute('y2', '0');
+  mid.setAttribute('stroke', '#bdbdbd');
+  mid.setAttribute('stroke-dasharray', '2 3');
+  plot.appendChild(mid);
+
+  for (let b = 0; b < bins; b++) {
+    const zCenter = zMin + ((b + 0.5) * (zMax - zMin)) / bins;
+    const yTop = -zCenter * yScale - binH / 2;
+    const helixW = binned.helix[b] * xScale;
+    const strandW = binned.strand[b] * xScale;
+    const coilW = binned.coil[b] * xScale;
+    const coilHalf = coilW / 2;
+
+    if (helixW > 0) {
+      const r = document.createElementNS(SVG_NS, 'rect');
+      r.setAttribute('x', `${-coilHalf - helixW}`);
+      r.setAttribute('y', `${yTop}`);
+      r.setAttribute('width', `${helixW}`);
+      r.setAttribute('height', `${binH}`);
+      r.setAttribute('fill', COLOURS.helix);
+      plot.appendChild(r);
+    }
+    if (strandW > 0) {
+      const r = document.createElementNS(SVG_NS, 'rect');
+      r.setAttribute('x', `${coilHalf}`);
+      r.setAttribute('y', `${yTop}`);
+      r.setAttribute('width', `${strandW}`);
+      r.setAttribute('height', `${binH}`);
+      r.setAttribute('fill', COLOURS.strand);
+      plot.appendChild(r);
+    }
+    if (coilW > 0) {
+      const r = document.createElementNS(SVG_NS, 'rect');
+      r.setAttribute('x', `${-coilHalf}`);
+      r.setAttribute('y', `${yTop}`);
+      r.setAttribute('width', `${coilW}`);
+      r.setAttribute('height', `${binH}`);
+      r.setAttribute('fill', COLOURS.coil);
+      r.setAttribute('opacity', '0.4');
+      plot.appendChild(r);
+    }
+  }
+
+  return svg;
+}
+
+function renderChainPicker(
+  chains: ChainData[],
+  selectedId: string,
+  onSelect: (chainId: string) => void,
+): HTMLDivElement {
+  const container = document.createElement('div');
+  container.className = 'chain-picker';
+  container.setAttribute('role', 'group');
+  container.setAttribute('aria-label', 'Chain selector');
+
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (const chain of chains) {
+    for (const ca of chain.calphas) {
+      if (ca.z < zMin) zMin = ca.z;
+      if (ca.z > zMax) zMax = ca.z;
+    }
+  }
+  if (!Number.isFinite(zMin)) {
+    zMin = -VIOLIN.zRangeMin;
+    zMax = VIOLIN.zRangeMin;
+  }
+  zMin = Math.min(zMin, -VIOLIN.zRangeMin);
+  zMax = Math.max(zMax, VIOLIN.zRangeMin);
+
+  const binData = chains.map((c) => binChainBySs(c, VIOLIN.bins, zMin, zMax));
+  const maxBinTotal = Math.max(0, ...binData.map((b) => b.maxBinTotal));
+
+  for (let i = 0; i < chains.length; i++) {
+    const chain = chains[i];
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chain-violin' + (chain.chainId === selectedId ? ' selected' : '');
+    button.setAttribute('aria-pressed', chain.chainId === selectedId ? 'true' : 'false');
+    button.setAttribute(
+      'aria-label',
+      `Select chain ${chain.chainId} (${chain.residueCount} residues)`,
+    );
+    button.appendChild(renderViolin(binData[i], maxBinTotal, zMin, zMax));
+
+    const label = document.createElement('div');
+    label.className = 'violin-label';
+    const id = document.createElement('span');
+    id.textContent = chain.chainId;
+    const residues = document.createElement('span');
+    residues.className = 'residues';
+    residues.textContent = `${chain.residueCount} aa`;
+    label.append(id, residues);
+    button.appendChild(label);
+
+    button.addEventListener('click', () => onSelect(chain.chainId));
+    container.appendChild(button);
+  }
+
+  return container;
+}
+
 export class TopologyDisplay extends HTMLElement {
   static observedAttributes = ['protein-data'];
 
   private _data: ProteinData | null = null;
+  private _selectedChainId: string | null = null;
   private _styleEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
 
@@ -239,6 +468,7 @@ export class TopologyDisplay extends HTMLElement {
 
   set proteinData(value: ProteinData | null) {
     this._data = value;
+    this._selectedChainId = null;
     this.render();
   }
 
@@ -253,6 +483,7 @@ export class TopologyDisplay extends HTMLElement {
         this._data = null;
       }
     }
+    this._selectedChainId = null;
     this.render();
   }
 
@@ -297,59 +528,81 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
 
-    // Auto-select the representative transmembrane chain. For homo-oligomers
-    // (OmpF/OmpC trimers, α-hemolysin heptamer) this avoids rendering the same
-    // diagram 3–7 times; for proteins with non-TM fusion partners (e.g. 5G53's
-    // engineered apocytochrome) it excludes the soluble chain that has no
-    // meaningful unrolled topology.
-    const { selected, rejected, fellBackToLargest } = selectTransmembraneChains(
-      this._data.chains.filter((c) => c.calphas.length > 0),
-      { max: 1 },
-    );
+    const chainsWithCoords = this._data.chains.filter((c) => c.calphas.length > 0);
 
-    if (rejected.length > 0) {
+    // Pick a default chain: largest transmembrane chain, falling back to the
+    // largest chain overall if nothing crosses the bilayer.
+    const autoPick = selectTransmembraneChains(chainsWithCoords, { max: 1 });
+    const defaultId = autoPick.selected[0]?.chainId ?? chainsWithCoords[0]?.chainId ?? null;
+    const selectedId =
+      (this._selectedChainId &&
+        chainsWithCoords.find((c) => c.chainId === this._selectedChainId)?.chainId) ||
+      defaultId;
+
+    // Chain picker — one violin per chain (sanity check that the selected one
+    // actually spans the membrane).
+    if (chainsWithCoords.length > 0 && selectedId) {
+      region.appendChild(
+        renderChainPicker(chainsWithCoords, selectedId, (chainId) => {
+          this._selectedChainId = chainId;
+          this.render();
+        }),
+      );
+    }
+
+    const selectedChain =
+      chainsWithCoords.find((c) => c.chainId === selectedId) ?? chainsWithCoords[0];
+
+    if (!selectedChain) {
+      this._contentEl.appendChild(region);
+      return;
+    }
+
+    // Note when the user is viewing a non-TM chain — useful for double-checking
+    // why a chain doesn't look "right" in the unrolled view.
+    if (
+      !autoPick.fellBackToLargest &&
+      autoPick.selected[0] &&
+      selectedChain.chainId !== autoPick.selected[0].chainId
+    ) {
       const note = document.createElement('div');
       note.className = 'chain-note';
-      const rejectedIds = rejected.map((c) => c.chainId).join(', ');
-      note.textContent = fellBackToLargest
-        ? `No chain crosses the bilayer; showing largest chain. (other chains: ${rejectedIds})`
-        : `Showing representative transmembrane chain. (other chains hidden: ${rejectedIds})`;
+      note.textContent = `Chain ${selectedChain.chainId} does not appear to span the membrane.`;
+      region.appendChild(note);
+    } else if (autoPick.fellBackToLargest) {
+      const note = document.createElement('div');
+      note.className = 'chain-note';
+      note.textContent = 'No chain in this protein crosses the bilayer.';
       region.appendChild(note);
     }
 
-    const arcMax = Math.max(
-      0,
-      ...selected.map((c) => {
-        if (c.calphas.length < 2) return 0;
-        let arc = 0;
-        for (let i = 1; i < c.calphas.length; i++) {
-          const a = c.calphas[i - 1];
-          const b = c.calphas[i];
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          arc += Math.sqrt(dx * dx + dy * dy);
-        }
-        return arc;
-      }),
-    );
-
-    for (const chain of selected) {
-      const block = document.createElement('div');
-      block.className = 'chain-block';
-
-      const label = document.createElement('div');
-      label.className = 'chain-label';
-      const helices = chain.segments.filter((s) => s.type === 'helix').length;
-      const strands = chain.segments.filter((s) => s.type === 'strand').length;
-      label.textContent = `Chain ${chain.chainId} · ${chain.residueCount} residues · ${helices} helices · ${strands} strands`;
-      block.appendChild(label);
-
-      const scroll = document.createElement('div');
-      scroll.className = 'svg-scroll';
-      scroll.appendChild(renderChainSvg(chain, arcMax));
-      block.appendChild(scroll);
-      region.appendChild(block);
+    // Arc length for the selected chain (used only by this single chain — kept
+    // here for parity with the previous shared-scale logic if we ever show
+    // multiple chains stacked).
+    let arcMax = 0;
+    for (let i = 1; i < selectedChain.calphas.length; i++) {
+      const a = selectedChain.calphas[i - 1];
+      const b = selectedChain.calphas[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      arcMax += Math.sqrt(dx * dx + dy * dy);
     }
+
+    const block = document.createElement('div');
+    block.className = 'chain-block';
+
+    const label = document.createElement('div');
+    label.className = 'chain-label';
+    const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
+    const strands = selectedChain.segments.filter((s) => s.type === 'strand').length;
+    label.textContent = `Chain ${selectedChain.chainId} · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`;
+    block.appendChild(label);
+
+    const scroll = document.createElement('div');
+    scroll.className = 'svg-scroll';
+    scroll.appendChild(renderChainSvg(selectedChain, arcMax));
+    block.appendChild(scroll);
+    region.appendChild(block);
 
     this._contentEl.appendChild(region);
   }

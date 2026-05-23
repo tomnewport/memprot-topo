@@ -48,7 +48,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
 
-    const svg = el.shadowRoot!.querySelector('svg');
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
     const paths = svg!.querySelectorAll('path');
     expect(paths.length).toBeGreaterThan(0);
@@ -60,20 +60,20 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
-    const rect = el.shadowRoot!.querySelector('rect');
+    const rect = el.shadowRoot!.querySelector('.svg-scroll svg rect');
     expect(rect).not.toBeNull();
     expect(rect!.getAttribute('y')).toBe('-15');
     expect(rect!.getAttribute('height')).toBe('30');
   });
 
-  it('does not render an SVG when chain has no Cα', () => {
+  it('does not render the main unrolled SVG when chain has no Cα', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = {
       pdbId: 'empty',
       chains: [{ chainId: 'A', residueCount: 0, segments: [], calphas: [] }],
     };
-    expect(el.shadowRoot!.querySelector('svg')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.svg-scroll')).toBeNull();
   });
 
   it('handles missing proteinData (placeholder text)', () => {
@@ -82,7 +82,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(el.shadowRoot!.querySelector('.placeholder')).not.toBeNull();
   });
 
-  it('selects only the transmembrane chain when given a fusion-partner multi-chain protein', () => {
+  it('renders a violin per chain in the picker and defaults selection to the TM chain', () => {
     const tm = tmHelixProtein().chains[0];
     const solubleChain = {
       chainId: 'S',
@@ -100,24 +100,64 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'fusion', chains: [tm, solubleChain] };
 
-    const labels = Array.from(el.shadowRoot!.querySelectorAll('.chain-label')).map(
+    const violins = el.shadowRoot!.querySelectorAll('.chain-violin');
+    expect(violins).toHaveLength(2);
+
+    const selected = el.shadowRoot!.querySelector('.chain-violin.selected');
+    expect(selected).not.toBeNull();
+    expect(selected!.getAttribute('aria-label')).toContain('chain A');
+
+    const mainLabels = Array.from(el.shadowRoot!.querySelectorAll('.chain-label')).map(
       (n) => n.textContent,
     );
-    expect(labels).toHaveLength(1);
-    expect(labels[0]).toContain('Chain A');
-    const note = el.shadowRoot!.querySelector('.chain-note');
-    expect(note).not.toBeNull();
-    expect(note!.textContent).toContain('S');
+    expect(mainLabels).toHaveLength(1);
+    expect(mainLabels[0]).toContain('Chain A');
   });
 
-  it('shows one representative chain for a homo-oligomer', () => {
+  it('switches the displayed chain when a different violin is clicked', () => {
     const tm = tmHelixProtein().chains[0];
-    const chainB = { ...tm, chainId: 'B' };
-    const chainC = { ...tm, chainId: 'C' };
+    const tmB = { ...tm, chainId: 'B' };
     const el = new TopologyDisplay();
     document.body.appendChild(el);
-    el.proteinData = { pdbId: 'trimer', chains: [tm, chainB, chainC] };
-    const labels = el.shadowRoot!.querySelectorAll('.chain-label');
-    expect(labels).toHaveLength(1);
+    el.proteinData = { pdbId: 'dimer', chains: [tm, tmB] };
+
+    const violinB = Array.from(
+      el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin'),
+    ).find((b) => b.getAttribute('aria-label')?.includes('chain B'));
+    expect(violinB).toBeDefined();
+    violinB!.click();
+
+    const mainLabel = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
+    expect(mainLabel).toContain('Chain B');
+    const selected = el.shadowRoot!.querySelector('.chain-violin.selected');
+    expect(selected!.getAttribute('aria-label')).toContain('chain B');
+  });
+
+  it('warns when the user views a chain that does not cross the bilayer', () => {
+    const tm = tmHelixProtein().chains[0];
+    const solubleChain = {
+      chainId: 'S',
+      residueCount: 50,
+      segments: [],
+      calphas: Array.from({ length: 50 }, (_, i) => ({
+        resSeq: i + 1,
+        iCode: '',
+        x: i,
+        y: 0,
+        z: 35,
+      })),
+    };
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'fusion', chains: [tm, solubleChain] };
+
+    const violinS = Array.from(
+      el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin'),
+    ).find((b) => b.getAttribute('aria-label')?.includes('chain S'));
+    violinS!.click();
+
+    const note = el.shadowRoot!.querySelector('.chain-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('does not appear to span the membrane');
   });
 });
