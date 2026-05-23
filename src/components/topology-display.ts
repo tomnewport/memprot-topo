@@ -75,6 +75,13 @@ const STYLES = `
     line-height: 1.1;
   }
   .violin-label .residues { color: #777; font-size: 0.7rem; }
+  .chain-picker-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+  }
   .svg-scroll {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -621,9 +628,14 @@ export class TopologyDisplay extends HTMLElement {
         chainsWithCoords.find((c) => c.chainId === this._selectedChainId)?.chainId) ||
       defaultId;
 
-    // Chain picker — one violin per chain (sanity check that the selected one
-    // actually spans the membrane).
-    if (chainsWithCoords.length > 0 && selectedId) {
+    // Chain picker — only shown when there are multiple chains to choose between.
+    // A single-chain protein has nothing to pick, and the violin would look like
+    // a standalone protein figure rather than a UI control.
+    if (chainsWithCoords.length > 1 && selectedId) {
+      const pickerLabel = document.createElement('div');
+      pickerLabel.className = 'chain-picker-label';
+      pickerLabel.textContent = 'Select chain';
+      region.appendChild(pickerLabel);
       region.appendChild(
         renderChainPicker(chainsWithCoords, selectedId, (chainId) => {
           this._selectedChainId = chainId;
