@@ -27,13 +27,16 @@ const STYLES = `
     color: #444;
     margin-bottom: 0.25rem;
   }
-  svg {
-    width: 100%;
-    height: auto;
+  .svg-scroll {
+    overflow-x: auto;
     background: #fff;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
+  }
+  svg {
     display: block;
+    max-width: none;
+    height: auto;
   }
   .placeholder { font-style: italic; color: #888; }
 `;
@@ -116,6 +119,12 @@ function renderChainSvg(chain: ChainData, totalArcMax: number): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('xmlns', SVG_NS);
   svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+  // Intrinsic pixel size matches the viewBox so 1 user unit = 1 device px by
+  // default. The host container can override with CSS, but most embeddings —
+  // gallery screenshots, PR comment images — should see the natural width so
+  // long chains (β-barrels) don't get compressed to fit a parent.
+  svg.setAttribute('width', `${svgWidth}`);
+  svg.setAttribute('height', `${svgHeight}`);
   svg.setAttribute('role', 'img');
   svg.setAttribute('aria-label', `Chain ${chain.chainId} membrane unrolling`);
 
@@ -309,7 +318,10 @@ export class TopologyDisplay extends HTMLElement {
       label.textContent = `Chain ${chain.chainId} · ${chain.residueCount} residues · ${helices} helices · ${strands} strands`;
       block.appendChild(label);
 
-      block.appendChild(renderChainSvg(chain, arcMax));
+      const scroll = document.createElement('div');
+      scroll.className = 'svg-scroll';
+      scroll.appendChild(renderChainSvg(chain, arcMax));
+      block.appendChild(scroll);
       region.appendChild(block);
     }
 

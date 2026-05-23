@@ -12,8 +12,34 @@
 const HELIX_RADIUS = 2.3;
 const HELIX_RES_PER_TURN = 3.6;
 const MEMBRANE_HALF = 18;
-const LOOP_LIFT = 22;
+const LOOP_LIFT = 6;
 const BARREL_TILT_DEG = 37;
+
+function tmResiduePosition(tm, posInTm, tmLen, { topology, ringRadius, centre, dir }) {
+  const u = posInTm / Math.max(1, tmLen - 1);
+  const zStart = dir === 'up' ? -MEMBRANE_HALF : MEMBRANE_HALF;
+  const zEnd = dir === 'up' ? MEMBRANE_HALF : -MEMBRANE_HALF;
+  const z = zStart + u * (zEnd - zStart);
+
+  if (topology === 'bundle') {
+    const theta = centre.theta + (posInTm * 2 * Math.PI) / HELIX_RES_PER_TURN;
+    return {
+      x: centre.x + HELIX_RADIUS * Math.cos(theta),
+      y: centre.y + HELIX_RADIUS * Math.sin(theta),
+      z,
+    };
+  }
+
+  // Strand on the barrel surface, tilted ~37° to z.
+  const tilt = (BARREL_TILT_DEG * Math.PI) / 180;
+  const tangentialShear = (Math.tan(tilt) * (2 * MEMBRANE_HALF)) / ringRadius;
+  const theta = centre.theta + (dir === 'up' ? 1 : -1) * tangentialShear * (u - 0.5);
+  return {
+    x: ringRadius * Math.cos(theta),
+    y: ringRadius * Math.sin(theta),
+    z,
+  };
+}
 
 /**
  * Generate synthetic Cα coordinates from a chain's secondary structure ranges.
@@ -21,6 +47,12 @@ const BARREL_TILT_DEG = 37;
  * topology: 'bundle' — TM helices arranged radially round a centre point.
  * topology: 'barrel' — strands placed on the surface of a cylinder, alternating
  *           up/down with a ~37° tilt to the membrane normal.
+ *
+ * Loop residues connect the *endpoints* of adjacent TM segments with a smooth
+ * cubic Hermite arc lifted to the cytoplasmic / extracellular side of the
+ * bilayer. Connecting endpoints (rather than segment centres) avoids the big
+ * Cα–Cα jumps at strand-loop boundaries that would otherwise be detected as
+ * chain breaks by the unroll algorithm.
  */
 function synthesiseCalphas(chain, { topology, ringRadius }) {
   const wantedType = topology === 'barrel' ? 'strand' : 'helix';
@@ -34,71 +66,70 @@ function synthesiseCalphas(chain, { topology, ringRadius }) {
   // Alternate up/down across the membrane along the chain.
   const directions = tmSegments.map((_, i) => (i % 2 === 0 ? 'up' : 'down'));
 
+  // Precompute every TM segment's first / last Cα so loops can connect to them.
+  const tmEndpoints = tmSegments.map((tm, idx) => {
+    const tmLen = tm.end - tm.start + 1;
+    const params = { topology, ringRadius, centre: centres[idx], dir: directions[idx] };
+    return {
+      first: tmResiduePosition(tm, 0, tmLen, params),
+      last: tmResiduePosition(tm, tmLen - 1, tmLen, params),
+    };
+  });
+
   const calphas = [];
   for (let resSeq = 1; resSeq <= chain.residueCount; resSeq++) {
     const tmIdx = tmSegments.findIndex((s) => resSeq >= s.start && resSeq <= s.end);
 
     if (tmIdx >= 0) {
       const tm = tmSegments[tmIdx];
-      const centre = centres[tmIdx];
-      const dir = directions[tmIdx];
-      const tmLen = Math.max(1, tm.end - tm.start);
-      const posInTm = resSeq - tm.start;
-      const u = posInTm / tmLen; // 0..1 along the segment
-      const zStart = dir === 'up' ? -MEMBRANE_HALF : MEMBRANE_HALF;
-      const zEnd = dir === 'up' ? MEMBRANE_HALF : -MEMBRANE_HALF;
-      const z = zStart + u * (zEnd - zStart);
-
-      if (topology === 'bundle') {
-        const theta = centre.theta + (posInTm * 2 * Math.PI) / HELIX_RES_PER_TURN;
-        calphas.push({
-          resSeq,
-          iCode: '',
-          x: centre.x + HELIX_RADIUS * Math.cos(theta),
-          y: centre.y + HELIX_RADIUS * Math.sin(theta),
-          z,
-        });
-      } else {
-        // Strand on the barrel surface, tilted ~37° to z.
-        const tilt = (BARREL_TILT_DEG * Math.PI) / 180;
-        const tangentialShear = (Math.tan(tilt) * (2 * MEMBRANE_HALF)) / ringRadius;
-        const theta = centre.theta + (dir === 'up' ? 1 : -1) * tangentialShear * (u - 0.5);
-        calphas.push({
-          resSeq,
-          iCode: '',
-          x: ringRadius * Math.cos(theta),
-          y: ringRadius * Math.sin(theta),
-          z,
-        });
-      }
+      const tmLen = tm.end - tm.start + 1;
+      const params = {
+        topology,
+        ringRadius,
+        centre: centres[tmIdx],
+        dir: directions[tmIdx],
+      };
+      const pos = tmResiduePosition(tm, resSeq - tm.start, tmLen, params);
+      calphas.push({ resSeq, iCode: '', ...pos });
       continue;
     }
 
-    // Loop residue: linearly interpolate between flanking TM ends, lifted to
-    // the appropriate side of the membrane.
+    // Loop residue.
     const prevTm = [...tmSegments].reverse().find((s) => s.end < resSeq) ?? null;
     const nextTm = tmSegments.find((s) => s.start > resSeq) ?? null;
-    const prevCentre = prevTm ? centres[tmSegments.indexOf(prevTm)] : null;
-    const nextCentre = nextTm ? centres[tmSegments.indexOf(nextTm)] : null;
-    const prevDir = prevTm ? directions[tmSegments.indexOf(prevTm)] : null;
+    const prevIdx = prevTm ? tmSegments.indexOf(prevTm) : -1;
+    const nextIdx = nextTm ? tmSegments.indexOf(nextTm) : -1;
 
-    const loopZ = prevDir === 'up' ? LOOP_LIFT : -LOOP_LIFT;
-
-    let x = 0;
-    let y = 0;
-    if (prevCentre && nextCentre) {
+    if (prevTm && nextTm) {
+      const start = tmEndpoints[prevIdx].last;
+      const end = tmEndpoints[nextIdx].first;
       const total = nextTm.start - prevTm.end;
       const t = (resSeq - prevTm.end) / total;
-      x = prevCentre.x + (nextCentre.x - prevCentre.x) * t;
-      y = prevCentre.y + (nextCentre.y - prevCentre.y) * t;
-    } else if (prevCentre) {
-      x = prevCentre.x;
-      y = prevCentre.y;
-    } else if (nextCentre) {
-      x = nextCentre.x;
-      y = nextCentre.y;
+      const liftSign = directions[prevIdx] === 'up' ? 1 : -1;
+      // Cubic-Hermite-ish loop: smooth start/end, peak away from the membrane
+      // at the midpoint. Plus a small tangential arc around the barrel/bundle
+      // so consecutive loops don't all overlap.
+      const sin = Math.sin(t * Math.PI);
+      const peak = sin * (LOOP_LIFT + (topology === 'barrel' ? 4 : 8));
+      const x = start.x + (end.x - start.x) * t;
+      const y = start.y + (end.y - start.y) * t;
+      const z = start.z + (end.z - start.z) * t + liftSign * peak;
+      calphas.push({ resSeq, iCode: '', x, y, z });
+      continue;
     }
-    calphas.push({ resSeq, iCode: '', x, y, z: loopZ });
+
+    // N- or C-terminal tail: extend from the nearest TM endpoint along the
+    // bilayer-adjacent side.
+    const anchor = prevTm ? tmEndpoints[prevIdx].last : tmEndpoints[nextIdx].first;
+    const lift = (prevTm ? directions[prevIdx] === 'up' : directions[nextIdx] === 'down') ? 1 : -1;
+    const tailIdx = prevTm ? resSeq - prevTm.end : nextTm.start - resSeq;
+    calphas.push({
+      resSeq,
+      iCode: '',
+      x: anchor.x + tailIdx * 1.2,
+      y: anchor.y,
+      z: anchor.z + lift * Math.min(LOOP_LIFT, tailIdx * 1.5),
+    });
   }
 
   return calphas;
