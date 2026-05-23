@@ -193,8 +193,8 @@ function drawStrandArrow(
   const px = -uy,
     py = ux; // perpendicular
 
-  const aLen = 10,
-    aHalf = 5; // arrowhead size in screen pixels
+  const aLen = 40,
+    aHalf = 20; // arrowhead size in screen pixels
 
   // Tip and wing vertices in relative screen space (origin = plot group origin).
   const tipSx = tip.arc * PLOT.arcPxPerA;
@@ -212,6 +212,10 @@ function drawStrandArrow(
   const arrow = document.createElementNS(SVG_NS, 'polygon');
   arrow.setAttribute('points', pts);
   arrow.setAttribute('fill', COLOURS.strand);
+  arrow.setAttribute('stroke', '#1a6b1a');
+  arrow.setAttribute('stroke-width', '1.5');
+  arrow.setAttribute('stroke-linejoin', 'round');
+  arrow.setAttribute('vector-effect', 'non-scaling-stroke');
   plot.appendChild(arrow);
 }
 
