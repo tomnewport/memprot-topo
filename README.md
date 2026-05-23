@@ -9,6 +9,7 @@
 [![codecov](https://codecov.io/gh/tomnewport/memprot-topo/branch/main/graph/badge.svg)](https://codecov.io/gh/tomnewport/memprot-topo)
 [![npm version](https://img.shields.io/npm/v/memprot2d.svg)](https://www.npmjs.com/package/memprot2d)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://tomnewport.github.io/memprot-topo/)
 
 MemProt2D is a standalone, browser-based SVG web component that renders 2D membrane protein topology diagrams from PDB/mmCIF structure files. It requires no server-side dependencies and produces publication-quality output.
 
