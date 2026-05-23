@@ -14,6 +14,7 @@ const STYLES = `
     display: block;
     font-family: sans-serif;
     padding: 0.5rem;
+    max-width: 100%;
   }
   .protein-id {
     font-size: 1.1rem;
@@ -75,8 +76,16 @@ const STYLES = `
     line-height: 1.1;
   }
   .violin-label .residues { color: #777; font-size: 0.7rem; }
+  .chain-picker-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+  }
   .svg-scroll {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     background: #fff;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
@@ -84,7 +93,8 @@ const STYLES = `
   svg {
     display: block;
     max-width: none;
-    height: auto;
+    /* no height: auto — inside overflow-x:auto containers it causes the browser
+       to compute height from container width, producing a huge whitespace gap */
   }
   .placeholder { font-style: italic; color: #888; }
 `;
@@ -473,15 +483,79 @@ function renderViolin(
   return svg;
 }
 
+function toRoman(n: number): string {
+  const vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+  const syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
+  let out = '';
+  for (let i = 0; i < vals.length; i++)
+    while (n >= vals[i]) {
+      out += syms[i];
+      n -= vals[i];
+    }
+  return out;
+}
+
+interface ChainLabel {
+  /** The protomer letter shown as the base, e.g. "A" */
+  base: string;
+  /** Roman numeral suffix when multiple chains share the same residue count, else null */
+  suffix: string | null;
+  /** Plain-text representation for aria labels etc., e.g. "A(II)" */
+  text: string;
+}
+
+/**
+ * When chains share the same residue count they are almost certainly identical
+ * monomers. Rather than showing arbitrary letters (A, B, C for a trimer) we
+ * label them A(I), A(II), A(III) — the base letter is that of the first chain
+ * in the group, and the suffix is a Roman numeral copy index.
+ */
+function buildChainLabels(chains: ChainData[]): Map<string, ChainLabel> {
+  const groups = new Map<number, ChainData[]>();
+  for (const c of chains) {
+    const g = groups.get(c.residueCount) ?? [];
+    g.push(c);
+    groups.set(c.residueCount, g);
+  }
+  const labels = new Map<string, ChainLabel>();
+  for (const group of groups.values()) {
+    for (let i = 0; i < group.length; i++) {
+      const c = group[i];
+      if (group.length > 1) {
+        const roman = toRoman(i + 1);
+        labels.set(c.chainId, {
+          base: group[0].chainId,
+          suffix: roman,
+          text: `${group[0].chainId}(${roman})`,
+        });
+      } else {
+        labels.set(c.chainId, { base: c.chainId, suffix: null, text: c.chainId });
+      }
+    }
+  }
+  return labels;
+}
+
+function chainLabelNode(lbl: ChainLabel): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.textContent = lbl.base;
+  if (lbl.suffix) {
+    const sub = document.createElement('sub');
+    sub.textContent = lbl.suffix;
+    span.appendChild(sub);
+  }
+  return span;
+}
+
 function renderChainPicker(
   chains: ChainData[],
+  chainLabels: Map<string, ChainLabel>,
   selectedId: string,
   onSelect: (chainId: string) => void,
 ): HTMLDivElement {
   const container = document.createElement('div');
   container.className = 'chain-picker';
   container.setAttribute('role', 'group');
-  container.setAttribute('aria-label', 'Chain selector');
 
   let zMin = Infinity;
   let zMax = -Infinity;
@@ -503,24 +577,21 @@ function renderChainPicker(
 
   for (let i = 0; i < chains.length; i++) {
     const chain = chains[i];
+    const lbl = chainLabels.get(chain.chainId)!;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'chain-violin' + (chain.chainId === selectedId ? ' selected' : '');
     button.setAttribute('aria-pressed', chain.chainId === selectedId ? 'true' : 'false');
-    button.setAttribute(
-      'aria-label',
-      `Select chain ${chain.chainId} (${chain.residueCount} residues)`,
-    );
+    button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
     button.appendChild(renderViolin(binData[i], maxBinTotal, zMin, zMax));
 
     const label = document.createElement('div');
     label.className = 'violin-label';
-    const id = document.createElement('span');
-    id.textContent = chain.chainId;
+    const idNode = chainLabelNode(lbl);
     const residues = document.createElement('span');
     residues.className = 'residues';
     residues.textContent = `${chain.residueCount} aa`;
-    label.append(id, residues);
+    label.append(idNode, residues);
     button.appendChild(label);
 
     button.addEventListener('click', () => onSelect(chain.chainId));
@@ -530,9 +601,12 @@ function renderChainPicker(
   return container;
 }
 
+let _instanceCounter = 0;
+
 export class TopologyDisplay extends HTMLElement {
   static observedAttributes = ['protein-data'];
 
+  private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
   private _selectedChainId: string | null = null;
   private _styleEl: HTMLStyleElement;
@@ -621,15 +695,24 @@ export class TopologyDisplay extends HTMLElement {
         chainsWithCoords.find((c) => c.chainId === this._selectedChainId)?.chainId) ||
       defaultId;
 
-    // Chain picker — one violin per chain (sanity check that the selected one
-    // actually spans the membrane).
-    if (chainsWithCoords.length > 0 && selectedId) {
-      region.appendChild(
-        renderChainPicker(chainsWithCoords, selectedId, (chainId) => {
-          this._selectedChainId = chainId;
-          this.render();
-        }),
-      );
+    const displayLabels = buildChainLabels(chainsWithCoords);
+
+    // Chain picker — only shown when there are multiple chains to choose between.
+    // A single-chain protein has nothing to pick, and the violin would look like
+    // a standalone protein figure rather than a UI control.
+    if (chainsWithCoords.length > 1 && selectedId) {
+      const labelId = `chain-picker-label-${this._instanceId}`;
+      const pickerLabel = document.createElement('div');
+      pickerLabel.className = 'chain-picker-label';
+      pickerLabel.id = labelId;
+      pickerLabel.textContent = 'Select chain';
+      region.appendChild(pickerLabel);
+      const picker = renderChainPicker(chainsWithCoords, displayLabels, selectedId, (chainId) => {
+        this._selectedChainId = chainId;
+        this.render();
+      });
+      picker.setAttribute('aria-labelledby', labelId);
+      region.appendChild(picker);
     }
 
     const selectedChain =
@@ -640,6 +723,12 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
 
+    const selectedLabel = displayLabels.get(selectedChain.chainId) ?? {
+      base: selectedChain.chainId,
+      suffix: null,
+      text: selectedChain.chainId,
+    };
+
     // Note when the user is viewing a non-TM chain — useful for double-checking
     // why a chain doesn't look "right" in the unrolled view.
     if (
@@ -649,7 +738,7 @@ export class TopologyDisplay extends HTMLElement {
     ) {
       const note = document.createElement('div');
       note.className = 'chain-note';
-      note.textContent = `Chain ${selectedChain.chainId} does not appear to span the membrane.`;
+      note.textContent = `Chain ${selectedLabel.text} does not appear to span the membrane.`;
       region.appendChild(note);
     } else if (autoPick.fellBackToLargest) {
       const note = document.createElement('div');
@@ -665,7 +754,11 @@ export class TopologyDisplay extends HTMLElement {
     label.className = 'chain-label';
     const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
     const strands = selectedChain.segments.filter((s) => s.type === 'strand').length;
-    label.textContent = `Chain ${selectedChain.chainId} · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`;
+    label.append(
+      'Chain ',
+      chainLabelNode(selectedLabel),
+      ` · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`,
+    );
     block.appendChild(label);
 
     const scroll = document.createElement('div');

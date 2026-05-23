@@ -121,16 +121,18 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'dimer', chains: [tm, tmB] };
 
-    const violinB = Array.from(
+    // Chains A and B share the same residue count → homomeric A(I)/A(II) labels.
+    const violinII = Array.from(
       el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin'),
-    ).find((b) => b.getAttribute('aria-label')?.includes('chain B'));
-    expect(violinB).toBeDefined();
-    violinB!.click();
+    ).find((b) => b.getAttribute('aria-label')?.includes('A(II)'));
+    expect(violinII).toBeDefined();
+    violinII!.click();
 
     const mainLabel = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
-    expect(mainLabel).toContain('Chain B');
+    // textContent flattens the DOM so <sub>II</sub> contributes just "II": "Chain AII · …"
+    expect(mainLabel).toContain('AII');
     const selected = el.shadowRoot!.querySelector('.chain-violin.selected');
-    expect(selected!.getAttribute('aria-label')).toContain('chain B');
+    expect(selected!.getAttribute('aria-label')).toContain('A(II)');
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {
