@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --pass-with-no-tests",
+    "prebuild:demo": "tsx scripts/prebuild-demo.ts",
     "build:demo": "vite build --config vite.config.demo.ts",
     "prepare": "husky"
   },
@@ -48,6 +49,7 @@
     "lint-staged": "^15.2.5",
     "prettier": "^3.3.0",
     "semantic-release": "^24.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11",
     "vitest": "^1.6.0"

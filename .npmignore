@@ -13,3 +13,5 @@ coverage/
 commitlint.config.cjs
 .releaserc.json
 index.html
+src/demo.ts
+src/demo-data.ts
