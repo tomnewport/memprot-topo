@@ -39,7 +39,9 @@ async function fetchWithRetry(url) {
       lastErr = err;
       if (attempt < MAX_ATTEMPTS) {
         const delay = 2 ** attempt * 1000;
-        process.stderr.write(`  attempt ${attempt} failed (${err.message}), retrying in ${delay / 1000}s…\n`);
+        process.stderr.write(
+          `  attempt ${attempt} failed (${err.message}), retrying in ${delay / 1000}s…\n`,
+        );
         await new Promise((r) => setTimeout(r, delay));
       }
     }
