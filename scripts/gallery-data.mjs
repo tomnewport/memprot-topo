@@ -178,7 +178,7 @@ function withCalphas(protein) {
   };
 }
 
-const PROTEINS = [
+export const PROTEINS = [
   {
     pdbId: '3k19',
     label: 'A2A Adenosine Receptor',

@@ -7,21 +7,12 @@
  * live Pages UI rather than the idealised synthetic coordinates.
  *
  * Run: node scripts/prebuild-gallery.mjs
- * Output: scripts/gallery-prebuilt-data.json (committed to repo)
+ * Output: scripts/gallery-prebuilt-data.json (gitignored, regenerated in CI)
  */
 
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
-// PDB IDs must match exactly what prebuild-demo.ts uses for the Pages demo so
-// the gallery CI renders the same structures as the live Pages UI.
-const PROTEINS = [
-  { pdbId: '3k19', label: 'A2A Adenosine Receptor' },
-  { pdbId: '5g53', label: 'A2A Adenosine Receptor with engineered G-protein' },
-  { pdbId: '2omf', label: 'OmpF Porin' },
-  { pdbId: '2j1n', label: 'OmpC Osmoporin' },
-  { pdbId: '7ahl', label: 'Alpha-Hemolysin' },
-];
+import { PROTEINS } from './gallery-data.mjs';
 
 // Some OPM PDB files omit HELIX/SHEET records (7ahl is one example). For those
 // proteins we fall back to hand-curated TM segment ranges so the topology
@@ -35,11 +26,30 @@ const FALLBACK_SEGMENTS = {
   ],
 };
 
+const MAX_ATTEMPTS = 3;
+
+async function fetchWithRetry(url) {
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < MAX_ATTEMPTS) {
+        const delay = 2 ** attempt * 1000;
+        process.stderr.write(`  attempt ${attempt} failed (${err.message}), retrying in ${delay / 1000}s…\n`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw new Error(`Failed to fetch ${url} after ${MAX_ATTEMPTS} attempts: ${lastErr.message}`);
+}
+
 async function fetchOpmPdb(pdbId) {
   const url = `https://opm-assets.storage.googleapis.com/pdb/${pdbId.toLowerCase()}.pdb`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
-  return res.text();
+  return fetchWithRetry(url);
 }
 
 /**
@@ -149,44 +159,48 @@ function parseStrands(pdbText) {
   return segments;
 }
 
+function buildProteinData(pdbId, pdbText) {
+  const chainMap = parseCalphas(pdbText);
+  const allHelices = parseHelices(pdbText);
+  const allStrands = parseStrands(pdbText);
+  const fallback = FALLBACK_SEGMENTS[pdbId] ?? null;
+
+  const chains = Array.from(chainMap.entries()).map(([chainId, acc]) => {
+    let segments = [
+      ...allHelices.filter((s) => s.chainId === chainId),
+      ...allStrands.filter((s) => s.chainId === chainId),
+    ]
+      .map(({ start, end, type }) => ({ start, end, type }))
+      .sort((a, b) => a.start - b.start);
+
+    if (segments.length === 0 && fallback) {
+      segments = fallback;
+    }
+
+    return {
+      chainId,
+      residueCount: acc.residues.size,
+      segments,
+      calphas: acc.calphas,
+    };
+  });
+
+  return { pdbId, chains };
+}
+
 async function main() {
-  const results = {};
+  const entries = await Promise.all(
+    PROTEINS.map(async ({ pdbId, label }) => {
+      process.stdout.write(`Fetching ${pdbId} (${label})… `);
+      const pdbText = await fetchOpmPdb(pdbId);
+      const data = buildProteinData(pdbId, pdbText);
+      const summary = data.chains.map((c) => `${c.chainId}:${c.residueCount}aa`).join(', ');
+      console.log(`done (${summary})`);
+      return [pdbId, data];
+    }),
+  );
 
-  for (const { pdbId, label } of PROTEINS) {
-    process.stdout.write(`Fetching ${pdbId} (${label})… `);
-    const pdbText = await fetchOpmPdb(pdbId);
-
-    const chainMap = parseCalphas(pdbText);
-    const allHelices = parseHelices(pdbText);
-    const allStrands = parseStrands(pdbText);
-
-    const fallback = FALLBACK_SEGMENTS[pdbId] ?? null;
-
-    const chains = Array.from(chainMap.entries()).map(([chainId, acc]) => {
-      let segments = [
-        ...allHelices.filter((s) => s.chainId === chainId),
-        ...allStrands.filter((s) => s.chainId === chainId),
-      ]
-        .map(({ start, end, type }) => ({ start, end, type }))
-        .sort((a, b) => a.start - b.start);
-
-      if (segments.length === 0 && fallback) {
-        segments = fallback;
-      }
-
-      return {
-        chainId,
-        residueCount: acc.residues.size,
-        segments,
-        calphas: acc.calphas,
-      };
-    });
-
-    results[pdbId] = { pdbId, chains };
-
-    const summary = chains.map((c) => `${c.chainId}:${c.residueCount}aa`).join(', ');
-    console.log(`done (${summary})`);
-  }
+  const results = Object.fromEntries(entries);
 
   const outPath = fileURLToPath(new URL('./gallery-prebuilt-data.json', import.meta.url));
   writeFileSync(outPath, JSON.stringify(results, null, 2));
