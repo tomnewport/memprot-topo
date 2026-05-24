@@ -117,10 +117,23 @@ const COLOURS = {
   membraneEdge: '#bdbdbd',
   zAxis: '#666',
   coil: '#666',
-  helix: '#1f77b4',
-  strand: '#2ca02c',
+  helix: '#6e8db6',
+  helixEdge: '#3e587a',
+  strand: '#6ea76d',
+  strandEdge: '#3d6d3d',
   break: '#aaa',
 };
+
+function isBetaBarrel(chain: ChainData): boolean {
+  let helixRes = 0,
+    strandRes = 0;
+  for (const seg of chain.segments) {
+    const len = seg.end - seg.start + 1;
+    if (seg.type === 'helix') helixRes += len;
+    else if (seg.type === 'strand') strandRes += len;
+  }
+  return strandRes > helixRes && strandRes > 0;
+}
 
 function ssTypeAt(segments: SecondaryStructureSegment[], resSeq: number): SecondaryStructureType {
   for (const s of segments) {
@@ -153,6 +166,162 @@ function runsBySs(
     endSample: residues[residues.length - 1].sampleIndex,
   });
   return runs;
+}
+
+const SS_BODY = {
+  /** Body half-width in screen pixels (full SS element width = 8 px). */
+  halfWidthPx: 4,
+  /** Arrow wing half-width — 1.5× the body so the wings flare visibly. */
+  arrowHalfWidthPx: 6,
+  /** Distance from the tip back to the arrow's base, in screen pixels. */
+  arrowLengthPx: 12,
+};
+
+const SS_STYLE: Record<'helix' | 'strand', { fill: string; stroke: string }> = {
+  helix: { fill: COLOURS.helix, stroke: COLOURS.helixEdge },
+  strand: { fill: COLOURS.strand, stroke: COLOURS.strandEdge },
+};
+
+/**
+ * Render a helix or strand run as one filled+stroked polygon: a uniform-width
+ * body with butt ends, terminated at the C-terminal end by an integrated
+ * arrowhead when `withArrow` is true. Sharing one outline (rather than
+ * overlaying a separate arrow on a stroked path) is what gives the element
+ * its single-shape appearance.
+ *
+ * Widths are specified in screen pixels and back-projected into user space so
+ * the polygon stays consistent under the plot group's non-uniform scale.
+ */
+function drawSsPolygon(
+  plot: SVGGElement,
+  samples: UnrolledPoint[],
+  startIdx: number,
+  endIdx: number,
+  type: 'helix' | 'strand',
+  withArrow: boolean,
+): void {
+  if (endIdx <= startIdx) return;
+
+  const screen: { sx: number; sy: number }[] = [];
+  for (let i = startIdx; i <= endIdx; i++) {
+    screen.push({ sx: samples[i].arc * PLOT.arcPxPerA, sy: -samples[i].z * PLOT.zPxPerA });
+  }
+  if (screen.length < 2) return;
+
+  // Unit tangent in screen space at each sample (averaged across adjacent
+  // segments at interior points so the perpendicular offsets transition smoothly).
+  const tx = new Array<number>(screen.length).fill(0);
+  const ty = new Array<number>(screen.length).fill(0);
+  for (let i = 0; i < screen.length; i++) {
+    let dx = 0,
+      dy = 0;
+    if (i > 0) {
+      dx += screen[i].sx - screen[i - 1].sx;
+      dy += screen[i].sy - screen[i - 1].sy;
+    }
+    if (i < screen.length - 1) {
+      dx += screen[i + 1].sx - screen[i].sx;
+      dy += screen[i + 1].sy - screen[i].sy;
+    }
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 1e-9) {
+      tx[i] = dx / len;
+      ty[i] = dy / len;
+    }
+  }
+
+  const halfW = SS_BODY.halfWidthPx;
+  const arrowHalfW = SS_BODY.arrowHalfWidthPx;
+  const arrowLen = SS_BODY.arrowLengthPx;
+  const lastIdx = screen.length - 1;
+
+  // Arrow base = a point `arrowLen` screen pixels back from the tip along the
+  // polyline. `bodyLast` is the last sample fully part of the body before the
+  // arrow base; sample indices > bodyLast sit inside the arrowhead.
+  let bodyLast = lastIdx;
+  let baseSx = screen[lastIdx].sx;
+  let baseSy = screen[lastIdx].sy;
+  let basePx = -ty[lastIdx];
+  let basePy = tx[lastIdx];
+
+  if (withArrow) {
+    let remaining = arrowLen;
+    let baseSegEnd = lastIdx;
+    let baseFrac = 0;
+    let walkedOff = true;
+    for (let i = lastIdx; i > 0; i--) {
+      const dx = screen[i].sx - screen[i - 1].sx;
+      const dy = screen[i].sy - screen[i - 1].sy;
+      const segLen = Math.sqrt(dx * dx + dy * dy);
+      if (segLen <= 0) continue;
+      if (remaining <= segLen) {
+        baseSegEnd = i;
+        baseFrac = 1 - remaining / segLen;
+        walkedOff = false;
+        break;
+      }
+      remaining -= segLen;
+    }
+
+    if (walkedOff) {
+      // Strand shorter than the arrow length — collapse body to a single point
+      // at the start and render as a pure arrowhead from start to tip.
+      bodyLast = -1;
+      baseSx = screen[0].sx;
+      baseSy = screen[0].sy;
+      basePx = -ty[0];
+      basePy = tx[0];
+    } else {
+      bodyLast = baseSegEnd - 1;
+      baseSx =
+        screen[baseSegEnd - 1].sx + baseFrac * (screen[baseSegEnd].sx - screen[baseSegEnd - 1].sx);
+      baseSy =
+        screen[baseSegEnd - 1].sy + baseFrac * (screen[baseSegEnd].sy - screen[baseSegEnd - 1].sy);
+      let btx = (1 - baseFrac) * tx[baseSegEnd - 1] + baseFrac * tx[baseSegEnd];
+      let bty = (1 - baseFrac) * ty[baseSegEnd - 1] + baseFrac * ty[baseSegEnd];
+      const btLen = Math.sqrt(btx * btx + bty * bty);
+      if (btLen > 1e-9) {
+        btx /= btLen;
+        bty /= btLen;
+      }
+      basePx = -bty;
+      basePy = btx;
+    }
+  }
+
+  // Walk the left edge forward, traverse the end cap (arrowhead or butt), then
+  // the right edge backward. When `!withArrow`, the natural transition between
+  // the last left-edge vertex and the first right-edge vertex at `lastIdx`
+  // forms the perpendicular butt end.
+  const vertsS: [number, number][] = [];
+  for (let i = 0; i <= bodyLast; i++) {
+    vertsS.push([screen[i].sx + halfW * -ty[i], screen[i].sy + halfW * tx[i]]);
+  }
+
+  if (withArrow) {
+    vertsS.push([baseSx + halfW * basePx, baseSy + halfW * basePy]);
+    vertsS.push([baseSx + arrowHalfW * basePx, baseSy + arrowHalfW * basePy]);
+    vertsS.push([screen[lastIdx].sx, screen[lastIdx].sy]);
+    vertsS.push([baseSx - arrowHalfW * basePx, baseSy - arrowHalfW * basePy]);
+    vertsS.push([baseSx - halfW * basePx, baseSy - halfW * basePy]);
+  }
+
+  for (let i = bodyLast; i >= 0; i--) {
+    vertsS.push([screen[i].sx - halfW * -ty[i], screen[i].sy - halfW * tx[i]]);
+  }
+
+  const points = vertsS
+    .map(([sx, sy]) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
+    .join(' ');
+
+  const poly = document.createElementNS(SVG_NS, 'polygon');
+  poly.setAttribute('points', points);
+  poly.setAttribute('fill', SS_STYLE[type].fill);
+  poly.setAttribute('stroke', SS_STYLE[type].stroke);
+  poly.setAttribute('stroke-width', '1.5');
+  poly.setAttribute('stroke-linejoin', 'round');
+  poly.setAttribute('vector-effect', 'non-scaling-stroke');
+  plot.appendChild(poly);
 }
 
 function pathFromPoints(samples: UnrolledPoint[], startIdx: number, endIdx: number): string {
@@ -225,11 +394,13 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
   mid.setAttribute('vector-effect', 'non-scaling-stroke');
   plot.appendChild(mid);
 
+  const barrel = isBetaBarrel(chain);
+
   // For each contiguous chain segment, draw the smoothed (arc, z) trace,
   // segmented by secondary structure type for colouring.
   for (let s = 0; s < unroll.segments.length; s++) {
     const segment = unroll.segments[s];
-    drawSegment(plot, segment, chain.segments);
+    drawSegment(plot, segment, chain.segments, barrel);
     // Dashed connector across chain breaks.
     if (s > 0) {
       const prev = unroll.segments[s - 1];
@@ -254,16 +425,22 @@ function drawSegment(
   plot: SVGGElement,
   segment: UnrolledSegment,
   ssSegments: SecondaryStructureSegment[],
+  isBarrel: boolean,
 ): void {
   const runs = runsBySs(segment.residues, ssSegments);
   for (const run of runs) {
+    if (run.type === 'helix' || run.type === 'strand') {
+      const withArrow = isBarrel && run.type === 'strand';
+      drawSsPolygon(plot, segment.samples, run.startSample, run.endSample, run.type, withArrow);
+      continue;
+    }
     const d = pathFromPoints(segment.samples, run.startSample, run.endSample);
     if (!d) continue;
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', d);
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', COLOURS[run.type]);
-    path.setAttribute('stroke-width', run.type === 'coil' ? '1.2' : '2.2');
+    path.setAttribute('stroke', COLOURS.coil);
+    path.setAttribute('stroke-width', '1.8');
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');

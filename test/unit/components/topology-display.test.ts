@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
-import type { ProteinData } from '../../../src/types.js';
+import type { ProteinData, ChainData } from '../../../src/types.js';
 
 function tmHelixProtein(): ProteinData {
   // 28-residue chain: idealised TM helix with z spanning -20 → +20, then a
@@ -42,18 +42,61 @@ function tmHelixProtein(): ProteinData {
   };
 }
 
+function betaBarrelChain(): ChainData {
+  // 4-strand antiparallel beta barrel with 3-residue loops.
+  // Strands are ~3 Å/residue in z, well within the 5.5 Å break threshold.
+  const calphas = [];
+  const segments = [];
+  let resSeq = 1;
+
+  for (let s = 0; s < 4; s++) {
+    const strandStart = resSeq;
+    const xBase = s * 5;
+    const goingUp = s % 2 === 0;
+
+    for (let j = 0; j < 10; j++) {
+      calphas.push({
+        resSeq: resSeq++,
+        iCode: '',
+        x: xBase,
+        y: 0,
+        z: goingUp ? -15 + j * (30 / 9) : 15 - j * (30 / 9),
+      });
+    }
+    segments.push({ start: strandStart, end: resSeq - 1, type: 'strand' as const });
+
+    if (s < 3) {
+      const loopStart = resSeq;
+      const loopZ = goingUp ? 18 : -18;
+      const nextX = (s + 1) * 5;
+      for (let j = 0; j < 3; j++) {
+        calphas.push({
+          resSeq: resSeq++,
+          iCode: '',
+          x: xBase + ((j + 1) * (nextX - xBase)) / 4,
+          y: 0,
+          z: loopZ,
+        });
+      }
+      segments.push({ start: loopStart, end: resSeq - 1, type: 'coil' as const });
+    }
+  }
+
+  return { chainId: 'A', residueCount: resSeq - 1, segments, calphas };
+}
+
 describe('TopologyDisplay (unrolled SVG)', () => {
-  it('renders an SVG with a helix-coloured path for a TM helix chain', () => {
+  it('renders an SVG with a helix-coloured polygon for a TM helix chain', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
-    const paths = svg!.querySelectorAll('path');
-    expect(paths.length).toBeGreaterThan(0);
-    const colours = Array.from(paths).map((p) => p.getAttribute('stroke'));
-    expect(colours).toContain('#1f77b4'); // helix
+    const polygons = svg!.querySelectorAll('polygon');
+    expect(polygons.length).toBeGreaterThan(0);
+    const fills = Array.from(polygons).map((p) => p.getAttribute('fill'));
+    expect(fills).toContain('#6e8db6'); // helix
   });
 
   it('renders a membrane slab rect at z = ±15', () => {
@@ -133,6 +176,83 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(mainLabel).toContain('AII');
     const selected = el.shadowRoot!.querySelector('.chain-violin.selected');
     expect(selected!.getAttribute('aria-label')).toContain('A(II)');
+  });
+
+  it('renders one strand polygon per strand run for a beta barrel chain, all with arrowhead vertices', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    expect(svg).not.toBeNull();
+    const strandPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6ea76d',
+    );
+    // 4 strands → 4 strand polygons.
+    expect(strandPolys.length).toBe(4);
+
+    // The body of a strand of N samples contributes 2N vertices (left + right
+    // walk). An integrated arrowhead inserts 5 additional vertices (back-left,
+    // wing 1, tip, wing 2, back-right), so every strand polygon must have an
+    // odd vertex count > 5.
+    for (const poly of strandPolys) {
+      const count = (poly.getAttribute('points') ?? '').trim().split(/\s+/).length;
+      expect(count).toBeGreaterThan(5);
+      expect(count % 2).toBe(1);
+    }
+  });
+
+  it('renders strands as polygons without arrowhead vertices for non-barrel chains', () => {
+    // A mostly-helical chain with a small strand insertion — strand should
+    // still be a polygon (so it has flat butt ends) but with no arrowhead.
+    const tm = tmHelixProtein();
+    const ch = tm.chains[0];
+    ch.segments = [
+      { start: 1, end: 12, type: 'helix' },
+      { start: 13, end: 20, type: 'strand' },
+      { start: 21, end: 24, type: 'helix' },
+    ];
+
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tm;
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    expect(svg).not.toBeNull();
+    const strandPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6ea76d',
+    );
+    // Exactly one strand polygon.
+    expect(strandPolys.length).toBe(1);
+    // Body-only polygon: vertex count is 2N (even).
+    const count = (strandPolys[0].getAttribute('points') ?? '').trim().split(/\s+/).length;
+    expect(count % 2).toBe(0);
+  });
+
+  it('does not render strand polygons for a purely helical chain', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tmHelixProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    expect(svg).not.toBeNull();
+    const strandPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6ea76d',
+    );
+    expect(strandPolys.length).toBe(0);
+  });
+
+  it('renders helix polygons with a darker edge stroke for outline', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tmHelixProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    const helixPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6e8db6',
+    );
+    expect(helixPolys.length).toBeGreaterThan(0);
+    expect(helixPolys.every((p) => p.getAttribute('stroke') === '#3e587a')).toBe(true);
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {
