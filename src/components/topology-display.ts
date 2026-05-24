@@ -117,8 +117,10 @@ const COLOURS = {
   membraneEdge: '#bdbdbd',
   zAxis: '#666',
   coil: '#666',
-  helix: '#1f77b4',
-  strand: '#2ca02c',
+  helix: '#6e8db6',
+  helixEdge: '#3e587a',
+  strand: '#6ea76d',
+  strandEdge: '#3d6d3d',
   break: '#aaa',
 };
 
@@ -166,8 +168,8 @@ function runsBySs(
   return runs;
 }
 
-const STRAND_BODY = {
-  /** Body half-width in screen pixels (full strand width = 8 px). */
+const SS_BODY = {
+  /** Body half-width in screen pixels (full SS element width = 8 px). */
   halfWidthPx: 4,
   /** Arrow wing half-width — 1.5× the body so the wings flare visibly. */
   arrowHalfWidthPx: 6,
@@ -175,21 +177,27 @@ const STRAND_BODY = {
   arrowLengthPx: 12,
 };
 
+const SS_STYLE: Record<'helix' | 'strand', { fill: string; stroke: string }> = {
+  helix: { fill: COLOURS.helix, stroke: COLOURS.helixEdge },
+  strand: { fill: COLOURS.strand, stroke: COLOURS.strandEdge },
+};
+
 /**
- * Render a strand run as one filled+stroked polygon: a uniform-width body
- * with butt ends, terminated at the C-terminal end by an integrated arrowhead
- * when `withArrow` is true. Sharing one outline (rather than overlaying a
- * separate arrow on a stroked path) is what gives the strand its single-shape
- * appearance.
+ * Render a helix or strand run as one filled+stroked polygon: a uniform-width
+ * body with butt ends, terminated at the C-terminal end by an integrated
+ * arrowhead when `withArrow` is true. Sharing one outline (rather than
+ * overlaying a separate arrow on a stroked path) is what gives the element
+ * its single-shape appearance.
  *
  * Widths are specified in screen pixels and back-projected into user space so
  * the polygon stays consistent under the plot group's non-uniform scale.
  */
-function drawStrandPolygon(
+function drawSsPolygon(
   plot: SVGGElement,
   samples: UnrolledPoint[],
   startIdx: number,
   endIdx: number,
+  type: 'helix' | 'strand',
   withArrow: boolean,
 ): void {
   if (endIdx <= startIdx) return;
@@ -222,9 +230,9 @@ function drawStrandPolygon(
     }
   }
 
-  const halfW = STRAND_BODY.halfWidthPx;
-  const arrowHalfW = STRAND_BODY.arrowHalfWidthPx;
-  const arrowLen = STRAND_BODY.arrowLengthPx;
+  const halfW = SS_BODY.halfWidthPx;
+  const arrowHalfW = SS_BODY.arrowHalfWidthPx;
+  const arrowLen = SS_BODY.arrowLengthPx;
   const lastIdx = screen.length - 1;
 
   // Arrow base = a point `arrowLen` screen pixels back from the tip along the
@@ -308,8 +316,8 @@ function drawStrandPolygon(
 
   const poly = document.createElementNS(SVG_NS, 'polygon');
   poly.setAttribute('points', points);
-  poly.setAttribute('fill', COLOURS.strand);
-  poly.setAttribute('stroke', '#1a6b1a');
+  poly.setAttribute('fill', SS_STYLE[type].fill);
+  poly.setAttribute('stroke', SS_STYLE[type].stroke);
   poly.setAttribute('stroke-width', '1.5');
   poly.setAttribute('stroke-linejoin', 'round');
   poly.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -421,8 +429,9 @@ function drawSegment(
 ): void {
   const runs = runsBySs(segment.residues, ssSegments);
   for (const run of runs) {
-    if (run.type === 'strand') {
-      drawStrandPolygon(plot, segment.samples, run.startSample, run.endSample, isBarrel);
+    if (run.type === 'helix' || run.type === 'strand') {
+      const withArrow = isBarrel && run.type === 'strand';
+      drawSsPolygon(plot, segment.samples, run.startSample, run.endSample, run.type, withArrow);
       continue;
     }
     const d = pathFromPoints(segment.samples, run.startSample, run.endSample);
@@ -430,11 +439,9 @@ function drawSegment(
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', d);
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', COLOURS[run.type]);
-    path.setAttribute('stroke-width', run.type === 'coil' ? '1.8' : '8');
-    // Helices want flat (perpendicular) ends so they read as rectangles;
-    // coils stay rounded so chain-break stubs don't look chopped off.
-    path.setAttribute('stroke-linecap', run.type === 'coil' ? 'round' : 'butt');
+    path.setAttribute('stroke', COLOURS.coil);
+    path.setAttribute('stroke-width', '1.8');
+    path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
     plot.appendChild(path);

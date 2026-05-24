@@ -86,17 +86,17 @@ function betaBarrelChain(): ChainData {
 }
 
 describe('TopologyDisplay (unrolled SVG)', () => {
-  it('renders an SVG with a helix-coloured path for a TM helix chain', () => {
+  it('renders an SVG with a helix-coloured polygon for a TM helix chain', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
-    const paths = svg!.querySelectorAll('path');
-    expect(paths.length).toBeGreaterThan(0);
-    const colours = Array.from(paths).map((p) => p.getAttribute('stroke'));
-    expect(colours).toContain('#1f77b4'); // helix
+    const polygons = svg!.querySelectorAll('polygon');
+    expect(polygons.length).toBeGreaterThan(0);
+    const fills = Array.from(polygons).map((p) => p.getAttribute('fill'));
+    expect(fills).toContain('#6e8db6'); // helix
   });
 
   it('renders a membrane slab rect at z = ±15', () => {
@@ -185,17 +185,17 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
-    const polygons = svg!.querySelectorAll('polygon');
+    const strandPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6ea76d',
+    );
     // 4 strands → 4 strand polygons.
-    expect(polygons.length).toBe(4);
-    const fills = Array.from(polygons).map((p) => p.getAttribute('fill'));
-    expect(fills.every((f) => f === '#2ca02c')).toBe(true);
+    expect(strandPolys.length).toBe(4);
 
     // The body of a strand of N samples contributes 2N vertices (left + right
     // walk). An integrated arrowhead inserts 5 additional vertices (back-left,
     // wing 1, tip, wing 2, back-right), so every strand polygon must have an
     // odd vertex count > 5.
-    for (const poly of Array.from(polygons)) {
+    for (const poly of strandPolys) {
       const count = (poly.getAttribute('points') ?? '').trim().split(/\s+/).length;
       expect(count).toBeGreaterThan(5);
       expect(count % 2).toBe(1);
@@ -219,36 +219,40 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
-    const polygons = svg!.querySelectorAll('polygon');
-    // Exactly one strand polygon, no helix polygons.
-    expect(polygons.length).toBe(1);
-    expect(polygons[0].getAttribute('fill')).toBe('#2ca02c');
+    const strandPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6ea76d',
+    );
+    // Exactly one strand polygon.
+    expect(strandPolys.length).toBe(1);
     // Body-only polygon: vertex count is 2N (even).
-    const count = (polygons[0].getAttribute('points') ?? '').trim().split(/\s+/).length;
+    const count = (strandPolys[0].getAttribute('points') ?? '').trim().split(/\s+/).length;
     expect(count % 2).toBe(0);
   });
 
-  it('does not render any polygons for a purely helical chain', () => {
+  it('does not render strand polygons for a purely helical chain', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
-    expect(svg!.querySelectorAll('polygon').length).toBe(0);
+    const strandPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6ea76d',
+    );
+    expect(strandPolys.length).toBe(0);
   });
 
-  it('uses butt linecaps for helices so they read as rectangles', () => {
+  it('renders helix polygons with a darker edge stroke for outline', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
-    const helixPaths = Array.from(svg!.querySelectorAll('path')).filter(
-      (p) => p.getAttribute('stroke') === '#1f77b4',
+    const helixPolys = Array.from(svg!.querySelectorAll('polygon')).filter(
+      (p) => p.getAttribute('fill') === '#6e8db6',
     );
-    expect(helixPaths.length).toBeGreaterThan(0);
-    expect(helixPaths.every((p) => p.getAttribute('stroke-linecap') === 'butt')).toBe(true);
+    expect(helixPolys.length).toBeGreaterThan(0);
+    expect(helixPolys.every((p) => p.getAttribute('stroke') === '#3e587a')).toBe(true);
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {
