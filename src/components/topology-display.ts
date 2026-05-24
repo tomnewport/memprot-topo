@@ -335,7 +335,7 @@ function pathFromPoints(samples: UnrolledPoint[], startIdx: number, endIdx: numb
 }
 
 function renderChainSvg(chain: ChainData): SVGSVGElement {
-  const unroll = unrollChain(chain.calphas);
+  const unroll = unrollChain(chain.calphas, { ssSegments: chain.segments });
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
   const plotWidth = Math.max(200, unroll.totalArcLength * PLOT.arcPxPerA);

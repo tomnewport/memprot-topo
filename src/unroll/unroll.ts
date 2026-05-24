@@ -1,5 +1,7 @@
-import type { Calpha } from '../types.js';
+import type { Calpha, SecondaryStructureSegment } from '../types.js';
 import { sampleCurve, type Vec } from './catmull-rom.js';
+import { fitBSpline, sampleBSpline } from './bspline.js';
+import { projectHelixAxis } from './helix-axis.js';
 
 /**
  * One point on the unrolled trace: `arc` is the cumulative arc length of the
@@ -44,23 +46,38 @@ export interface UnrollResult {
 }
 
 export interface UnrollOptions {
-  /** Sample density along each Catmull–Rom segment between Cα. */
+  /**
+   * Sample density along each curve segment between control Cα.
+   * Used when falling back to Catmull–Rom for very short segments.
+   */
   samplesPerSegment?: number;
-  /** Threshold (Å) on 3D Cα–Cα distance above which a chain break is inferred. */
+  /** Threshold (Å) on 3-D Cα–Cα distance above which a chain break is inferred. */
   breakDistance?: number;
   /** Z-coordinate to use as the membrane midplane (subtracted from all z). */
   membraneCentre?: number;
+  /**
+   * Secondary-structure annotation for the chain.  When provided, helix
+   * segments are projected onto the local helix axis before spline fitting,
+   * eliminating the high-frequency arc-length oscillations caused by helical
+   * twist.
+   */
+  ssSegments?: SecondaryStructureSegment[];
+  /**
+   * Number of amino acids per B-spline degree of freedom.  Controls curve
+   * smoothness: higher values produce smoother (fewer control-point) curves.
+   * The number of control points for a segment of n residues is
+   * max(4, ceil(n / aminosPerDof)).
+   *
+   * @default 4
+   */
+  aminosPerDof?: number;
 }
 
 const DEFAULTS = {
   samplesPerSegment: 16,
-  // 5.5 Å gives comfortable headroom over the canonical 3.8 Å Cα–Cα spacing
-  // for trans peptides while still catching real chain breaks (typically
-  // ≥ 8 Å). Proline kinks, modified residues, and slightly distorted
-  // backbones can push neighbour distances past 4.5 Å in real PDBs without
-  // representing a true break.
   breakDistance: 5.5,
   membraneCentre: 0,
+  aminosPerDof: 4,
 };
 
 function splitOnBreaks(calphas: Calpha[], breakDistance: number): Calpha[][] {
@@ -88,6 +105,16 @@ function splitOnBreaks(calphas: Calpha[], breakDistance: number): Calpha[][] {
   return groups;
 }
 
+function ssTypeFor(
+  resSeq: number,
+  segments: SecondaryStructureSegment[],
+): 'helix' | 'strand' | 'coil' {
+  for (const seg of segments) {
+    if (resSeq >= seg.start && resSeq <= seg.end) return seg.type;
+  }
+  return 'coil';
+}
+
 /**
  * Unroll a chain's Cα coordinates into the (arc, z) "membrane-side view".
  *
@@ -99,18 +126,24 @@ function splitOnBreaks(calphas: Calpha[], breakDistance: number): Calpha[][] {
  *
  * Algorithm:
  *  1. Split the Cα list on long jumps (chain breaks).
- *  2. For each contiguous run, fit a centripetal Catmull–Rom curve through the
- *     3D Cα (so z varies smoothly along the same parameter as xy).
- *  3. Sample the curve densely and accumulate xy chord lengths between
- *     consecutive samples — this gives `arc` (the chain's footprint on the
- *     membrane plane) and `z` (the real height) at every sample.
- *  4. Look up the arc length at each Cα via the recorded controlIndex into
- *     the samples.
+ *  2. For each contiguous run:
+ *     a. Classify each Cα by secondary structure type.
+ *     b. Project helix Cα onto the local helix axis (sliding-window PCA),
+ *        removing the ~100°/residue twist.
+ *     c. Fit a clamped cubic B-spline to the (possibly pre-processed)
+ *        positions using max(4, ceil(n / aminosPerDof)) control points.
+ *        For very short runs (≤ 3 Cα) fall back to Catmull–Rom.
+ *     d. Densely sample the spline and accumulate xy chord lengths for arc.
+ *  3. Each residue's arc is taken from the spline; its z is the actual Cα z
+ *     (not the smoothed spline z) so membrane depth is physically accurate.
  *
  * Arc length is continuous across segment boundaries (we just keep accumulating).
  */
 export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): UnrollResult {
-  const { samplesPerSegment, breakDistance, membraneCentre } = { ...DEFAULTS, ...options };
+  const { samplesPerSegment, breakDistance, membraneCentre, ssSegments, aminosPerDof } = {
+    ...DEFAULTS,
+    ...options,
+  };
 
   if (calphas.length === 0) {
     return { segments: [], totalArcLength: 0, zMin: 0, zMax: 0 };
@@ -124,18 +157,47 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
   let zMax = -Infinity;
 
   for (const group of groups) {
+    const n = group.length;
+
+    // Translate to membrane frame.
     const pts: Vec[] = group.map((c) => ({
       x: c.x,
       y: c.y,
       z: c.z - membraneCentre,
     }));
 
-    const { samples, controlIndex } = sampleCurve(pts, samplesPerSegment);
+    // Determine per-residue SS type and build helix mask.
+    const isHelix: boolean[] = group.map((ca) =>
+      ssSegments ? ssTypeFor(ca.resSeq, ssSegments) === 'helix' : false,
+    );
 
+    // Project helix Cα onto the local helix axis, leaving others unchanged.
+    const fittingPts = projectHelixAxis(pts, isHelix);
+
+    // Fit B-spline (or fall back to Catmull–Rom for tiny segments).
+    const totalSamples = (n - 1) * samplesPerSegment + 1;
+    const k = Math.max(4, Math.ceil(n / aminosPerDof));
+
+    let splineSamples: Vec[];
+    let controlIndex: number[];
+
+    if (n <= 3 || k >= n) {
+      // Catmull–Rom interpolates exactly through every point — safe for short runs.
+      const cr = sampleCurve(fittingPts, samplesPerSegment);
+      splineSamples = cr.samples;
+      controlIndex = cr.controlIndex;
+    } else {
+      const spline = fitBSpline(fittingPts, k);
+      const sampled = sampleBSpline(spline, totalSamples);
+      splineSamples = sampled.samples;
+      controlIndex = sampled.controlIndex;
+    }
+
+    // Accumulate xy arc lengths along the spline.
     const unrolledSamples: UnrolledPoint[] = [];
     let arc = arcOffset;
     let prev: Vec | null = null;
-    for (const s of samples) {
+    for (const s of splineSamples) {
       if (prev) {
         const dx = s.x - prev.x;
         const dy = s.y - prev.y;
@@ -143,17 +205,20 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
       }
       prev = s;
       unrolledSamples.push({ arc, z: s.z });
-      if (s.z < zMin) zMin = s.z;
-      if (s.z > zMax) zMax = s.z;
     }
 
+    // Each residue's arc from the spline; z from the actual Cα (physically
+    // accurate membrane depth, not the smoothed axis z).
     const residues: UnrolledResidue[] = group.map((ca, i) => {
       const si = controlIndex[i];
+      const z = ca.z - membraneCentre;
+      if (z < zMin) zMin = z;
+      if (z > zMax) zMax = z;
       return {
         resSeq: ca.resSeq,
         iCode: ca.iCode,
         arc: unrolledSamples[si].arc,
-        z: unrolledSamples[si].z,
+        z,
         index: i,
         sampleIndex: si,
       };
