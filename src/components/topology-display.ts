@@ -166,58 +166,154 @@ function runsBySs(
   return runs;
 }
 
+const STRAND_BODY = {
+  /** Body half-width in screen pixels (full strand width = 8 px). */
+  halfWidthPx: 4,
+  /** Arrow wing half-width — 1.5× the body so the wings flare visibly. */
+  arrowHalfWidthPx: 6,
+  /** Distance from the tip back to the arrow's base, in screen pixels. */
+  arrowLengthPx: 12,
+};
+
 /**
- * Draw an arrowhead polygon at the C-terminal end of a strand run. Vertices
- * are computed in screen space (accounting for the non-uniform plot scale) then
- * back-projected into user space so the polygon appears correctly shaped after
- * the plot group transform is applied.
+ * Render a strand run as one filled+stroked polygon: a uniform-width body
+ * with butt ends, terminated at the C-terminal end by an integrated arrowhead
+ * when `withArrow` is true. Sharing one outline (rather than overlaying a
+ * separate arrow on a stroked path) is what gives the strand its single-shape
+ * appearance.
+ *
+ * Widths are specified in screen pixels and back-projected into user space so
+ * the polygon stays consistent under the plot group's non-uniform scale.
  */
-function drawStrandArrow(
+function drawStrandPolygon(
   plot: SVGGElement,
   samples: UnrolledPoint[],
   startIdx: number,
   endIdx: number,
+  withArrow: boolean,
 ): void {
-  if (endIdx <= startIdx || endIdx >= samples.length) return;
-  const tip = samples[endIdx];
-  const prev = samples[Math.max(startIdx, endIdx - 1)];
+  if (endIdx <= startIdx) return;
 
-  // Direction vector in screen space (plot group has scale(arcPxPerA, -zPxPerA)).
-  const dxS = (tip.arc - prev.arc) * PLOT.arcPxPerA;
-  const dyS = -(tip.z - prev.z) * PLOT.zPxPerA;
-  const len = Math.sqrt(dxS * dxS + dyS * dyS);
-  if (len < 0.5) return;
+  const screen: { sx: number; sy: number }[] = [];
+  for (let i = startIdx; i <= endIdx; i++) {
+    screen.push({ sx: samples[i].arc * PLOT.arcPxPerA, sy: -samples[i].z * PLOT.zPxPerA });
+  }
+  if (screen.length < 2) return;
 
-  const ux = dxS / len,
-    uy = dyS / len; // unit forward direction
-  const px = -uy,
-    py = ux; // perpendicular
+  // Unit tangent in screen space at each sample (averaged across adjacent
+  // segments at interior points so the perpendicular offsets transition smoothly).
+  const tx = new Array<number>(screen.length).fill(0);
+  const ty = new Array<number>(screen.length).fill(0);
+  for (let i = 0; i < screen.length; i++) {
+    let dx = 0,
+      dy = 0;
+    if (i > 0) {
+      dx += screen[i].sx - screen[i - 1].sx;
+      dy += screen[i].sy - screen[i - 1].sy;
+    }
+    if (i < screen.length - 1) {
+      dx += screen[i + 1].sx - screen[i].sx;
+      dy += screen[i + 1].sy - screen[i].sy;
+    }
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 1e-9) {
+      tx[i] = dx / len;
+      ty[i] = dy / len;
+    }
+  }
 
-  const strokeWidth = 8;
-  const aHalf = (strokeWidth * 1.25) / 2; // 25% wider than the line, halved for polygon
-  const aLen = aHalf * 4; // 2:1 length-to-width aspect ratio
+  const halfW = STRAND_BODY.halfWidthPx;
+  const arrowHalfW = STRAND_BODY.arrowHalfWidthPx;
+  const arrowLen = STRAND_BODY.arrowLengthPx;
+  const lastIdx = screen.length - 1;
 
-  // Tip and wing vertices in relative screen space (origin = plot group origin).
-  const tipSx = tip.arc * PLOT.arcPxPerA;
-  const tipSy = -tip.z * PLOT.zPxPerA;
+  // Arrow base = a point `arrowLen` screen pixels back from the tip along the
+  // polyline. `bodyLast` is the last sample fully part of the body before the
+  // arrow base; sample indices > bodyLast sit inside the arrowhead.
+  let bodyLast = lastIdx;
+  let baseSx = screen[lastIdx].sx;
+  let baseSy = screen[lastIdx].sy;
+  let basePx = -ty[lastIdx];
+  let basePy = tx[lastIdx];
 
-  // Back-project to user space: arc = sx / arcPxPerA, z = -sy / zPxPerA.
-  const pts = [
-    [tipSx, tipSy],
-    [tipSx - ux * aLen + px * aHalf, tipSy - uy * aLen + py * aHalf],
-    [tipSx - ux * aLen - px * aHalf, tipSy - uy * aLen - py * aHalf],
-  ]
+  if (withArrow) {
+    let remaining = arrowLen;
+    let baseSegEnd = lastIdx;
+    let baseFrac = 0;
+    let walkedOff = true;
+    for (let i = lastIdx; i > 0; i--) {
+      const dx = screen[i].sx - screen[i - 1].sx;
+      const dy = screen[i].sy - screen[i - 1].sy;
+      const segLen = Math.sqrt(dx * dx + dy * dy);
+      if (segLen <= 0) continue;
+      if (remaining <= segLen) {
+        baseSegEnd = i;
+        baseFrac = 1 - remaining / segLen;
+        walkedOff = false;
+        break;
+      }
+      remaining -= segLen;
+    }
+
+    if (walkedOff) {
+      // Strand shorter than the arrow length — collapse body to a single point
+      // at the start and render as a pure arrowhead from start to tip.
+      bodyLast = -1;
+      baseSx = screen[0].sx;
+      baseSy = screen[0].sy;
+      basePx = -ty[0];
+      basePy = tx[0];
+    } else {
+      bodyLast = baseSegEnd - 1;
+      baseSx =
+        screen[baseSegEnd - 1].sx + baseFrac * (screen[baseSegEnd].sx - screen[baseSegEnd - 1].sx);
+      baseSy =
+        screen[baseSegEnd - 1].sy + baseFrac * (screen[baseSegEnd].sy - screen[baseSegEnd - 1].sy);
+      let btx = (1 - baseFrac) * tx[baseSegEnd - 1] + baseFrac * tx[baseSegEnd];
+      let bty = (1 - baseFrac) * ty[baseSegEnd - 1] + baseFrac * ty[baseSegEnd];
+      const btLen = Math.sqrt(btx * btx + bty * bty);
+      if (btLen > 1e-9) {
+        btx /= btLen;
+        bty /= btLen;
+      }
+      basePx = -bty;
+      basePy = btx;
+    }
+  }
+
+  // Walk the left edge forward, traverse the end cap (arrowhead or butt), then
+  // the right edge backward. When `!withArrow`, the natural transition between
+  // the last left-edge vertex and the first right-edge vertex at `lastIdx`
+  // forms the perpendicular butt end.
+  const vertsS: [number, number][] = [];
+  for (let i = 0; i <= bodyLast; i++) {
+    vertsS.push([screen[i].sx + halfW * -ty[i], screen[i].sy + halfW * tx[i]]);
+  }
+
+  if (withArrow) {
+    vertsS.push([baseSx + halfW * basePx, baseSy + halfW * basePy]);
+    vertsS.push([baseSx + arrowHalfW * basePx, baseSy + arrowHalfW * basePy]);
+    vertsS.push([screen[lastIdx].sx, screen[lastIdx].sy]);
+    vertsS.push([baseSx - arrowHalfW * basePx, baseSy - arrowHalfW * basePy]);
+    vertsS.push([baseSx - halfW * basePx, baseSy - halfW * basePy]);
+  }
+
+  for (let i = bodyLast; i >= 0; i--) {
+    vertsS.push([screen[i].sx - halfW * -ty[i], screen[i].sy - halfW * tx[i]]);
+  }
+
+  const points = vertsS
     .map(([sx, sy]) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
     .join(' ');
 
-  const arrow = document.createElementNS(SVG_NS, 'polygon');
-  arrow.setAttribute('points', pts);
-  arrow.setAttribute('fill', COLOURS.strand);
-  arrow.setAttribute('stroke', '#1a6b1a');
-  arrow.setAttribute('stroke-width', '1.5');
-  arrow.setAttribute('stroke-linejoin', 'round');
-  arrow.setAttribute('vector-effect', 'non-scaling-stroke');
-  plot.appendChild(arrow);
+  const poly = document.createElementNS(SVG_NS, 'polygon');
+  poly.setAttribute('points', points);
+  poly.setAttribute('fill', COLOURS.strand);
+  poly.setAttribute('stroke', '#1a6b1a');
+  poly.setAttribute('stroke-width', '1.5');
+  poly.setAttribute('stroke-linejoin', 'round');
+  poly.setAttribute('vector-effect', 'non-scaling-stroke');
+  plot.appendChild(poly);
 }
 
 function pathFromPoints(samples: UnrolledPoint[], startIdx: number, endIdx: number): string {
@@ -325,6 +421,10 @@ function drawSegment(
 ): void {
   const runs = runsBySs(segment.residues, ssSegments);
   for (const run of runs) {
+    if (run.type === 'strand') {
+      drawStrandPolygon(plot, segment.samples, run.startSample, run.endSample, isBarrel);
+      continue;
+    }
     const d = pathFromPoints(segment.samples, run.startSample, run.endSample);
     if (!d) continue;
     const path = document.createElementNS(SVG_NS, 'path');
@@ -332,13 +432,12 @@ function drawSegment(
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', COLOURS[run.type]);
     path.setAttribute('stroke-width', run.type === 'coil' ? '1.8' : '8');
-    path.setAttribute('stroke-linecap', 'round');
+    // Helices want flat (perpendicular) ends so they read as rectangles;
+    // coils stay rounded so chain-break stubs don't look chopped off.
+    path.setAttribute('stroke-linecap', run.type === 'coil' ? 'round' : 'butt');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
     plot.appendChild(path);
-    if (isBarrel && run.type === 'strand') {
-      drawStrandArrow(plot, segment.samples, run.startSample, run.endSample);
-    }
   }
 }
 

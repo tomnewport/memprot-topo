@@ -178,7 +178,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(selected!.getAttribute('aria-label')).toContain('A(II)');
   });
 
-  it('renders direction-arrow polygons on strand runs for a beta barrel chain', () => {
+  it('renders one strand polygon per strand run for a beta barrel chain, all with arrowhead vertices', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
@@ -186,12 +186,49 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
     const polygons = svg!.querySelectorAll('polygon');
-    expect(polygons.length).toBeGreaterThan(0);
+    // 4 strands → 4 strand polygons.
+    expect(polygons.length).toBe(4);
     const fills = Array.from(polygons).map((p) => p.getAttribute('fill'));
     expect(fills.every((f) => f === '#2ca02c')).toBe(true);
+
+    // The body of a strand of N samples contributes 2N vertices (left + right
+    // walk). An integrated arrowhead inserts 5 additional vertices (back-left,
+    // wing 1, tip, wing 2, back-right), so every strand polygon must have an
+    // odd vertex count > 5.
+    for (const poly of Array.from(polygons)) {
+      const count = (poly.getAttribute('points') ?? '').trim().split(/\s+/).length;
+      expect(count).toBeGreaterThan(5);
+      expect(count % 2).toBe(1);
+    }
   });
 
-  it('does not render strand arrows for a purely helical chain', () => {
+  it('renders strands as polygons without arrowhead vertices for non-barrel chains', () => {
+    // A mostly-helical chain with a small strand insertion — strand should
+    // still be a polygon (so it has flat butt ends) but with no arrowhead.
+    const tm = tmHelixProtein();
+    const ch = tm.chains[0];
+    ch.segments = [
+      { start: 1, end: 12, type: 'helix' },
+      { start: 13, end: 20, type: 'strand' },
+      { start: 21, end: 24, type: 'helix' },
+    ];
+
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tm;
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    expect(svg).not.toBeNull();
+    const polygons = svg!.querySelectorAll('polygon');
+    // Exactly one strand polygon, no helix polygons.
+    expect(polygons.length).toBe(1);
+    expect(polygons[0].getAttribute('fill')).toBe('#2ca02c');
+    // Body-only polygon: vertex count is 2N (even).
+    const count = (polygons[0].getAttribute('points') ?? '').trim().split(/\s+/).length;
+    expect(count % 2).toBe(0);
+  });
+
+  it('does not render any polygons for a purely helical chain', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
@@ -199,6 +236,19 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg).not.toBeNull();
     expect(svg!.querySelectorAll('polygon').length).toBe(0);
+  });
+
+  it('uses butt linecaps for helices so they read as rectangles', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tmHelixProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    const helixPaths = Array.from(svg!.querySelectorAll('path')).filter(
+      (p) => p.getAttribute('stroke') === '#1f77b4',
+    );
+    expect(helixPaths.length).toBeGreaterThan(0);
+    expect(helixPaths.every((p) => p.getAttribute('stroke-linecap') === 'butt')).toBe(true);
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {
