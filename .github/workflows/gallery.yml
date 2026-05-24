@@ -19,6 +19,9 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build:demo
+      - name: Fetch real PDB data for gallery
+        run: npm run prebuild:gallery
+        continue-on-error: true
       - name: Screenshot current branch
         run: node scripts/gallery-screenshot.mjs
       - name: Compute sanitized branch name
