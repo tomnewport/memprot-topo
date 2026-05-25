@@ -153,14 +153,9 @@ describe('unrollChain with ssSegments (helix axis)', () => {
     }
   });
 
-  it('strand arc preserves xy displacement (not smoothed away by global spline)', () => {
-    // Beta-barrel strand: alternating ±1.0 Å radial (y) plus net circumferential drift.
-    // Catmull-Rom (strand) traverses the zigzag; smooth B-spline (no SS) averages it away.
-    // Realistic beta-barrel strand geometry:
-    //   - net drift 1.2 Å/residue along x (circumferential)
-    //   - alternating ±1.0 Å in y (in/out radial)
-    //   - rise 3.3 Å/residue (z)
-    // 3-D Cα–Cα distance ≈ 4.0 Å — well below the 5.5 Å break threshold.
+  it('strand arc is strictly increasing (crossing angle preserved)', () => {
+    // Realistic beta-barrel strand: net drift 1.2 Å/residue in x, alternating
+    // ±1.0 Å in y, 3.3 Å rise. 3-D Cα–Cα ≈ 4.0 Å < 5.5 Å break threshold.
     const n = 8;
     const strandCa: Calpha[] = Array.from({ length: n }, (_, i) => ({
       resSeq: i + 1,
@@ -170,16 +165,13 @@ describe('unrollChain with ssSegments (helix axis)', () => {
       z: i * 3.3,
     }));
     const ssStrand: SecondaryStructureSegment[] = [{ start: 1, end: n, type: 'strand' }];
+    const r = unrollChain(strandCa, { ssSegments: ssStrand });
 
-    const withStrand = unrollChain(strandCa, { ssSegments: ssStrand });
-    const noSS = unrollChain(strandCa); // no SS → smooth global B-spline
+    // The strand sub-segment gets its own B-spline, capturing the net lateral
+    // drift without the per-residue zigzag noise.
+    expect(r.totalArcLength).toBeGreaterThan(1.0 * 7); // at least net-drift arc
 
-    // With strand annotation the arc must reflect the actual Cα zigzag (Catmull-Rom).
-    // Without SS the smooth spline substantially reduces the perceived lateral travel.
-    expect(withStrand.totalArcLength).toBeGreaterThan(noSS.totalArcLength * 1.5);
-
-    // Arc must still be strictly increasing per residue.
-    const residues = withStrand.segments[0].residues;
+    const residues = r.segments[0].residues;
     for (let i = 1; i < residues.length; i++) {
       expect(residues[i].arc).toBeGreaterThan(residues[i - 1].arc);
     }

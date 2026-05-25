@@ -224,10 +224,11 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
       const isHelixMask: boolean[] = pts.map(() => sub.type === 'helix');
       const fittingPts = sub.type === 'helix' ? projectHelixAxis(pts, isHelixMask) : pts;
 
-      // DOF selection: strands use DOF=1 which forces k≥n → Catmull-Rom fallback,
-      // interpolating through every Cα and preserving the xy displacement that
-      // encodes the strand's crossing angle in the membrane.
-      const effectiveDof = sub.type === 'strand' ? 1 : aminosPerDof;
+      // All sub-groups use the configured aminosPerDof; because the chain is now
+      // sub-split by SS type, each strand segment is fitted independently, so
+      // the smooth spline captures the strand's net crossing angle without being
+      // drowned out by adjacent loop residues.
+      const effectiveDof = aminosPerDof;
       const totalSamples = (subN - 1) * samplesPerSegment + 1;
       const k = Math.max(4, Math.ceil(subN / effectiveDof));
 
