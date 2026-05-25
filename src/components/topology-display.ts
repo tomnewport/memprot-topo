@@ -106,10 +106,10 @@ const PLOT = {
   membraneHalf: 15,
   /** Maximum |z| (Å) shown on the y-axis — auto-expands if data exceeds. */
   zRangeMin: 25,
-  /** Å per pixel on the x-axis (arc length). Higher = more zoomed-in. */
-  arcPxPerA: 1.6,
-  /** Å per pixel on the y-axis (real z). */
-  zPxPerA: 4,
+  /** Å per pixel on the x-axis (arc length). Equal to zPxPerA for 1:1 aspect ratio. */
+  arcPxPerA: 2.5,
+  /** Å per pixel on the y-axis (real z). Equal to arcPxPerA for 1:1 aspect ratio. */
+  zPxPerA: 2.5,
 };
 
 const COLOURS = {
