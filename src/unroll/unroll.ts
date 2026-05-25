@@ -176,7 +176,8 @@ function splitBySSType(
  *        For very short runs (≤ 3 Cα) fall back to Catmull–Rom.
  *     d. Densely sample the spline and accumulate xy chord lengths for arc.
  *  3. Each residue's arc is taken from the spline; its z is the actual Cα z
- *     (not the smoothed spline z) so membrane depth is physically accurate.
+ *     so the membrane-depth reading is physically accurate, not the smoothed
+ *     axis position.
  *
  * Arc length is continuous across segment boundaries (we just keep accumulating).
  */
@@ -258,7 +259,8 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
         subUnrolled.push({ arc, z: s.z });
       }
 
-      // Each residue's arc from the spline; z from actual Cα (physically accurate depth).
+      // Each residue's arc from the spline; z from actual Cα (physically
+      // accurate membrane depth, not the smoothed axis z).
       for (let i = 0; i < sub.calphas.length; i++) {
         const ca = sub.calphas[i];
         const si = controlIndex[i];
