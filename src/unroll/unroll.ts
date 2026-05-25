@@ -115,6 +115,47 @@ function ssTypeFor(
   return 'coil';
 }
 
+interface SSSubGroup {
+  calphas: Calpha[];
+  type: 'helix' | 'strand' | 'coil';
+  /** Index of the first residue in this sub-group within the parent chain group. */
+  startGroupIndex: number;
+}
+
+/**
+ * Split a contiguous chain group into runs of the same SS type.
+ * Without SS annotation each run is a single 'coil' covering the whole group.
+ */
+function splitBySSType(
+  group: Calpha[],
+  ssSegments: SecondaryStructureSegment[] | undefined,
+): SSSubGroup[] {
+  if (!ssSegments || group.length === 0) {
+    return [{ calphas: group, type: 'coil', startGroupIndex: 0 }];
+  }
+
+  const result: SSSubGroup[] = [];
+  let currentCalphas: Calpha[] = [group[0]];
+  let currentType = ssTypeFor(group[0].resSeq, ssSegments);
+  let startIdx = 0;
+
+  for (let i = 1; i < group.length; i++) {
+    const type = ssTypeFor(group[i].resSeq, ssSegments);
+    if (type !== currentType) {
+      result.push({ calphas: currentCalphas, type: currentType, startGroupIndex: startIdx });
+      startIdx = i;
+      currentCalphas = [group[i]];
+      currentType = type;
+    } else {
+      currentCalphas.push(group[i]);
+    }
+  }
+  if (currentCalphas.length > 0) {
+    result.push({ calphas: currentCalphas, type: currentType, startGroupIndex: startIdx });
+  }
+  return result;
+}
+
 /**
  * Unroll a chain's Cα coordinates into the (arc, z) "membrane-side view".
  *
@@ -157,76 +198,90 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
   let zMax = -Infinity;
 
   for (const group of groups) {
-    const n = group.length;
+    // Sub-split by SS type so each region gets the right fitting strategy:
+    //   helix  → axis projection + smooth B-spline
+    //   strand → interpolating Catmull-Rom (preserves xy displacement, encodes strand angle)
+    //   coil   → smooth B-spline (same as helix but no axis projection)
+    const subGroups = splitBySSType(group, ssSegments);
 
-    // Translate to membrane frame.
-    const pts: Vec[] = group.map((c) => ({
-      x: c.x,
-      y: c.y,
-      z: c.z - membraneCentre,
-    }));
-
-    // Determine per-residue SS type and build helix mask.
-    const isHelix: boolean[] = group.map((ca) =>
-      ssSegments ? ssTypeFor(ca.resSeq, ssSegments) === 'helix' : false,
-    );
-
-    // Project helix Cα onto the local helix axis, leaving others unchanged.
-    const fittingPts = projectHelixAxis(pts, isHelix);
-
-    // Fit B-spline (or fall back to Catmull–Rom for tiny segments).
-    const totalSamples = (n - 1) * samplesPerSegment + 1;
-    const k = Math.max(4, Math.ceil(n / aminosPerDof));
-
-    let splineSamples: Vec[];
-    let controlIndex: number[];
-
-    if (n <= 3 || k >= n) {
-      // Catmull–Rom interpolates exactly through every point — safe for short runs.
-      const cr = sampleCurve(fittingPts, samplesPerSegment);
-      splineSamples = cr.samples;
-      controlIndex = cr.controlIndex;
-    } else {
-      const spline = fitBSpline(fittingPts, k);
-      const sampled = sampleBSpline(spline, totalSamples);
-      splineSamples = sampled.samples;
-      controlIndex = sampled.controlIndex;
-    }
-
-    // Accumulate xy arc lengths along the spline.
-    const unrolledSamples: UnrolledPoint[] = [];
+    const allSamples: UnrolledPoint[] = [];
+    const allResidues: UnrolledResidue[] = [];
+    let sampleOffset = 0;
     let arc = arcOffset;
-    let prev: Vec | null = null;
-    for (const s of splineSamples) {
-      if (prev) {
-        const dx = s.x - prev.x;
-        const dy = s.y - prev.y;
-        arc += Math.sqrt(dx * dx + dy * dy);
+    let prevPt: Vec | null = null;
+
+    for (const sub of subGroups) {
+      const subN = sub.calphas.length;
+
+      // Translate to membrane frame.
+      const pts: Vec[] = sub.calphas.map((c) => ({
+        x: c.x,
+        y: c.y,
+        z: c.z - membraneCentre,
+      }));
+
+      // Project helix Cα onto the local helix axis; leave others unchanged.
+      const isHelixMask: boolean[] = pts.map(() => sub.type === 'helix');
+      const fittingPts = sub.type === 'helix' ? projectHelixAxis(pts, isHelixMask) : pts;
+
+      // DOF selection: strands use DOF=1 which forces k≥n → Catmull-Rom fallback,
+      // interpolating through every Cα and preserving the xy displacement that
+      // encodes the strand's crossing angle in the membrane.
+      const effectiveDof = sub.type === 'strand' ? 1 : aminosPerDof;
+      const totalSamples = (subN - 1) * samplesPerSegment + 1;
+      const k = Math.max(4, Math.ceil(subN / effectiveDof));
+
+      let splineSamples: Vec[];
+      let controlIndex: number[];
+
+      if (subN <= 3 || k >= subN) {
+        const cr = sampleCurve(fittingPts, samplesPerSegment);
+        splineSamples = cr.samples;
+        controlIndex = cr.controlIndex;
+      } else {
+        const spline = fitBSpline(fittingPts, k);
+        const sampled = sampleBSpline(spline, totalSamples);
+        splineSamples = sampled.samples;
+        controlIndex = sampled.controlIndex;
       }
-      prev = s;
-      unrolledSamples.push({ arc, z: s.z });
+
+      // Accumulate xy arc lengths, continuing from the previous sub-group.
+      const subUnrolled: UnrolledPoint[] = [];
+      for (const s of splineSamples) {
+        if (prevPt) {
+          const dx = s.x - prevPt.x;
+          const dy = s.y - prevPt.y;
+          arc += Math.sqrt(dx * dx + dy * dy);
+        }
+        prevPt = s;
+        subUnrolled.push({ arc, z: s.z });
+      }
+
+      // Each residue's arc from the spline; z from actual Cα (physically accurate depth).
+      for (let i = 0; i < sub.calphas.length; i++) {
+        const ca = sub.calphas[i];
+        const si = controlIndex[i];
+        const z = ca.z - membraneCentre;
+        if (z < zMin) zMin = z;
+        if (z > zMax) zMax = z;
+        allResidues.push({
+          resSeq: ca.resSeq,
+          iCode: ca.iCode,
+          arc: subUnrolled[si].arc,
+          z,
+          index: sub.startGroupIndex + i,
+          sampleIndex: sampleOffset + si,
+        });
+      }
+
+      sampleOffset += splineSamples.length;
+      allSamples.push(...subUnrolled);
     }
 
-    // Each residue's arc from the spline; z from the actual Cα (physically
-    // accurate membrane depth, not the smoothed axis z).
-    const residues: UnrolledResidue[] = group.map((ca, i) => {
-      const si = controlIndex[i];
-      const z = ca.z - membraneCentre;
-      if (z < zMin) zMin = z;
-      if (z > zMax) zMax = z;
-      return {
-        resSeq: ca.resSeq,
-        iCode: ca.iCode,
-        arc: unrolledSamples[si].arc,
-        z,
-        index: i,
-        sampleIndex: si,
-      };
-    });
-
-    segments.push({ samples: unrolledSamples, residues });
-    arcOffset =
-      unrolledSamples.length > 0 ? unrolledSamples[unrolledSamples.length - 1].arc : arcOffset;
+    arcOffset = allSamples.length > 0 ? allSamples[allSamples.length - 1].arc : arcOffset;
+    // Reset prevPt across chain-break boundaries (no phantom arc step for the gap).
+    prevPt = null;
+    segments.push({ samples: allSamples, residues: allResidues });
   }
 
   if (!Number.isFinite(zMin)) {

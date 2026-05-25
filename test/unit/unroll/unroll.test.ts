@@ -153,6 +153,38 @@ describe('unrollChain with ssSegments (helix axis)', () => {
     }
   });
 
+  it('strand arc preserves xy displacement (not smoothed away by global spline)', () => {
+    // Beta-barrel strand: alternating ±1.0 Å radial (y) plus net circumferential drift.
+    // Catmull-Rom (strand) traverses the zigzag; smooth B-spline (no SS) averages it away.
+    // Realistic beta-barrel strand geometry:
+    //   - net drift 1.2 Å/residue along x (circumferential)
+    //   - alternating ±1.0 Å in y (in/out radial)
+    //   - rise 3.3 Å/residue (z)
+    // 3-D Cα–Cα distance ≈ 4.0 Å — well below the 5.5 Å break threshold.
+    const n = 8;
+    const strandCa: Calpha[] = Array.from({ length: n }, (_, i) => ({
+      resSeq: i + 1,
+      iCode: '',
+      x: 1.2 * i,
+      y: i % 2 === 0 ? 1.0 : -1.0,
+      z: i * 3.3,
+    }));
+    const ssStrand: SecondaryStructureSegment[] = [{ start: 1, end: n, type: 'strand' }];
+
+    const withStrand = unrollChain(strandCa, { ssSegments: ssStrand });
+    const noSS = unrollChain(strandCa); // no SS → smooth global B-spline
+
+    // With strand annotation the arc must reflect the actual Cα zigzag (Catmull-Rom).
+    // Without SS the smooth spline substantially reduces the perceived lateral travel.
+    expect(withStrand.totalArcLength).toBeGreaterThan(noSS.totalArcLength * 1.5);
+
+    // Arc must still be strictly increasing per residue.
+    const residues = withStrand.segments[0].residues;
+    for (let i = 1; i < residues.length; i++) {
+      expect(residues[i].arc).toBeGreaterThan(residues[i - 1].arc);
+    }
+  });
+
   it('aminosPerDof=2 gives more control points than aminosPerDof=8', () => {
     // We cannot observe k directly, but a looser spline (more DOF) should track
     // the helix spiral more closely → larger arc-increment variance.
