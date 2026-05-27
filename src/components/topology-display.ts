@@ -160,6 +160,10 @@ interface SsRun {
   endResSeq: number;
   /** Sample index of the actual last residue (used for label placement). */
   endResSampleIdx: number;
+  /** Index of the first residue in this run within the parent `residues` array. */
+  residueStart: number;
+  /** Index of the last residue in this run within the parent `residues` array. */
+  residueEnd: number;
 }
 
 /** Group consecutive residue indices that share the same SS type into runs. */
@@ -183,6 +187,8 @@ function runsBySs(
         startResSeq: residues[runStartResIdx].resSeq,
         endResSeq: residues[i - 1].resSeq,
         endResSampleIdx: residues[i - 1].sampleIndex,
+        residueStart: runStartResIdx,
+        residueEnd: i - 1,
       });
       runType = t;
       runStartSample = residues[i].sampleIndex;
@@ -197,6 +203,8 @@ function runsBySs(
     startResSeq: residues[runStartResIdx].resSeq,
     endResSeq: residues[lastIdx].resSeq,
     endResSampleIdx: residues[lastIdx].sampleIndex,
+    residueStart: runStartResIdx,
+    residueEnd: lastIdx,
   });
   return runs;
 }
@@ -445,14 +453,60 @@ function drawSsPolygon(
   plot.appendChild(poly);
 }
 
-function pathFromPoints(samples: UnrolledPoint[], startIdx: number, endIdx: number): string {
-  if (endIdx < startIdx) return '';
-  const parts: string[] = [];
-  for (let i = startIdx; i <= endIdx; i++) {
-    const s = samples[i];
-    parts.push(`${i === startIdx ? 'M' : 'L'}${s.arc.toFixed(2)},${s.z.toFixed(2)}`);
+/**
+ * Render a loop (coil) as a rectangular bracket that conveys the vertical
+ * extent: a vertical rise from the start z to the extremal z, a horizontal
+ * cap at that extreme, then a vertical drop back to the end z.  Loops with
+ * sequence gaps (missing residues) are drawn with a dashed stroke.
+ */
+function drawLoopSimplified(
+  plot: SVGGElement,
+  samples: UnrolledPoint[],
+  loopResidues: { resSeq: number }[],
+  startSample: number,
+  endSample: number,
+): void {
+  if (endSample <= startSample) return;
+
+  const startPt = samples[startSample];
+  const endPt = samples[endSample];
+
+  // Extremal z: the sample furthest from the membrane midplane.
+  let extremeZ = startPt.z;
+  for (let i = startSample; i <= endSample; i++) {
+    if (Math.abs(samples[i].z) > Math.abs(extremeZ)) extremeZ = samples[i].z;
   }
-  return parts.join(' ');
+
+  // Sequence discontinuity = gaps in residue numbering within the loop.
+  let discontinuous = false;
+  for (let i = 1; i < loopResidues.length; i++) {
+    if (loopResidues[i].resSeq - loopResidues[i - 1].resSeq > 1) {
+      discontinuous = true;
+      break;
+    }
+  }
+
+  const strokeOpts: [string, string][] = [
+    ['stroke', COLOURS.coil],
+    ['stroke-width', '1.8'],
+    ['stroke-linecap', 'round'],
+    ['vector-effect', 'non-scaling-stroke'],
+  ];
+  if (discontinuous) strokeOpts.push(['stroke-dasharray', '3 3']);
+
+  const seg = (x1: number, y1: number, x2: number, y2: number) => {
+    const el = document.createElementNS(SVG_NS, 'line');
+    el.setAttribute('x1', x1.toFixed(2));
+    el.setAttribute('y1', y1.toFixed(2));
+    el.setAttribute('x2', x2.toFixed(2));
+    el.setAttribute('y2', y2.toFixed(2));
+    for (const [k, v] of strokeOpts) el.setAttribute(k, v);
+    plot.appendChild(el);
+  };
+
+  seg(startPt.arc, startPt.z, startPt.arc, extremeZ);
+  seg(startPt.arc, extremeZ, endPt.arc, extremeZ);
+  seg(endPt.arc, extremeZ, endPt.arc, endPt.z);
 }
 
 function renderChainSvg(chain: ChainData): SVGSVGElement {
@@ -609,17 +663,8 @@ function drawSegment(
       }
       continue;
     }
-    const d = pathFromPoints(segment.samples, run.startSample, run.endSample);
-    if (!d) continue;
-    const path = document.createElementNS(SVG_NS, 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', COLOURS.coil);
-    path.setAttribute('stroke-width', '1.8');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    path.setAttribute('vector-effect', 'non-scaling-stroke');
-    plot.appendChild(path);
+    const loopResidues = segment.residues.slice(run.residueStart, run.residueEnd + 1);
+    drawLoopSimplified(plot, segment.samples, loopResidues, run.startSample, run.endSample);
   }
 }
 

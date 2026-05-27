@@ -42,6 +42,40 @@ function tmHelixProtein(): ProteinData {
   };
 }
 
+function discontinuousLoopProtein(): ProteinData {
+  // Two short helices connected by a loop whose residue numbers have gaps
+  // (missing residues 5 and 7). All Cα-Cα distances < 5.5 Å (no 3-D break).
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -5 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -2 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: 1 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: 4 },
+    // Loop: residues 6, 8, 10 — gaps of 2 (residues 5, 7, 9 are missing).
+    { resSeq: 6, iCode: '', x: 3, y: 0, z: 8 },
+    { resSeq: 8, iCode: '', x: 6, y: 0, z: 9 },
+    { resSeq: 10, iCode: '', x: 9, y: 0, z: 8 },
+    { resSeq: 11, iCode: '', x: 12, y: 0, z: 4 },
+    { resSeq: 12, iCode: '', x: 12, y: 0, z: 1 },
+    { resSeq: 13, iCode: '', x: 12, y: 0, z: -2 },
+    { resSeq: 14, iCode: '', x: 12, y: 0, z: -5 },
+  ];
+  return {
+    pdbId: 'dis1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 11,
+        segments: [
+          { start: 1, end: 4, type: 'helix' },
+          { start: 6, end: 10, type: 'coil' },
+          { start: 11, end: 14, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
 function betaBarrelChain(): ChainData {
   // 4-strand antiparallel beta barrel with 3-residue loops.
   // Strands are ~3 Å/residue in z, well within the 5.5 Å break threshold.
