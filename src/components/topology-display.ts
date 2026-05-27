@@ -106,10 +106,16 @@ const PLOT = {
   membraneHalf: 15,
   /** Maximum |z| (Å) shown on the y-axis — auto-expands if data exceeds. */
   zRangeMin: 25,
-  /** Å per pixel on the x-axis (arc length). Higher = more zoomed-in. */
-  arcPxPerA: 1.6,
-  /** Å per pixel on the y-axis (real z). */
-  zPxPerA: 4,
+  /**
+   * Å per pixel on the x-axis (arc length).  Set equal to `zPxPerA` for a
+   * 1:1 aspect ratio so that tilt angles in the 2-D plot faithfully match
+   * the true 3-D tilt.  The previous 1.6/4 ratio produced 2.5× vertical
+   * exaggeration that inflated apparent helix angles once the unroller
+   * started reporting geometrically accurate arc lengths.
+   */
+  arcPxPerA: 2.5,
+  /** Å per pixel on the y-axis (real z).  Equal to arcPxPerA for 1:1 aspect ratio. */
+  zPxPerA: 2.5,
 };
 
 const COLOURS = {
@@ -335,7 +341,7 @@ function pathFromPoints(samples: UnrolledPoint[], startIdx: number, endIdx: numb
 }
 
 function renderChainSvg(chain: ChainData): SVGSVGElement {
-  const unroll = unrollChain(chain.calphas);
+  const unroll = unrollChain(chain.calphas, { ssSegments: chain.segments });
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
   const plotWidth = Math.max(200, unroll.totalArcLength * PLOT.arcPxPerA);
