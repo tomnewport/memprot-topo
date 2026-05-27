@@ -47,10 +47,11 @@ export interface UnrollResult {
 
 export interface UnrollOptions {
   /**
-   * Sample density along each curve segment between control Cα.
-   * Used when falling back to Catmull–Rom for very short segments.
+   * Number of spline samples per inter-Cα interval.  Controls arc-length
+   * resolution and residue positioning along the curve.  Also used as
+   * samples-per-segment in the Catmull–Rom fallback.
    */
-  samplesPerSegment?: number;
+  sampleDensity?: number;
   /** Threshold (Å) on 3-D Cα–Cα distance above which a chain break is inferred. */
   breakDistance?: number;
   /** Z-coordinate to use as the membrane midplane (subtracted from all z). */
@@ -74,7 +75,7 @@ export interface UnrollOptions {
 }
 
 const DEFAULTS = {
-  samplesPerSegment: 16,
+  sampleDensity: 16,
   breakDistance: 5.5,
   membraneCentre: 0,
   aminosPerDof: 4,
@@ -105,14 +106,33 @@ function splitOnBreaks(calphas: Calpha[], breakDistance: number): Calpha[][] {
   return groups;
 }
 
-function ssTypeFor(
-  resSeq: number,
-  segments: SecondaryStructureSegment[],
-): 'helix' | 'strand' | 'coil' {
-  for (const seg of segments) {
-    if (resSeq >= seg.start && resSeq <= seg.end) return seg.type;
+/**
+ * Build a resSeq → SS-type map for a chain group in O(N log S) using a
+ * pre-sorted segment list, avoiding the O(N·S) per-residue linear scan.
+ */
+function buildSSTypeMap(
+  group: Calpha[],
+  ssSegments: SecondaryStructureSegment[],
+): Map<number, 'helix' | 'strand' | 'coil'> {
+  const sorted = [...ssSegments].sort((a, b) => a.start - b.start);
+  const map = new Map<number, 'helix' | 'strand' | 'coil'>();
+  for (const ca of group) {
+    let lo = 0,
+      hi = sorted.length - 1;
+    let type: 'helix' | 'strand' | 'coil' = 'coil';
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const seg = sorted[mid];
+      if (seg.end < ca.resSeq) lo = mid + 1;
+      else if (seg.start > ca.resSeq) hi = mid - 1;
+      else {
+        type = seg.type;
+        break;
+      }
+    }
+    map.set(ca.resSeq, type);
   }
-  return 'coil';
+  return map;
 }
 
 interface SSSubGroup {
@@ -128,19 +148,19 @@ interface SSSubGroup {
  */
 function splitBySSType(
   group: Calpha[],
-  ssSegments: SecondaryStructureSegment[] | undefined,
+  typeMap: Map<number, 'helix' | 'strand' | 'coil'> | undefined,
 ): SSSubGroup[] {
-  if (!ssSegments || group.length === 0) {
+  if (!typeMap || group.length === 0) {
     return [{ calphas: group, type: 'coil', startGroupIndex: 0 }];
   }
 
   const result: SSSubGroup[] = [];
   let currentCalphas: Calpha[] = [group[0]];
-  let currentType = ssTypeFor(group[0].resSeq, ssSegments);
+  let currentType = typeMap.get(group[0].resSeq) ?? 'coil';
   let startIdx = 0;
 
   for (let i = 1; i < group.length; i++) {
-    const type = ssTypeFor(group[i].resSeq, ssSegments);
+    const type = typeMap.get(group[i].resSeq) ?? 'coil';
     if (type !== currentType) {
       result.push({ calphas: currentCalphas, type: currentType, startGroupIndex: startIdx });
       startIdx = i;
@@ -168,21 +188,23 @@ function splitBySSType(
  * Algorithm:
  *  1. Split the Cα list on long jumps (chain breaks).
  *  2. For each contiguous run:
- *     a. Classify each Cα by secondary structure type.
- *     b. Project helix Cα onto the local helix axis (sliding-window PCA),
- *        removing the ~100°/residue twist.
- *     c. Fit a clamped cubic B-spline to the (possibly pre-processed)
- *        positions using max(4, ceil(n / aminosPerDof)) control points.
- *        For very short runs (≤ 3 Cα) fall back to Catmull–Rom.
- *     d. Densely sample the spline and accumulate xy chord lengths for arc.
- *  3. Each residue's arc is taken from the spline; its z is the actual Cα z
- *     so the membrane-depth reading is physically accurate, not the smoothed
- *     axis position.
+ *     a. Build a resSeq → SS-type map (O(N log S)).
+ *     b. Project the ENTIRE group with `projectHelixAxis` (non-helix Cα pass
+ *        through unchanged).  Projecting before splitting keeps coordinates
+ *        continuous at helix↔coil boundaries, eliminating phantom arc steps.
+ *     c. Sub-split by SS type; each region gets the appropriate fitting:
+ *        - helix/coil: clamped cubic B-spline, max(4, ceil(n/aminosPerDof)) c.p.
+ *        - strand: Catmull-Rom (effectiveDof=1 forces k≥subN, preserving the
+ *          xy arc that encodes strand crossing angle).
+ *        Very short runs (≤ 3 Cα) always fall back to Catmull–Rom.
+ *     d. Densely sample and accumulate xy chord lengths for arc.
+ *  3. Each residue's arc comes from the spline; z is the actual Cα z for
+ *     physically accurate membrane depth.
  *
  * Arc length is continuous across segment boundaries (we just keep accumulating).
  */
 export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): UnrollResult {
-  const { samplesPerSegment, breakDistance, membraneCentre, ssSegments, aminosPerDof } = {
+  const { sampleDensity, breakDistance, membraneCentre, ssSegments, aminosPerDof } = {
     ...DEFAULTS,
     ...options,
   };
@@ -199,11 +221,18 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
   let zMax = -Infinity;
 
   for (const group of groups) {
-    // Sub-split by SS type so each region gets the right fitting strategy:
-    //   helix  → axis projection + smooth B-spline
-    //   strand → interpolating Catmull-Rom (preserves xy displacement, encodes strand angle)
-    //   coil   → smooth B-spline (same as helix but no axis projection)
-    const subGroups = splitBySSType(group, ssSegments);
+    // Build type map once per group (O(N log S)), then project the whole group
+    // before splitting.  Projecting non-helix residues as identity keeps the
+    // coordinate sequence continuous across helix↔coil sub-group boundaries,
+    // eliminating the phantom arc step at each transition.
+    const typeMap = ssSegments ? buildSSTypeMap(group, ssSegments) : undefined;
+    const groupPts: Vec[] = group.map((c) => ({ x: c.x, y: c.y, z: c.z - membraneCentre }));
+    const isHelixMask = typeMap
+      ? group.map((c) => (typeMap.get(c.resSeq) ?? 'coil') === 'helix')
+      : group.map(() => false);
+    const projectedGroupPts = ssSegments ? projectHelixAxis(groupPts, isHelixMask) : groupPts;
+
+    const subGroups = splitBySSType(group, typeMap);
 
     const allSamples: UnrolledPoint[] = [];
     const allResidues: UnrolledResidue[] = [];
@@ -214,30 +243,21 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
     for (const sub of subGroups) {
       const subN = sub.calphas.length;
 
-      // Translate to membrane frame.
-      const pts: Vec[] = sub.calphas.map((c) => ({
-        x: c.x,
-        y: c.y,
-        z: c.z - membraneCentre,
-      }));
+      // Slice pre-projected coordinates for this sub-group.
+      const fittingPts = projectedGroupPts.slice(sub.startGroupIndex, sub.startGroupIndex + subN);
 
-      // Project helix Cα onto the local helix axis; leave others unchanged.
-      const isHelixMask: boolean[] = pts.map(() => sub.type === 'helix');
-      const fittingPts = sub.type === 'helix' ? projectHelixAxis(pts, isHelixMask) : pts;
-
-      // All sub-groups use the configured aminosPerDof; because the chain is now
-      // sub-split by SS type, each strand segment is fitted independently, so
-      // the smooth spline captures the strand's net crossing angle without being
-      // drowned out by adjacent loop residues.
-      const effectiveDof = aminosPerDof;
-      const totalSamples = (subN - 1) * samplesPerSegment + 1;
+      // Per-SS-type DOF: strands use DOF=1 so k≥subN triggers the Catmull-Rom
+      // fallback, preserving the xy zigzag that encodes strand crossing angle.
+      const DOF_PER_TYPE = { helix: aminosPerDof, coil: aminosPerDof, strand: 1 } as const;
+      const effectiveDof = DOF_PER_TYPE[sub.type];
+      const totalSamples = (subN - 1) * sampleDensity + 1;
       const k = Math.max(4, Math.ceil(subN / effectiveDof));
 
       let splineSamples: Vec[];
       let controlIndex: number[];
 
       if (subN <= 3 || k >= subN) {
-        const cr = sampleCurve(fittingPts, samplesPerSegment);
+        const cr = sampleCurve(fittingPts, sampleDensity);
         splineSamples = cr.samples;
         controlIndex = cr.controlIndex;
       } else {
@@ -282,8 +302,6 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
     }
 
     arcOffset = allSamples.length > 0 ? allSamples[allSamples.length - 1].arc : arcOffset;
-    // Reset prevPt across chain-break boundaries (no phantom arc step for the gap).
-    prevPt = null;
     segments.push({ samples: allSamples, residues: allResidues });
   }
 

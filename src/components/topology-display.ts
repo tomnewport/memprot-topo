@@ -106,9 +106,15 @@ const PLOT = {
   membraneHalf: 15,
   /** Maximum |z| (Å) shown on the y-axis — auto-expands if data exceeds. */
   zRangeMin: 25,
-  /** Å per pixel on the x-axis (arc length). Equal to zPxPerA for 1:1 aspect ratio. */
+  /**
+   * Å per pixel on the x-axis (arc length).  Set equal to `zPxPerA` for a
+   * 1:1 aspect ratio so that tilt angles in the 2-D plot faithfully match
+   * the true 3-D tilt.  The previous 1.6/4 ratio produced 2.5× vertical
+   * exaggeration that inflated apparent helix angles once the unroller
+   * started reporting geometrically accurate arc lengths.
+   */
   arcPxPerA: 2.5,
-  /** Å per pixel on the y-axis (real z). Equal to arcPxPerA for 1:1 aspect ratio. */
+  /** Å per pixel on the y-axis (real z).  Equal to arcPxPerA for 1:1 aspect ratio. */
   zPxPerA: 2.5,
 };
 

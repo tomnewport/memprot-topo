@@ -110,7 +110,7 @@ function gaussianElim(A: number[][], b: number[]): number[] {
       if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
     }
     [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
-    if (Math.abs(aug[col][col]) < 1e-12) continue;
+    if (Math.abs(aug[col][col]) < 1e-12) throw new Error('singular');
     for (let row = col + 1; row < n; row++) {
       const f = aug[row][col] / aug[col][col];
       for (let j = col; j <= n; j++) aug[row][j] -= f * aug[col][j];
@@ -120,7 +120,7 @@ function gaussianElim(A: number[][], b: number[]): number[] {
   for (let i = n - 1; i >= 0; i--) {
     x[i] = aug[i][n];
     for (let j = i + 1; j < n; j++) x[i] -= aug[i][j] * x[j];
-    x[i] /= aug[i][i] || 1;
+    x[i] /= aug[i][i];
   }
   return x;
 }
@@ -229,9 +229,25 @@ export function fitBSpline(points: Vec[], k: number): FittedBSpline {
     Qz.push(rz);
   }
 
-  const Px = solveLeastSquares(A, Qx);
-  const Py = solveLeastSquares(A, Qy);
-  const Pz = solveLeastSquares(A, Qz);
+  let Px: number[], Py: number[], Pz: number[];
+  try {
+    Px = solveLeastSquares(A, Qx);
+    Py = solveLeastSquares(A, Qy);
+    Pz = solveLeastSquares(A, Qz);
+  } catch {
+    // Singular normal equations — fall back to linear interpolation.
+    const p0 = points[0],
+      pm = points[m - 1];
+    const controlPoints = Array.from({ length: k }, (_, j) => {
+      const f = j / (k - 1);
+      return {
+        x: p0.x + f * (pm.x - p0.x),
+        y: p0.y + f * (pm.y - p0.y),
+        z: p0.z + f * (pm.z - p0.z),
+      };
+    });
+    return { controlPoints, knots: T, params };
+  }
 
   const controlPoints: Vec[] = [
     { ...q0 },
@@ -248,7 +264,7 @@ export function fitBSpline(points: Vec[], k: number): FittedBSpline {
 export function evaluateBSpline({ controlPoints, knots }: FittedBSpline, t: number): Vec {
   const k = controlPoints.length;
   const n = k - 1;
-  const tc = Math.max(0, Math.min(1 - 1e-10, t));
+  const tc = Math.max(0, Math.min(1, t));
   const span = findSpan(knots, n, tc);
   const N = basisFunctions(knots, span, tc);
   let x = 0,
@@ -278,6 +294,16 @@ export function sampleBSpline(
     const t = j / (totalSamples - 1);
     samples.push(evaluateBSpline(spline, t));
   }
-  const controlIndex = spline.params.map((t) => Math.round(t * (totalSamples - 1)));
+  // Use floor and enforce strictly non-colliding indices; Math.round can map
+  // two close params to the same sample when chord distance is very small.
+  const controlIndex: number[] = [];
+  let prev = -1;
+  for (const t of spline.params) {
+    let idx = Math.min(Math.floor(t * (totalSamples - 1)), totalSamples - 1);
+    if (idx <= prev) idx = prev + 1;
+    if (idx >= totalSamples) idx = totalSamples - 1;
+    controlIndex.push(idx);
+    prev = idx;
+  }
   return { samples, controlIndex };
 }
