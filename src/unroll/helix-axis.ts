@@ -30,13 +30,22 @@ function matVec(M: number[][], v: [number, number, number]): [number, number, nu
   ];
 }
 
-function dominantEigenvector(M: number[][]): [number, number, number] {
-  let v: [number, number, number] = [0, 0, 1];
+function dominantEigenvector(
+  M: number[][],
+  seed: [number, number, number],
+): [number, number, number] {
+  let v: [number, number, number] = seed;
+  let norm = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  if (norm < 1e-10) v = [1, 1, 1];
+  else v = [v[0] / norm, v[1] / norm, v[2] / norm];
   for (let iter = 0; iter < 40; iter++) {
     const w = matVec(M, v);
-    const norm = Math.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+    norm = Math.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
     if (norm < 1e-10) break;
-    v = [w[0] / norm, w[1] / norm, w[2] / norm];
+    const vNew: [number, number, number] = [w[0] / norm, w[1] / norm, w[2] / norm];
+    const dot = Math.abs(vNew[0] * v[0] + vNew[1] * v[1] + vNew[2] * v[2]);
+    v = vNew;
+    if (1 - dot < 1e-8) break;
   }
   return v;
 }
@@ -94,8 +103,15 @@ export function projectHelixAxis(pts: Vec[], isHelix: boolean[], windowHalf = 4)
       for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) M[a][b] += d[a] * d[b];
     }
 
-    // Helix axis direction (dominant eigenvector).
-    const [ex, ey, ez] = dominantEigenvector(M);
+    // Helix axis direction: seed from the window chord so power iteration
+    // converges correctly even for helices whose axis lies in the xy plane.
+    const last = window[window.length - 1];
+    const seed: [number, number, number] = [
+      last.x - window[0].x,
+      last.y - window[0].y,
+      last.z - window[0].z,
+    ];
+    const [ex, ey, ez] = dominantEigenvector(M, seed);
 
     // Project pts[i] onto the axis through C.
     const dx = pts[i].x - C.x;
