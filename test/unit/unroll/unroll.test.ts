@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { unrollChain } from '../../../src/unroll/unroll.js';
-import type { Calpha } from '../../../src/types.js';
+import type { Calpha, SecondaryStructureSegment } from '../../../src/types.js';
 
 function caRange(n: number, fn: (i: number) => { x: number; y: number; z: number }): Calpha[] {
   return Array.from({ length: n }, (_, i) => ({ resSeq: i + 1, iCode: '', ...fn(i) }));
@@ -88,5 +88,115 @@ describe('unrollChain', () => {
     const lastOfFirst = r.segments[0].residues[1].arc;
     const firstOfSecond = r.segments[1].residues[0].arc;
     expect(firstOfSecond).toBeGreaterThanOrEqual(lastOfFirst);
+  });
+});
+
+const DEG = Math.PI / 180;
+
+/** Ideal alpha-helix Cα: radius 2.3 Å, rise 1.5 Å, twist 100°/residue. */
+function helixCa(n: number, resSeqStart = 1): Calpha[] {
+  return Array.from({ length: n }, (_, i) => ({
+    resSeq: resSeqStart + i,
+    iCode: '',
+    x: 2.3 * Math.cos(i * 100 * DEG),
+    y: 2.3 * Math.sin(i * 100 * DEG),
+    z: i * 1.5,
+  }));
+}
+
+describe('unrollChain with ssSegments (helix axis)', () => {
+  it('helix arc is strictly increasing', () => {
+    const n = 20;
+    const calphas = helixCa(n);
+    const ssSegments: SecondaryStructureSegment[] = [{ start: 1, end: n, type: 'helix' }];
+    const r = unrollChain(calphas, { ssSegments });
+    const residues = r.segments[0].residues;
+    for (let i = 1; i < residues.length; i++) {
+      expect(residues[i].arc).toBeGreaterThan(residues[i - 1].arc);
+    }
+  });
+
+  it('helix arc is much smoother than raw Catmull–Rom through Cα', () => {
+    // Ideal TM helix: Ca spiral in xy, rise in z.
+    const n = 24;
+    const calphas = helixCa(n);
+    const ssSegments: SecondaryStructureSegment[] = [{ start: 1, end: n, type: 'helix' }];
+
+    const withAxis = unrollChain(calphas, { ssSegments });
+    const withoutAxis = unrollChain(calphas); // no SS → Catmull–Rom through Cα
+
+    // Compute per-residue arc increments.
+    function increments(residues: { arc: number }[]): number[] {
+      const d: number[] = [];
+      for (let i = 1; i < residues.length; i++) d.push(residues[i].arc - residues[i - 1].arc);
+      return d;
+    }
+    function variance(xs: number[]): number {
+      const mean = xs.reduce((s, x) => s + x, 0) / xs.length;
+      return xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length;
+    }
+
+    const incAxis = increments(withAxis.segments[0].residues);
+    const incRaw = increments(withoutAxis.segments[0].residues);
+
+    // Axis-fitted increments should be much more uniform (lower variance).
+    expect(variance(incAxis)).toBeLessThan(variance(incRaw) * 0.2);
+  });
+
+  it('helix z values are actual Cα z (not spline z)', () => {
+    const n = 16;
+    const calphas = helixCa(n);
+    const ssSegments: SecondaryStructureSegment[] = [{ start: 1, end: n, type: 'helix' }];
+    const r = unrollChain(calphas, { ssSegments });
+    for (let i = 0; i < n; i++) {
+      expect(r.segments[0].residues[i].z).toBeCloseTo(i * 1.5, 4);
+    }
+  });
+
+  it('strand arc is strictly increasing (crossing angle preserved)', () => {
+    // Realistic beta-barrel strand: net drift 1.2 Å/residue in x, alternating
+    // ±1.0 Å in y, 3.3 Å rise. 3-D Cα–Cα ≈ 4.0 Å < 5.5 Å break threshold.
+    const n = 8;
+    const strandCa: Calpha[] = Array.from({ length: n }, (_, i) => ({
+      resSeq: i + 1,
+      iCode: '',
+      x: 1.2 * i,
+      y: i % 2 === 0 ? 1.0 : -1.0,
+      z: i * 3.3,
+    }));
+    const ssStrand: SecondaryStructureSegment[] = [{ start: 1, end: n, type: 'strand' }];
+    const r = unrollChain(strandCa, { ssSegments: ssStrand });
+
+    // The strand sub-segment gets its own B-spline, capturing the net lateral
+    // drift without the per-residue zigzag noise.
+    expect(r.totalArcLength).toBeGreaterThan(1.0 * 7); // at least net-drift arc
+
+    const residues = r.segments[0].residues;
+    for (let i = 1; i < residues.length; i++) {
+      expect(residues[i].arc).toBeGreaterThan(residues[i - 1].arc);
+    }
+  });
+
+  it('aminosPerDof=2 gives more control points than aminosPerDof=8', () => {
+    // We cannot observe k directly, but a looser spline (more DOF) should track
+    // the helix spiral more closely → larger arc-increment variance.
+    const n = 40;
+    const calphas = helixCa(n);
+
+    function arcIncrements(aminosPerDof: number): number[] {
+      const r = unrollChain(calphas, { aminosPerDof });
+      const res = r.segments[0].residues;
+      const d: number[] = [];
+      for (let i = 1; i < res.length; i++) d.push(res[i].arc - res[i - 1].arc);
+      return d;
+    }
+    function variance(xs: number[]): number {
+      const mean = xs.reduce((s, x) => s + x, 0) / xs.length;
+      return xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length;
+    }
+
+    const varLoose = variance(arcIncrements(2));
+    const varTight = variance(arcIncrements(8));
+    expect(varLoose).toBeGreaterThan(varTight);
   });
 });
