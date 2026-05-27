@@ -349,8 +349,8 @@ describe('TopologyDisplay live attribute updates', () => {
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(II)');
 
-    // Changing the attribute resets selection back to default
-    el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer', chains: [tm, tmB] }));
+    // Changing the attribute (different JSON — pdbId updated) resets selection back to default
+    el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer-v2', chains: [tm, tmB] }));
     expect(
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(I)');
@@ -360,6 +360,7 @@ describe('TopologyDisplay live attribute updates', () => {
     const el = attach(new TopologyDisplay());
     el.setAttribute('protein-data', 'not valid json {{{');
     expect(el.shadowRoot!.querySelector('.placeholder')).not.toBeNull();
+    expect(el.shadowRoot!.querySelector('.svg-scroll')).toBeNull();
   });
 
   it('renders correctly when protein-data attribute is set before connecting to DOM', () => {

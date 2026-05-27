@@ -169,14 +169,31 @@ describe('TopologyLoader', () => {
     expect(errorEl).not.toBeNull();
   });
 
-  it('aborts the previous request when pdb-id changes before fetch completes', async () => {
+  it('renders an error when the DSSP fetch fails', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if ((url as string).includes('pdb-redo.eu')) {
+        return Promise.resolve({ ok: false, status: 503, statusText: 'Service Unavailable' });
+      }
+      return Promise.resolve({ ok: true, text: () => Promise.resolve(MINIMAL_PDB) });
+    });
+
+    const el = attach(new TopologyLoader());
+    el.setAttribute('pdb-id', '9bad');
+
+    await flushPromises();
+
+    const errorEl = el.shadowRoot!.querySelector('.error');
+    expect(errorEl).not.toBeNull();
+  });
+
+  it('aborts the previous request when pdb-id changes before fetch completes', () => {
     let aborted = false;
     fetchMock.mockImplementation((_url: string, opts: { signal?: AbortSignal }) => {
-      opts?.signal?.addEventListener('abort', () => {
-        aborted = true;
-      });
-      return new Promise(() => {
-        /* never resolves */
+      return new Promise((_resolve, reject) => {
+        opts?.signal?.addEventListener('abort', () => {
+          aborted = true;
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
       });
     });
 
