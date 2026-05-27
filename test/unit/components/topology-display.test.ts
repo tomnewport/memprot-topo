@@ -255,6 +255,61 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(helixPolys.every((p) => p.getAttribute('stroke') === '#3e587a')).toBe(true);
   });
 
+  it('labels each helix/strand polygon with its start and end residue numbers', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tmHelixProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg')!;
+    const texts = Array.from(svg.querySelectorAll('text')).map((t) => t.textContent);
+    // tmHelixProtein has one helix from residue 1 to 24.
+    expect(texts).toContain('1');
+    expect(texts).toContain('24');
+  });
+
+  it('labels every strand of a beta barrel with its start and end residue numbers', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg')!;
+    const texts = new Set(Array.from(svg.querySelectorAll('text')).map((t) => t.textContent));
+    // Strand boundaries: 1-10, 14-23, 27-36, 40-49 (3-residue coil loops between).
+    for (const r of [1, 10, 14, 23, 27, 36, 40, 49]) {
+      expect(texts.has(String(r))).toBe(true);
+    }
+  });
+
+  it('does not place residue-number labels that overlap each other', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg')!;
+    const texts = Array.from(svg.querySelectorAll('text'));
+    const fontSize = 11;
+    const pad = 2;
+    const boxes = texts.map((t) => {
+      const cx = parseFloat(t.getAttribute('x') ?? '0');
+      const cy = parseFloat(t.getAttribute('y') ?? '0');
+      const w = (t.textContent ?? '').length * fontSize * 0.6;
+      const h = fontSize;
+      return { cx, cy, w, h };
+    });
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        const overlap =
+          Math.abs(a.cx - b.cx) < (a.w + b.w) / 2 + pad &&
+          Math.abs(a.cy - b.cy) < (a.h + b.h) / 2 + pad;
+        expect(overlap, `labels ${texts[i].textContent} and ${texts[j].textContent} overlap`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
   it('warns when the user views a chain that does not cross the bilayer', () => {
     const tm = tmHelixProtein().chains[0];
     const solubleChain = {

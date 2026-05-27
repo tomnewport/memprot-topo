@@ -101,7 +101,9 @@ const STYLES = `
 
 const PLOT = {
   width: 1200,
-  margin: { top: 24, right: 24, bottom: 24, left: 40 },
+  // Top/bottom/right padded enough for residue-number labels that sit just
+  // past the membrane-facing tips of helix/strand polygons.
+  margin: { top: 36, right: 40, bottom: 36, left: 40 },
   // Membrane bilayer half-thickness (Å) for visual reference.
   membraneHalf: 15,
   /** Maximum |z| (Å) shown on the y-axis — auto-expands if data exceeds. */
@@ -148,28 +150,56 @@ function ssTypeAt(segments: SecondaryStructureSegment[], resSeq: number): Second
   return 'coil';
 }
 
+interface SsRun {
+  type: SecondaryStructureType;
+  /** Sample indices defining the polygon body (may extend to the start of the next run). */
+  startSample: number;
+  endSample: number;
+  /** Actual first and last residue numbers of this run. */
+  startResSeq: number;
+  endResSeq: number;
+  /** Sample indices of the actual first and last residues (used for label placement). */
+  startResSampleIdx: number;
+  endResSampleIdx: number;
+}
+
 /** Group consecutive residue indices that share the same SS type into runs. */
 function runsBySs(
   residues: { resSeq: number; sampleIndex: number }[],
   segments: SecondaryStructureSegment[],
-): { type: SecondaryStructureType; startSample: number; endSample: number }[] {
+): SsRun[] {
   if (residues.length === 0) return [];
-  const runs: { type: SecondaryStructureType; startSample: number; endSample: number }[] = [];
+  const runs: SsRun[] = [];
   let runType = ssTypeAt(segments, residues[0].resSeq);
-  let runStart = residues[0].sampleIndex;
+  let runStartSample = residues[0].sampleIndex;
+  let runStartResIdx = 0;
 
   for (let i = 1; i < residues.length; i++) {
     const t = ssTypeAt(segments, residues[i].resSeq);
     if (t !== runType) {
-      runs.push({ type: runType, startSample: runStart, endSample: residues[i].sampleIndex });
+      runs.push({
+        type: runType,
+        startSample: runStartSample,
+        endSample: residues[i].sampleIndex,
+        startResSeq: residues[runStartResIdx].resSeq,
+        endResSeq: residues[i - 1].resSeq,
+        startResSampleIdx: residues[runStartResIdx].sampleIndex,
+        endResSampleIdx: residues[i - 1].sampleIndex,
+      });
       runType = t;
-      runStart = residues[i].sampleIndex;
+      runStartSample = residues[i].sampleIndex;
+      runStartResIdx = i;
     }
   }
+  const lastIdx = residues.length - 1;
   runs.push({
     type: runType,
-    startSample: runStart,
-    endSample: residues[residues.length - 1].sampleIndex,
+    startSample: runStartSample,
+    endSample: residues[lastIdx].sampleIndex,
+    startResSeq: residues[runStartResIdx].resSeq,
+    endResSeq: residues[lastIdx].resSeq,
+    startResSampleIdx: residues[runStartResIdx].sampleIndex,
+    endResSampleIdx: residues[lastIdx].sampleIndex,
   });
   return runs;
 }
@@ -187,6 +217,109 @@ const SS_STYLE: Record<'helix' | 'strand', { fill: string; stroke: string }> = {
   helix: { fill: COLOURS.helix, stroke: COLOURS.helixEdge },
   strand: { fill: COLOURS.strand, stroke: COLOURS.strandEdge },
 };
+
+const LABEL = {
+  fontSizePx: 11,
+  /** Initial distance (screen pixels) from the SS endpoint to the label centre. */
+  offsetPx: 10,
+  /** Step used to bump a label further outward when it overlaps another. */
+  bumpStepPx: 5,
+  /** Maximum number of bump attempts before placing anyway. */
+  maxBumpAttempts: 6,
+  /** How many samples to step across when computing the endpoint tangent.
+   * Stepping > 1 averages out the helix curl that makes single-sample
+   * tangents jitter at the ends. */
+  tangentStepSamples: 3,
+  /** Padding (screen pixels) added when checking label box overlap. */
+  overlapPaddingPx: 2,
+  fill: '#333',
+};
+
+interface LabelBox {
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+}
+
+/** Rough text width for sans-serif digits: ~0.6 em average per character. */
+function approxTextWidth(text: string, fontSizePx: number): number {
+  return text.length * fontSizePx * 0.6;
+}
+
+function boxesOverlap(a: LabelBox, b: LabelBox): boolean {
+  const pad = LABEL.overlapPaddingPx;
+  return (
+    Math.abs(a.cx - b.cx) < (a.w + b.w) / 2 + pad && Math.abs(a.cy - b.cy) < (a.h + b.h) / 2 + pad
+  );
+}
+
+/**
+ * Render a residue-number label just past the start or end of a helix/strand
+ * polygon. The label sits along the outward direction of the SS's local
+ * tangent so it appears as a continuation of the element rather than crowding
+ * its body. When the candidate position would overlap a previously placed
+ * label, the label is bumped further outward until it clears.
+ */
+function placeResidueLabel(
+  labelsGroup: SVGGElement,
+  samples: UnrolledPoint[],
+  sampleIdx: number,
+  resSeq: number,
+  isStart: boolean,
+  placedBoxes: LabelBox[],
+): void {
+  if (samples.length < 2) return;
+
+  const sx = samples[sampleIdx].arc * PLOT.arcPxPerA;
+  const sy = -samples[sampleIdx].z * PLOT.zPxPerA;
+
+  // Tangent (a→b) of the SS at this endpoint, in screen pixels. For the start
+  // endpoint we look forward into the body; for the end we look backward.
+  const step = LABEL.tangentStepSamples;
+  const a = isStart ? sampleIdx : Math.max(0, sampleIdx - step);
+  const b = isStart ? Math.min(samples.length - 1, sampleIdx + step) : sampleIdx;
+  if (a === b) return;
+  const tdx = (samples[b].arc - samples[a].arc) * PLOT.arcPxPerA;
+  const tdy = -(samples[b].z - samples[a].z) * PLOT.zPxPerA;
+  const tlen = Math.hypot(tdx, tdy);
+  if (tlen < 1e-9) return;
+
+  // Outward = away from SS body. At the start endpoint that's −tangent, at
+  // the end endpoint it's +tangent.
+  const sign = isStart ? -1 : 1;
+  const outX = (sign * tdx) / tlen;
+  const outY = (sign * tdy) / tlen;
+
+  const text = String(resSeq);
+  const fontSize = LABEL.fontSizePx;
+  const w = approxTextWidth(text, fontSize);
+  const h = fontSize;
+
+  let dist = LABEL.offsetPx;
+  let cx = sx + outX * dist;
+  let cy = sy + outY * dist;
+  let box: LabelBox = { cx, cy, w, h };
+
+  for (let attempt = 0; attempt < LABEL.maxBumpAttempts; attempt++) {
+    if (!placedBoxes.some((p) => boxesOverlap(box, p))) break;
+    dist += LABEL.bumpStepPx;
+    cx = sx + outX * dist;
+    cy = sy + outY * dist;
+    box = { cx, cy, w, h };
+  }
+  placedBoxes.push(box);
+
+  const textEl = document.createElementNS(SVG_NS, 'text');
+  textEl.setAttribute('x', cx.toFixed(2));
+  textEl.setAttribute('y', cy.toFixed(2));
+  textEl.setAttribute('text-anchor', 'middle');
+  textEl.setAttribute('dominant-baseline', 'central');
+  textEl.setAttribute('font-size', `${fontSize}`);
+  textEl.setAttribute('fill', LABEL.fill);
+  textEl.textContent = text;
+  labelsGroup.appendChild(textEl);
+}
 
 /**
  * Render a helix or strand run as one filled+stroked polygon: a uniform-width
@@ -402,11 +535,19 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
 
   const barrel = isBetaBarrel(chain);
 
+  // Labels group: same origin as `plot` but no scale, so text isn't
+  // y-flipped or stretched by the plot transform. Appended after the plot
+  // group below so labels render on top of polygons.
+  const labelsGroup = document.createElementNS(SVG_NS, 'g');
+  labelsGroup.setAttribute('transform', `translate(${cx}, ${cy})`);
+  labelsGroup.setAttribute('font-family', 'sans-serif');
+  const placedBoxes: LabelBox[] = [];
+
   // For each contiguous chain segment, draw the smoothed (arc, z) trace,
   // segmented by secondary structure type for colouring.
   for (let s = 0; s < unroll.segments.length; s++) {
     const segment = unroll.segments[s];
-    drawSegment(plot, segment, chain.segments, barrel);
+    drawSegment(plot, labelsGroup, segment, chain.segments, barrel, placedBoxes);
     // Dashed connector across chain breaks.
     if (s > 0) {
       const prev = unroll.segments[s - 1];
@@ -424,20 +565,42 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
     }
   }
 
+  svg.appendChild(labelsGroup);
+
   return svg;
 }
 
 function drawSegment(
   plot: SVGGElement,
+  labelsGroup: SVGGElement,
   segment: UnrolledSegment,
   ssSegments: SecondaryStructureSegment[],
   isBarrel: boolean,
+  placedBoxes: LabelBox[],
 ): void {
   const runs = runsBySs(segment.residues, ssSegments);
   for (const run of runs) {
     if (run.type === 'helix' || run.type === 'strand') {
       const withArrow = isBarrel && run.type === 'strand';
       drawSsPolygon(plot, segment.samples, run.startSample, run.endSample, run.type, withArrow);
+      placeResidueLabel(
+        labelsGroup,
+        segment.samples,
+        run.startResSampleIdx,
+        run.startResSeq,
+        true,
+        placedBoxes,
+      );
+      if (run.endResSeq !== run.startResSeq) {
+        placeResidueLabel(
+          labelsGroup,
+          segment.samples,
+          run.endResSampleIdx,
+          run.endResSeq,
+          false,
+          placedBoxes,
+        );
+      }
       continue;
     }
     const d = pathFromPoints(segment.samples, run.startSample, run.endSample);
