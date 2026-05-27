@@ -158,8 +158,7 @@ interface SsRun {
   /** Actual first and last residue numbers of this run. */
   startResSeq: number;
   endResSeq: number;
-  /** Sample indices of the actual first and last residues (used for label placement). */
-  startResSampleIdx: number;
+  /** Sample index of the actual last residue (used for label placement). */
   endResSampleIdx: number;
 }
 
@@ -183,7 +182,6 @@ function runsBySs(
         endSample: residues[i].sampleIndex,
         startResSeq: residues[runStartResIdx].resSeq,
         endResSeq: residues[i - 1].resSeq,
-        startResSampleIdx: residues[runStartResIdx].sampleIndex,
         endResSampleIdx: residues[i - 1].sampleIndex,
       });
       runType = t;
@@ -198,7 +196,6 @@ function runsBySs(
     endSample: residues[lastIdx].sampleIndex,
     startResSeq: residues[runStartResIdx].resSeq,
     endResSeq: residues[lastIdx].resSeq,
-    startResSampleIdx: residues[runStartResIdx].sampleIndex,
     endResSampleIdx: residues[lastIdx].sampleIndex,
   });
   return runs;
@@ -259,7 +256,8 @@ function boxesOverlap(a: LabelBox, b: LabelBox): boolean {
  * polygon. The label sits along the outward direction of the SS's local
  * tangent so it appears as a continuation of the element rather than crowding
  * its body. When the candidate position would overlap a previously placed
- * label, the label is bumped further outward until it clears.
+ * label, the label is bumped further outward. If tangent-along bumping doesn't
+ * clear a collision, perpendicular bumps are tried next.
  */
 function placeResidueLabel(
   labelsGroup: SVGGElement,
@@ -291,23 +289,45 @@ function placeResidueLabel(
   const outX = (sign * tdx) / tlen;
   const outY = (sign * tdy) / tlen;
 
+  // Perpendicular direction (90° counterclockwise from outward).
+  const perpX = -outY;
+  const perpY = outX;
+
   const text = String(resSeq);
   const fontSize = LABEL.fontSizePx;
   const w = approxTextWidth(text, fontSize);
   const h = fontSize;
 
-  let dist = LABEL.offsetPx;
-  let cx = sx + outX * dist;
-  let cy = sy + outY * dist;
+  let cx = 0,
+    cy = 0;
   let box: LabelBox = { cx, cy, w, h };
 
-  for (let attempt = 0; attempt < LABEL.maxBumpAttempts; attempt++) {
-    if (!placedBoxes.some((p) => boxesOverlap(box, p))) break;
-    dist += LABEL.bumpStepPx;
+  // Try bumping along the tangent direction first.
+  for (let attempt = 0; attempt < LABEL.maxBumpAttempts / 2; attempt++) {
+    const dist = LABEL.offsetPx + attempt * LABEL.bumpStepPx;
     cx = sx + outX * dist;
     cy = sy + outY * dist;
     box = { cx, cy, w, h };
+    if (!placedBoxes.some((p) => boxesOverlap(box, p))) break;
   }
+
+  // If still overlapping, try perpendicular bumps.
+  if (placedBoxes.some((p) => boxesOverlap(box, p))) {
+    for (let attempt = 1; attempt <= LABEL.maxBumpAttempts / 2; attempt++) {
+      const perpDist = attempt * LABEL.bumpStepPx;
+      for (const perpSign of [1, -1]) {
+        const dist = LABEL.offsetPx + Math.floor(LABEL.maxBumpAttempts / 4) * LABEL.bumpStepPx;
+        cx = sx + outX * dist + perpX * perpDist * perpSign;
+        cy = sy + outY * dist + perpY * perpDist * perpSign;
+        box = { cx, cy, w, h };
+        if (!placedBoxes.some((p) => boxesOverlap(box, p))) {
+          attempt = LABEL.maxBumpAttempts;
+          break;
+        }
+      }
+    }
+  }
+
   placedBoxes.push(box);
 
   const textEl = document.createElementNS(SVG_NS, 'text');
@@ -567,6 +587,30 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
 
   svg.appendChild(labelsGroup);
 
+  // Expand viewBox to fit all placed labels if they extend beyond the current bounds.
+  let minX = 0,
+    maxX = svgWidth,
+    minY = 0,
+    maxY = svgHeight;
+  for (const box of placedBoxes) {
+    const left = box.cx - box.w / 2;
+    const right = box.cx + box.w / 2;
+    const top = box.cy - box.h / 2;
+    const bottom = box.cy + box.h / 2;
+    if (left < minX) minX = left;
+    if (right > maxX) maxX = right;
+    if (top < minY) minY = top;
+    if (bottom > maxY) maxY = bottom;
+  }
+
+  const finalWidth = maxX - minX;
+  const finalHeight = maxY - minY;
+  if (finalWidth > svgWidth || finalHeight > svgHeight) {
+    svg.setAttribute('viewBox', `${minX} ${minY} ${finalWidth} ${finalHeight}`);
+    svg.setAttribute('width', `${finalWidth}`);
+    svg.setAttribute('height', `${finalHeight}`);
+  }
+
   return svg;
 }
 
@@ -586,7 +630,7 @@ function drawSegment(
       placeResidueLabel(
         labelsGroup,
         segment.samples,
-        run.startResSampleIdx,
+        run.startSample,
         run.startResSeq,
         true,
         placedBoxes,
