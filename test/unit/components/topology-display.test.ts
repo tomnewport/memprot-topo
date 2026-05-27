@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
 import type { ProteinData, ChainData } from '../../../src/types.js';
 
@@ -281,5 +281,92 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     const note = el.shadowRoot!.querySelector('.chain-note');
     expect(note).not.toBeNull();
     expect(note!.textContent).toContain('does not appear to span the membrane');
+  });
+});
+
+describe('TopologyDisplay live attribute updates', () => {
+  const attached: HTMLElement[] = [];
+
+  function attach<T extends HTMLElement>(el: T): T {
+    document.body.appendChild(el);
+    attached.push(el);
+    return el;
+  }
+
+  afterEach(() => {
+    for (const el of attached.splice(0)) document.body.removeChild(el);
+  });
+
+  it('renders SVG when protein-data attribute is set after connection', () => {
+    const el = attach(new TopologyDisplay());
+    expect(el.shadowRoot!.querySelector('.svg-scroll')).toBeNull();
+
+    el.setAttribute('protein-data', JSON.stringify(tmHelixProtein()));
+
+    expect(el.shadowRoot!.querySelector('.svg-scroll svg')).not.toBeNull();
+    expect(el.shadowRoot!.querySelector('.placeholder')).toBeNull();
+  });
+
+  it('re-renders with new protein when protein-data attribute changes', () => {
+    const el = attach(new TopologyDisplay());
+    el.setAttribute('protein-data', JSON.stringify(tmHelixProtein()));
+
+    const second: ProteinData = {
+      pdbId: 'brl1',
+      chains: [betaBarrelChain()],
+    };
+    el.setAttribute('protein-data', JSON.stringify(second));
+
+    const title = el.shadowRoot!.querySelector('.protein-id');
+    expect(title).not.toBeNull();
+    expect(title!.textContent).toBe('brl1');
+  });
+
+  it('shows placeholder when protein-data attribute is removed', () => {
+    const el = attach(new TopologyDisplay());
+    el.setAttribute('protein-data', JSON.stringify(tmHelixProtein()));
+    expect(el.shadowRoot!.querySelector('.svg-scroll')).not.toBeNull();
+
+    el.removeAttribute('protein-data');
+
+    expect(el.shadowRoot!.querySelector('.placeholder')).not.toBeNull();
+    expect(el.shadowRoot!.querySelector('.svg-scroll')).toBeNull();
+  });
+
+  it('resets chain selection when protein-data attribute changes', () => {
+    const tm = tmHelixProtein().chains[0];
+    const tmB = { ...tm, chainId: 'B' };
+    const el = attach(new TopologyDisplay());
+    el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer', chains: [tm, tmB] }));
+
+    // Switch to chain B via click
+    const violins = el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin');
+    const violinB = Array.from(violins).find((b) =>
+      b.getAttribute('aria-label')?.includes('A(II)'),
+    );
+    violinB!.click();
+    expect(
+      el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
+    ).toContain('A(II)');
+
+    // Changing the attribute resets selection back to default
+    el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer', chains: [tm, tmB] }));
+    expect(
+      el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
+    ).toContain('A(I)');
+  });
+
+  it('shows placeholder for invalid JSON in protein-data attribute', () => {
+    const el = attach(new TopologyDisplay());
+    el.setAttribute('protein-data', 'not valid json {{{');
+    expect(el.shadowRoot!.querySelector('.placeholder')).not.toBeNull();
+  });
+
+  it('renders correctly when protein-data attribute is set before connecting to DOM', () => {
+    const el = new TopologyDisplay();
+    el.setAttribute('protein-data', JSON.stringify(tmHelixProtein()));
+    attach(el);
+    // connectedCallback triggers render() after the element is inserted
+    expect(el.shadowRoot!.querySelector('.svg-scroll svg')).not.toBeNull();
   });
 });
