@@ -76,6 +76,37 @@ function discontinuousLoopProtein(): ProteinData {
   };
 }
 
+function chainBreakProtein(): ProteinData {
+  // Two helices separated by a large 3-D gap (> 5.5 Å between consecutive Cα),
+  // so the unroller splits them into separate segments joined by a chain-break
+  // connector. Residues 5+ are unmodelled across the break.
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -5 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -2 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: 1 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: 4 },
+    // Big spatial jump (Δx = 30 Å) → 3-D break.
+    { resSeq: 20, iCode: '', x: 30, y: 0, z: 4 },
+    { resSeq: 21, iCode: '', x: 30, y: 0, z: 1 },
+    { resSeq: 22, iCode: '', x: 30, y: 0, z: -2 },
+    { resSeq: 23, iCode: '', x: 30, y: 0, z: -5 },
+  ];
+  return {
+    pdbId: 'brk1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 8,
+        segments: [
+          { start: 1, end: 4, type: 'helix' },
+          { start: 20, end: 23, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
 function betaBarrelChain(): ChainData {
   // 4-strand antiparallel beta barrel with 3-residue loops.
   // Strands are ~3 Å/residue in z, well within the 5.5 Å break threshold.
@@ -424,6 +455,45 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
     const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
     expect(markers.length).toBe(6);
+  });
+
+  it('omits vertical-extreme points when loop-extreme-points is off', () => {
+    const el = new TopologyDisplay();
+    el.setAttribute('loop-extreme-points', 'off');
+    document.body.appendChild(el);
+    el.proteinData = discontinuousLoopProtein();
+
+    // Only the 4 base markers (2 endpoint + 2 tangent); no extreme pair.
+    const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(4);
+  });
+
+  it('respects a raised loop-extreme-threshold by suppressing the extreme points', () => {
+    const el = new TopologyDisplay();
+    // A large threshold relative to the flanking tangents' narrow z-range
+    // suppresses the extreme points (4 base markers, no extreme pair).
+    el.setAttribute('loop-extreme-threshold', '50');
+    document.body.appendChild(el);
+    el.proteinData = discontinuousLoopProtein();
+
+    const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(4);
+  });
+
+  it('renders the chain-break connector as a dashed Catmull-Rom curve', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = chainBreakProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // No in-segment loops; the only path is the break connector.
+    const paths = Array.from(svg!.querySelectorAll('path'));
+    expect(paths.length).toBe(1);
+    const d = paths[0].getAttribute('d') ?? '';
+    expect(d.startsWith('M')).toBe(true);
+    // A curved connector is a densely-sampled polyline, not a single straight line.
+    expect((d.match(/L/g) ?? []).length).toBeGreaterThan(3);
+    expect(paths[0].getAttribute('stroke-dasharray')).toBe('3 5');
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {

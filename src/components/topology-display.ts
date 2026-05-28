@@ -135,7 +135,6 @@ const COLOURS = {
   helixEdge: '#3e587a',
   strand: '#6ea76d',
   strandEdge: '#3d6d3d',
-  break: '#aaa',
 };
 
 const LOOP = {
@@ -506,30 +505,49 @@ function unitTangent(samples: UnrolledPoint[], from: number, to: number): { a: n
   return { a: da / len, z: dz / len };
 }
 
+/** Runtime-tunable loop rendering options, sourced from component attributes. */
+interface LoopRenderOptions {
+  /** Draw debug circles at each control point. */
+  showPoints: boolean;
+  /** Whether to add vertical-extreme control points when a loop overshoots. */
+  extremePoints: boolean;
+  /** Fraction of the tangent-points' z-range beyond which extreme points appear. */
+  extremeThreshold: number;
+}
+
+/** One end of a loop: the samples array and the boundary sample index within it. */
+interface LoopEnd {
+  samples: UnrolledPoint[];
+  index: number;
+}
+
+/** The path whose vertical extreme may pull extra control points out of range. */
+interface LoopExtreme {
+  samples: UnrolledPoint[];
+  startSample: number;
+  endSample: number;
+}
+
 /**
- * Render a loop (coil) as a smooth Catmull-Rom spline through an explicit
- * control-point sequence:
- *   1. previous element end (centre of path)            — if a previous element exists
+ * Build the explicit control-point sequence for a loop / connector curve:
+ *   1. previous element end (centre of path)            — if a previous end exists
  *   2. point 1 + previous element end-tangent × tangentMag
- *   3-4. two points at the loop's vertical extreme      — only if the loop reaches
- *        more than `extremeThreshold` of the tangent-points' z-range beyond it
+ *   3-4. two points at the loop's vertical extreme      — only when `extremePoints`
+ *        is set and the loop reaches more than `extremeThreshold` of the
+ *        tangent-points' z-range beyond it
  *   5. next element start − next element start-tangent × tangentMag
- *   6. next element start (centre of path)              — if a next element exists
+ *   6. next element start (centre of path)              — if a next end exists
  *
- * Loops with sequence gaps (missing residue numbers) are dashed.  When
- * `showPoints` is set, each control point is marked with a small circle for
- * debugging.  Distances quoted in pixels assume a 1:1 arc/z aspect ratio.
+ * `prev`/`next` may carry samples from different chain segments (used for the
+ * dashed connector across chain breaks). Distances in pixels assume a 1:1
+ * arc/z aspect ratio.
  */
-function drawLoop(
-  plot: SVGGElement,
-  markers: SVGGElement,
-  samples: UnrolledPoint[],
-  loopRun: SsRun,
-  prevRun: SsRun | null,
-  nextRun: SsRun | null,
-  loopResidues: { resSeq: number }[],
-  showPoints: boolean,
-): void {
+function buildLoopPoints(
+  prev: LoopEnd | null,
+  next: LoopEnd | null,
+  extreme: LoopExtreme | null,
+  opts: LoopRenderOptions,
+): LoopControlPoint[] {
   const magA = LOOP.tangentMagPx / PLOT.arcPxPerA;
   const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
   const extremeSpacingA = LOOP.extremeSpacingPx / PLOT.arcPxPerA;
@@ -538,71 +556,78 @@ function drawLoop(
 
   // Points 1 & 2: previous element end and its outward tangent.
   let prevEnd: { arc: number; z: number } | null = null;
-  if (prevRun) {
-    const i = prevRun.endResSampleIdx;
-    prevEnd = { arc: samples[i].arc, z: samples[i].z };
-    const t = unitTangent(samples, Math.max(0, i - 1), i);
+  if (prev) {
+    const i = prev.index;
+    prevEnd = { arc: prev.samples[i].arc, z: prev.samples[i].z };
+    const t = unitTangent(prev.samples, Math.max(0, i - 1), i);
     points.push({ ...prevEnd, kind: 'endpoint' });
     points.push({ arc: prevEnd.arc + magA * t.a, z: prevEnd.z + magA * t.z, kind: 'tangent' });
   }
 
-  // Points 6 & 7: next element start and its inward tangent (added after extremes).
+  // Points 5 & 6: next element start and its inward tangent (added after extremes).
   let nextStart: { arc: number; z: number } | null = null;
   let nextTangent: LoopControlPoint | null = null;
-  if (nextRun) {
-    const i = nextRun.startSample;
-    nextStart = { arc: samples[i].arc, z: samples[i].z };
-    const t = unitTangent(samples, i, Math.min(samples.length - 1, i + 1));
+  if (next) {
+    const i = next.index;
+    nextStart = { arc: next.samples[i].arc, z: next.samples[i].z };
+    const t = unitTangent(next.samples, i, Math.min(next.samples.length - 1, i + 1));
     nextTangent = { arc: nextStart.arc - magA * t.a, z: nextStart.z - magA * t.z, kind: 'tangent' };
   }
 
-  // Vertical extreme of the loop's real path (z is unaffected by the layout shift).
-  let loopMaxZ = -Infinity;
-  let loopMinZ = Infinity;
-  for (let i = loopRun.startSample; i <= loopRun.endSample; i++) {
-    if (samples[i].z > loopMaxZ) loopMaxZ = samples[i].z;
-    if (samples[i].z < loopMinZ) loopMinZ = samples[i].z;
-  }
+  if (opts.extremePoints && extreme) {
+    // Vertical extreme of the loop's real path (z is unaffected by the layout shift).
+    let loopMaxZ = -Infinity;
+    let loopMinZ = Infinity;
+    for (let i = extreme.startSample; i <= extreme.endSample; i++) {
+      if (extreme.samples[i].z > loopMaxZ) loopMaxZ = extreme.samples[i].z;
+      if (extreme.samples[i].z < loopMinZ) loopMinZ = extreme.samples[i].z;
+    }
 
-  // z-range spanned by the tangent control points placed so far (points 1, 2, 6, 7).
-  const tangentZs = [...points.map((p) => p.z)];
-  if (nextStart) tangentZs.push(nextStart.z);
-  if (nextTangent) tangentZs.push(nextTangent.z);
-  const rangeMin = Math.min(...tangentZs);
-  const rangeMax = Math.max(...tangentZs);
-  const span = rangeMax - rangeMin;
-  const margin = LOOP.extremeThreshold * span;
+    // z-range spanned by the tangent control points placed so far.
+    const tangentZs = [...points.map((p) => p.z)];
+    if (nextStart) tangentZs.push(nextStart.z);
+    if (nextTangent) tangentZs.push(nextTangent.z);
+    const rangeMin = Math.min(...tangentZs);
+    const rangeMax = Math.max(...tangentZs);
+    const span = rangeMax - rangeMin;
+    const margin = opts.extremeThreshold * span;
 
-  // Decide whether the loop escapes the tangent-points' z-range, and on which side.
-  let extremeZ: number | null = null;
-  const aboveBy = loopMaxZ - rangeMax;
-  const belowBy = rangeMin - loopMinZ;
-  if (aboveBy > margin && aboveBy >= belowBy) extremeZ = loopMaxZ;
-  else if (belowBy > margin) extremeZ = loopMinZ;
+    // Decide whether the loop escapes the tangent-points' z-range, and on which side.
+    let extremeZ: number | null = null;
+    const aboveBy = loopMaxZ - rangeMax;
+    const belowBy = rangeMin - loopMinZ;
+    if (aboveBy > margin && aboveBy >= belowBy) extremeZ = loopMaxZ;
+    else if (belowBy > margin) extremeZ = loopMinZ;
 
-  if (extremeZ !== null) {
-    // Two points at the extreme z give the interpolating curve a flat plateau
-    // there; centre the pair horizontally between the two elements.
-    const centreArc = prevEnd ? prevEnd.arc + gapA / 2 : nextStart ? nextStart.arc - gapA / 2 : 0;
-    points.push({ arc: centreArc - extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
-    points.push({ arc: centreArc + extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
+    if (extremeZ !== null) {
+      // Two points at the extreme z give the interpolating curve a flat plateau
+      // there; centre the pair horizontally between the two elements.
+      const centreArc = prevEnd ? prevEnd.arc + gapA / 2 : nextStart ? nextStart.arc - gapA / 2 : 0;
+      points.push({ arc: centreArc - extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
+      points.push({ arc: centreArc + extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
+    }
   }
 
   if (nextTangent) points.push(nextTangent);
   if (nextStart) points.push({ ...nextStart, kind: 'endpoint' });
 
+  return points;
+}
+
+/**
+ * Rasterise a loop control-polygon as a centripetal Catmull-Rom spline and
+ * append it to `plot`. Discontinuous loops (sequence gaps, chain breaks) are
+ * dashed. When `showPoints` is set, each control point gets a debug circle.
+ */
+function renderLoopCurve(
+  plot: SVGGElement,
+  markers: SVGGElement,
+  points: LoopControlPoint[],
+  discontinuous: boolean,
+  showPoints: boolean,
+): void {
   if (points.length < 2) return;
 
-  // Detect sequence gaps within the loop (missing residues).
-  let discontinuous = false;
-  for (let i = 1; i < loopResidues.length; i++) {
-    if (loopResidues[i].resSeq - loopResidues[i - 1].resSeq > 1) {
-      discontinuous = true;
-      break;
-    }
-  }
-
-  // Smooth the control polygon with a centripetal Catmull-Rom spline.
   const curveInput: Vec[] = points.map((p) => ({ x: p.arc, y: p.z, z: 0 }));
   const curve = sampleCurve(curveInput, LOOP.curveSamples).samples;
   const d =
@@ -636,6 +661,38 @@ function drawLoop(
       markers.appendChild(dot);
     }
   }
+}
+
+/** Render a single in-segment loop (coil run) between two SS elements. */
+function drawLoop(
+  plot: SVGGElement,
+  markers: SVGGElement,
+  samples: UnrolledPoint[],
+  loopRun: SsRun,
+  prevRun: SsRun | null,
+  nextRun: SsRun | null,
+  loopResidues: { resSeq: number }[],
+  opts: LoopRenderOptions,
+): void {
+  const prev: LoopEnd | null = prevRun ? { samples, index: prevRun.endResSampleIdx } : null;
+  const next: LoopEnd | null = nextRun ? { samples, index: nextRun.startSample } : null;
+  const extreme: LoopExtreme = {
+    samples,
+    startSample: loopRun.startSample,
+    endSample: loopRun.endSample,
+  };
+  const points = buildLoopPoints(prev, next, extreme, opts);
+
+  // Detect sequence gaps within the loop (missing residues).
+  let discontinuous = false;
+  for (let i = 1; i < loopResidues.length; i++) {
+    if (loopResidues[i].resSeq - loopResidues[i - 1].resSeq > 1) {
+      discontinuous = true;
+      break;
+    }
+  }
+
+  renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints);
 }
 
 /** A chain segment with its samples repositioned into display (fixed-gap) space. */
@@ -707,7 +764,7 @@ function layoutSegments(
   return { layouts, totalArc: maxArc };
 }
 
-function renderChainSvg(chain: ChainData, showPoints: boolean): SVGSVGElement {
+function renderChainSvg(chain: ChainData, opts: LoopRenderOptions): SVGSVGElement {
   const unroll = unrollChain(chain.calphas, { ssSegments: chain.segments });
   const { layouts, totalArc } = layoutSegments(unroll.segments, chain.segments);
 
@@ -787,21 +844,16 @@ function renderChainSvg(chain: ChainData, showPoints: boolean): SVGSVGElement {
   // segmented by secondary structure type for colouring.
   for (let s = 0; s < layouts.length; s++) {
     const layout = layouts[s];
-    drawSegment(plot, labelsGroup, markersGroup, layout, barrel, placedBoxes, showPoints);
-    // Dashed connector across chain breaks.
+    drawSegment(plot, labelsGroup, markersGroup, layout, barrel, placedBoxes, opts);
+    // Dashed connector across chain breaks — same Catmull-Rom curve style as an
+    // in-segment loop, anchored at the two segments' endpoints. No vertical
+    // extreme is added since there is no modelled path across the gap.
     if (s > 0) {
-      const prev = layouts[s - 1].samples;
-      const a = prev[prev.length - 1];
-      const b = layout.samples[0];
-      const connector = document.createElementNS(SVG_NS, 'line');
-      connector.setAttribute('x1', `${a.arc}`);
-      connector.setAttribute('y1', `${a.z}`);
-      connector.setAttribute('x2', `${b.arc}`);
-      connector.setAttribute('y2', `${b.z}`);
-      connector.setAttribute('stroke', COLOURS.break);
-      connector.setAttribute('stroke-dasharray', '2 3');
-      connector.setAttribute('vector-effect', 'non-scaling-stroke');
-      plot.appendChild(connector);
+      const prevSamples = layouts[s - 1].samples;
+      const prev: LoopEnd = { samples: prevSamples, index: prevSamples.length - 1 };
+      const next: LoopEnd = { samples: layout.samples, index: 0 };
+      const points = buildLoopPoints(prev, next, null, opts);
+      renderLoopCurve(plot, markersGroup, points, true, opts.showPoints);
     }
   }
 
@@ -846,7 +898,7 @@ function drawSegment(
   layout: SegmentLayout,
   isBarrel: boolean,
   placedBoxes: LabelBox[],
-  showPoints: boolean,
+  opts: LoopRenderOptions,
 ): void {
   const { samples, residues, runs } = layout;
   for (let j = 0; j < runs.length; j++) {
@@ -870,7 +922,7 @@ function drawSegment(
     const prevRun = isSs(runs[j - 1]) ? runs[j - 1] : null;
     const nextRun = isSs(runs[j + 1]) ? runs[j + 1] : null;
     const loopResidues = residues.slice(run.residueStart, run.residueEnd + 1);
-    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, showPoints);
+    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts);
   }
 }
 
@@ -1207,7 +1259,12 @@ function renderChainPicker(
 let _instanceCounter = 0;
 
 export class TopologyDisplay extends HTMLElement {
-  static observedAttributes = ['protein-data', 'debug-loops'];
+  static observedAttributes = [
+    'protein-data',
+    'debug-loops',
+    'loop-extreme-points',
+    'loop-extreme-threshold',
+  ];
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
@@ -1235,7 +1292,11 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, _old: string | null, value: string | null) {
-    if (name === 'debug-loops') {
+    if (
+      name === 'debug-loops' ||
+      name === 'loop-extreme-points' ||
+      name === 'loop-extreme-threshold'
+    ) {
       this.render();
       return;
     }
@@ -1260,6 +1321,16 @@ export class TopologyDisplay extends HTMLElement {
   private get showLoopPoints(): boolean {
     const v = this.getAttribute('debug-loops');
     return v === null || !['off', 'false', 'hidden', '0'].includes(v.toLowerCase());
+  }
+
+  /** Assemble the loop rendering options from the component's attributes. */
+  private get loopOptions(): LoopRenderOptions {
+    const ext = this.getAttribute('loop-extreme-points');
+    const extremePoints =
+      ext === null || !['off', 'false', 'none', '0'].includes(ext.toLowerCase());
+    const parsed = Number.parseFloat(this.getAttribute('loop-extreme-threshold') ?? '');
+    const extremeThreshold = Number.isFinite(parsed) ? parsed : LOOP.extremeThreshold;
+    return { showPoints: this.showLoopPoints, extremePoints, extremeThreshold };
   }
 
   connectedCallback() {
@@ -1383,7 +1454,7 @@ export class TopologyDisplay extends HTMLElement {
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
-    scroll.appendChild(renderChainSvg(selectedChain, this.showLoopPoints));
+    scroll.appendChild(renderChainSvg(selectedChain, this.loopOptions));
     block.appendChild(scroll);
     region.appendChild(block);
 
