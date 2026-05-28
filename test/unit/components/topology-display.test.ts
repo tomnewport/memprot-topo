@@ -255,6 +255,73 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(helixPolys.every((p) => p.getAttribute('stroke') === '#3e587a')).toBe(true);
   });
 
+  it('labels each helix/strand polygon with its start and end residue numbers', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tmHelixProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg')!;
+    const texts = Array.from(svg.querySelectorAll('text')).map((t) => t.textContent);
+    // tmHelixProtein has one helix from residue 1 to 24.
+    expect(texts).toContain('1');
+    expect(texts).toContain('24');
+  });
+
+  it('labels every strand of a beta barrel with its start and end residue numbers', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg')!;
+    const texts = new Set(Array.from(svg.querySelectorAll('text')).map((t) => t.textContent));
+    // Strand boundaries: 1-10, 14-23, 27-36, 40-49 (3-residue coil loops between).
+    for (const r of [1, 10, 14, 23, 27, 36, 40, 49]) {
+      expect(texts.has(String(r))).toBe(true);
+    }
+  });
+
+  it('places each residue-number label snug against its SS polygon (not drifted away)', () => {
+    // The label for each helix/strand endpoint should sit just past the
+    // polygon tip along the tangent — not pushed several tens of pixels
+    // away as a collision-avoidance side-effect.
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg')!;
+    // Polygon points are in user-space (Å). Labels live in screen space.
+    // Convert vertices to the same scale to compare distances.
+    const arcPxPerA = 2.5;
+    const zPxPerA = 2.5;
+    const polygonVerts = Array.from(svg.querySelectorAll('polygon')).flatMap((p) =>
+      (p.getAttribute('points') ?? '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((pt) => {
+          const [x, y] = pt.split(',').map(Number);
+          return { x: x * arcPxPerA, y: -y * zPxPerA };
+        }),
+    );
+
+    const labels = Array.from(svg.querySelectorAll('text'));
+    expect(labels.length).toBeGreaterThan(0);
+    const MAX_DIST_PX = 15;
+    for (const label of labels) {
+      const cx = parseFloat(label.getAttribute('x') ?? '0');
+      const cy = parseFloat(label.getAttribute('y') ?? '0');
+      let minDist = Infinity;
+      for (const v of polygonVerts) {
+        const d = Math.hypot(cx - v.x, cy - v.y);
+        if (d < minDist) minDist = d;
+      }
+      expect(
+        minDist,
+        `label "${label.textContent}" is ${minDist.toFixed(1)}px from the nearest polygon vertex`,
+      ).toBeLessThan(MAX_DIST_PX);
+    }
+  });
+
   it('warns when the user views a chain that does not cross the bilayer', () => {
     const tm = tmHelixProtein().chains[0];
     const solubleChain = {
