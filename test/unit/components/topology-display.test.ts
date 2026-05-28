@@ -116,6 +116,42 @@ function tinySsLoopProtein(): ProteinData {
   };
 }
 
+function chainBreakWithCoilProtein(): ProteinData {
+  // Two helices each with a dangling coil residue, separated by a large 3-D gap.
+  // The trailing coil of segment 1 and the leading coil of segment 2 should be
+  // absorbed into a single dashed cross-break connector rather than appearing as
+  // separate stubs.
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -12 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -9 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: -6 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: -3 },
+    // One coil residue before the break.
+    { resSeq: 5, iCode: '', x: 0, y: 0, z: 0 },
+    // Large spatial jump → unroller splits here.
+    { resSeq: 20, iCode: '', x: 30, y: 0, z: 0 },
+    // One coil residue after the break.
+    { resSeq: 21, iCode: '', x: 30, y: 0, z: -3 },
+    { resSeq: 22, iCode: '', x: 30, y: 0, z: -6 },
+    { resSeq: 23, iCode: '', x: 30, y: 0, z: -9 },
+    { resSeq: 24, iCode: '', x: 30, y: 0, z: -12 },
+  ];
+  return {
+    pdbId: 'bkc1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 10,
+        segments: [
+          { start: 1, end: 4, type: 'helix' },
+          { start: 21, end: 24, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
 function chainBreakProtein(): ProteinData {
   // Two helices separated by a large 3-D gap (> 5.5 Å between consecutive Cα),
   // so the unroller splits them into separate segments joined by a chain-break
@@ -558,6 +594,19 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     // A curved connector is a multi-segment cubic-Bézier spline, not a line.
     expect((d.match(/C/g) ?? []).length).toBeGreaterThan(1);
     expect(d).not.toContain('L');
+    expect(paths[0].getAttribute('stroke-dasharray')).toBe('3 5');
+  });
+
+  it('merges trailing/leading coil stubs into a single cross-break curve', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = chainBreakWithCoilProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // The trailing coil of segment 1 and the leading coil of segment 2 should
+    // NOT appear as separate stub paths — only the one cross-break connector.
+    const paths = Array.from(svg!.querySelectorAll('path'));
+    expect(paths.length).toBe(1);
     expect(paths[0].getAttribute('stroke-dasharray')).toBe('3 5');
   });
 

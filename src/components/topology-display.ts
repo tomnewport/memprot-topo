@@ -858,14 +858,32 @@ function renderChainSvg(chain: ChainData, opts: LoopRenderOptions): SVGSVGElemen
   // segmented by secondary structure type for colouring.
   for (let s = 0; s < layouts.length; s++) {
     const layout = layouts[s];
-    drawSegment(plot, labelsGroup, markersGroup, layout, barrel, placedBoxes, opts);
-    // Dashed connector across chain breaks — same Catmull-Rom curve style as an
-    // in-segment loop, anchored at the two segments' endpoints. No vertical
-    // extreme is added since there is no modelled path across the gap.
+    const hasBreakBefore = s > 0;
+    const hasBreakAfter = s < layouts.length - 1;
+    drawSegment(
+      plot,
+      labelsGroup,
+      markersGroup,
+      layout,
+      barrel,
+      placedBoxes,
+      opts,
+      hasBreakBefore,
+      hasBreakAfter,
+    );
+    // Dashed connector across a chain break. Anchor at the nearest SS endpoint
+    // on each side so that any trailing/leading coil in the adjacent segments is
+    // absorbed into this single curve rather than appearing as a separate stub.
     if (s > 0) {
-      const prevSamples = layouts[s - 1].samples;
-      const prev: LoopEnd = { samples: prevSamples, index: prevSamples.length - 1 };
-      const next: LoopEnd = { samples: layout.samples, index: 0 };
+      const prevLayout = layouts[s - 1];
+      const lastSs = lastSsRunOf(prevLayout);
+      const firstSs = firstSsRunOf(layout);
+      const prev: LoopEnd = lastSs
+        ? { samples: prevLayout.samples, index: lastSs.endResSampleIdx }
+        : { samples: prevLayout.samples, index: prevLayout.samples.length - 1 };
+      const next: LoopEnd = firstSs
+        ? { samples: layout.samples, index: firstSs.startSample }
+        : { samples: layout.samples, index: 0 };
       const points = buildLoopPoints(prev, next, null, opts);
       renderLoopCurve(plot, markersGroup, points, true, opts.showPoints);
     }
@@ -905,6 +923,20 @@ function isSs(run: SsRun | undefined): run is SsRun {
   return !!run && (run.type === 'helix' || run.type === 'strand');
 }
 
+function lastSsRunOf(layout: SegmentLayout): SsRun | null {
+  for (let i = layout.runs.length - 1; i >= 0; i--) {
+    if (isSs(layout.runs[i])) return layout.runs[i];
+  }
+  return null;
+}
+
+function firstSsRunOf(layout: SegmentLayout): SsRun | null {
+  for (const run of layout.runs) {
+    if (isSs(run)) return run;
+  }
+  return null;
+}
+
 function drawSegment(
   plot: SVGGElement,
   labelsGroup: SVGGElement,
@@ -913,6 +945,8 @@ function drawSegment(
   isBarrel: boolean,
   placedBoxes: LabelBox[],
   opts: LoopRenderOptions,
+  hasBreakBefore = false,
+  hasBreakAfter = false,
 ): void {
   const { samples, residues, runs } = layout;
   for (let j = 0; j < runs.length; j++) {
@@ -935,6 +969,12 @@ function drawSegment(
     }
     const prevRun = isSs(runs[j - 1]) ? runs[j - 1] : null;
     const nextRun = isSs(runs[j + 1]) ? runs[j + 1] : null;
+    // Skip a leading coil stub at the start of a segment that follows a chain
+    // break — the cross-break connector will cover it from the previous SS end.
+    if (prevRun === null && hasBreakBefore) continue;
+    // Skip a trailing coil stub at the end of a segment followed by a chain
+    // break — the cross-break connector will cover it to the next SS start.
+    if (nextRun === null && hasBreakAfter) continue;
     const loopResidues = residues.slice(run.residueStart, run.residueEnd + 1);
     drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts);
   }
