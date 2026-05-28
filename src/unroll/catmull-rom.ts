@@ -128,3 +128,82 @@ export function sampleCurve(points: Vec[], samplesPerSegment = 16): SampledCurve
 
   return { samples, controlIndex };
 }
+
+/** A single cubic Bézier segment: two control handles and the end point. */
+export interface CubicBezier {
+  c1: Vec;
+  c2: Vec;
+  end: Vec;
+}
+
+/** A path expressed as a start point followed by cubic Bézier segments. */
+export interface BezierPath {
+  start: Vec;
+  segments: CubicBezier[];
+}
+
+/** Non-uniform Catmull–Rom tangent at the middle point Pb (knots ta, tb, tc). */
+function crTangent(Pa: Vec, Pb: Vec, Pc: Vec, ta: number, tb: number, tc: number): Vec {
+  const d1 = tb - ta;
+  const d2 = tc - tb;
+  const d3 = tc - ta;
+  const comp = (a: number, b: number, c: number): number =>
+    (b - a) / d1 - (c - a) / d3 + (c - b) / d2;
+  return {
+    x: comp(Pa.x, Pb.x, Pc.x),
+    y: comp(Pa.y, Pb.y, Pc.y),
+    z: comp(Pa.z, Pb.z, Pc.z),
+  };
+}
+
+function bezierSegment(P0: Vec, P1: Vec, P2: Vec, P3: Vec): CubicBezier {
+  const t1 = tauStep(P0, P1);
+  const t2 = t1 + tauStep(P1, P2);
+  const t3 = t2 + tauStep(P2, P3);
+  const dt = t2 - t1;
+  // Endpoint tangents (w.r.t. the global knot parameter t).
+  const m1 = crTangent(P0, P1, P2, 0, t1, t2);
+  const m2 = crTangent(P1, P2, P3, t1, t2, t3);
+  // Re-parameterise the segment onto u in [0, 1] (dC/du = m · dt) and convert
+  // the Hermite endpoints/tangents to Bézier control handles.
+  return {
+    c1: { x: P1.x + (m1.x * dt) / 3, y: P1.y + (m1.y * dt) / 3, z: P1.z + (m1.z * dt) / 3 },
+    c2: { x: P2.x - (m2.x * dt) / 3, y: P2.y - (m2.y * dt) / 3, z: P2.z - (m2.z * dt) / 3 },
+    end: { ...P2 },
+  };
+}
+
+/**
+ * Express the centripetal Catmull–Rom curve through `points` as exact cubic
+ * Bézier segments, so it can be rendered as a compact smooth SVG path (one
+ * `C` command per segment) rather than a densely-sampled polyline. The result
+ * is geometrically identical to `sampleCurve` at infinite sampling.
+ */
+export function catmullRomBezier(points: Vec[]): BezierPath {
+  const n = points.length;
+  if (n === 0) return { start: { x: 0, y: 0, z: 0 }, segments: [] };
+  if (n === 1) return { start: { ...points[0] }, segments: [] };
+  if (n === 2) {
+    const [p0, p1] = points;
+    return {
+      start: { ...p0 },
+      segments: [
+        {
+          c1: lerp(p0, p1, 2 / 3, 1 / 3),
+          c2: lerp(p0, p1, 1 / 3, 2 / 3),
+          end: { ...p1 },
+        },
+      ],
+    };
+  }
+
+  const segments: CubicBezier[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const P1 = points[i];
+    const P2 = points[i + 1];
+    const P0 = i > 0 ? points[i - 1] : mirror(P1, P2);
+    const P3 = i + 2 < n ? points[i + 2] : mirror(P2, P1);
+    segments.push(bezierSegment(P0, P1, P2, P3));
+  }
+  return { start: { ...points[0] }, segments };
+}

@@ -42,6 +42,147 @@ function tmHelixProtein(): ProteinData {
   };
 }
 
+function discontinuousLoopProtein(): ProteinData {
+  // Two short helices connected by a loop whose residue numbers have gaps
+  // (missing residues 5 and 7). All Cα-Cα distances < 5.5 Å (no 3-D break).
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -5 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -2 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: 1 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: 4 },
+    // Loop: residues 6, 8, 10 — gaps of 2 (residues 5, 7, 9 are missing).
+    { resSeq: 6, iCode: '', x: 3, y: 0, z: 8 },
+    { resSeq: 8, iCode: '', x: 6, y: 0, z: 9 },
+    { resSeq: 10, iCode: '', x: 9, y: 0, z: 8 },
+    { resSeq: 11, iCode: '', x: 12, y: 0, z: 4 },
+    { resSeq: 12, iCode: '', x: 12, y: 0, z: 1 },
+    { resSeq: 13, iCode: '', x: 12, y: 0, z: -2 },
+    { resSeq: 14, iCode: '', x: 12, y: 0, z: -5 },
+  ];
+  return {
+    pdbId: 'dis1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 11,
+        segments: [
+          { start: 1, end: 4, type: 'helix' },
+          { start: 6, end: 10, type: 'coil' },
+          { start: 11, end: 14, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
+function tinySsLoopProtein(): ProteinData {
+  // Two real helices joined by a loop that the SS assignment splits with a
+  // spurious 2-residue "helix" (res 8-9). All Cα-Cα distances < 5.5 Å (no
+  // break). The tiny helix should be folded into the loop, leaving one
+  // continuous coil run and just two SS polygons.
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -12 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -9 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: -6 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: -3 },
+    { resSeq: 5, iCode: '', x: 0, y: 0, z: 0 },
+    { resSeq: 6, iCode: '', x: 1, y: 0, z: 3 },
+    { resSeq: 7, iCode: '', x: 3, y: 0, z: 5 },
+    { resSeq: 8, iCode: '', x: 6, y: 0, z: 6 },
+    { resSeq: 9, iCode: '', x: 9, y: 0, z: 6 },
+    { resSeq: 10, iCode: '', x: 12, y: 0, z: 5 },
+    { resSeq: 11, iCode: '', x: 14, y: 0, z: 3 },
+    { resSeq: 12, iCode: '', x: 15, y: 0, z: 0 },
+    { resSeq: 13, iCode: '', x: 15, y: 0, z: -3 },
+    { resSeq: 14, iCode: '', x: 15, y: 0, z: -6 },
+    { resSeq: 15, iCode: '', x: 15, y: 0, z: -9 },
+    { resSeq: 16, iCode: '', x: 15, y: 0, z: -12 },
+  ];
+  return {
+    pdbId: 'tny1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 16,
+        segments: [
+          { start: 1, end: 5, type: 'helix' },
+          { start: 8, end: 9, type: 'helix' },
+          { start: 12, end: 16, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
+function chainBreakWithCoilProtein(): ProteinData {
+  // Two helices each with a dangling coil residue, separated by a large 3-D gap.
+  // The trailing coil of segment 1 and the leading coil of segment 2 should be
+  // absorbed into a single dashed cross-break connector rather than appearing as
+  // separate stubs.
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -12 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -9 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: -6 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: -3 },
+    // One coil residue before the break.
+    { resSeq: 5, iCode: '', x: 0, y: 0, z: 0 },
+    // Large spatial jump → unroller splits here.
+    { resSeq: 20, iCode: '', x: 30, y: 0, z: 0 },
+    // One coil residue after the break.
+    { resSeq: 21, iCode: '', x: 30, y: 0, z: -3 },
+    { resSeq: 22, iCode: '', x: 30, y: 0, z: -6 },
+    { resSeq: 23, iCode: '', x: 30, y: 0, z: -9 },
+    { resSeq: 24, iCode: '', x: 30, y: 0, z: -12 },
+  ];
+  return {
+    pdbId: 'bkc1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 10,
+        segments: [
+          { start: 1, end: 4, type: 'helix' },
+          { start: 21, end: 24, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
+function chainBreakProtein(): ProteinData {
+  // Two helices separated by a large 3-D gap (> 5.5 Å between consecutive Cα),
+  // so the unroller splits them into separate segments joined by a chain-break
+  // connector. Residues 5+ are unmodelled across the break.
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -5 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -2 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: 1 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: 4 },
+    // Big spatial jump (Δx = 30 Å) → 3-D break.
+    { resSeq: 20, iCode: '', x: 30, y: 0, z: 4 },
+    { resSeq: 21, iCode: '', x: 30, y: 0, z: 1 },
+    { resSeq: 22, iCode: '', x: 30, y: 0, z: -2 },
+    { resSeq: 23, iCode: '', x: 30, y: 0, z: -5 },
+  ];
+  return {
+    pdbId: 'brk1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 8,
+        segments: [
+          { start: 1, end: 4, type: 'helix' },
+          { start: 20, end: 23, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
 function betaBarrelChain(): ChainData {
   // 4-strand antiparallel beta barrel with 3-residue loops.
   // Strands are ~3 Å/residue in z, well within the 5.5 Å break threshold.
@@ -320,6 +461,156 @@ describe('TopologyDisplay (unrolled SVG)', () => {
         `label "${label.textContent}" is ${minDist.toFixed(1)}px from the nearest polygon vertex`,
       ).toBeLessThan(MAX_DIST_PX);
     }
+  });
+
+  it('renders each coil run as a smooth spline path through control points', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // betaBarrelChain has 3 inter-strand loops → 3 path elements.
+    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    expect(loopPaths.length).toBe(3);
+    // Each loop is a smooth cubic-Bézier spline: a moveto followed by multiple
+    // `C` segments, with no straight `L` rasterisation.
+    for (const p of loopPaths) {
+      const d = p.getAttribute('d') ?? '';
+      expect(d.startsWith('M')).toBe(true);
+      expect((d.match(/C/g) ?? []).length).toBeGreaterThan(1);
+      expect(d).not.toContain('L');
+    }
+  });
+
+  it('does not dash continuous loop paths', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    const loopPaths = svg!.querySelectorAll('path');
+    expect(loopPaths.length).toBeGreaterThan(0);
+    for (const p of loopPaths) {
+      expect(p.getAttribute('stroke-dasharray')).toBeNull();
+    }
+  });
+
+  it('renders discontinuous loops as dashed paths', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = discontinuousLoopProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    // One loop with sequence gaps.
+    expect(loopPaths.length).toBe(1);
+    expect(loopPaths[0].getAttribute('stroke-dasharray')).toBe('3 5');
+  });
+
+  it('hides loop control-point markers by default and shows them via the debug-loops attribute', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    // Default: control-point markers are hidden.
+    let markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(0);
+
+    // Showing via attribute draws them without affecting the loop paths.
+    el.setAttribute('debug-loops', 'on');
+    markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(12);
+    expect(el.shadowRoot!.querySelectorAll('.svg-scroll svg path').length).toBe(3);
+  });
+
+  it('adds two vertical-extreme control points when a loop overshoots the tangent range', () => {
+    const el = new TopologyDisplay();
+    el.setAttribute('debug-loops', 'on');
+    document.body.appendChild(el);
+    // The loop (z up to 9) reaches above the tangent points (z 8) of the
+    // flanking helices, triggering the two extreme points: 4 base + 2 = 6.
+    el.proteinData = discontinuousLoopProtein();
+
+    const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(6);
+  });
+
+  it('omits vertical-extreme points when loop-extreme-points is off', () => {
+    const el = new TopologyDisplay();
+    el.setAttribute('debug-loops', 'on');
+    el.setAttribute('loop-extreme-points', 'off');
+    document.body.appendChild(el);
+    el.proteinData = discontinuousLoopProtein();
+
+    // Only the 4 base markers (2 endpoint + 2 tangent); no extreme pair.
+    const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(4);
+  });
+
+  it('respects a raised loop-extreme-threshold by suppressing the extreme points', () => {
+    const el = new TopologyDisplay();
+    el.setAttribute('debug-loops', 'on');
+    // A large threshold relative to the flanking tangents' narrow z-range
+    // suppresses the extreme points (4 base markers, no extreme pair).
+    el.setAttribute('loop-extreme-threshold', '50');
+    document.body.appendChild(el);
+    el.proteinData = discontinuousLoopProtein();
+
+    const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(4);
+  });
+
+  it('folds sub-3-residue SS elements into the surrounding loop', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tinySsLoopProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // The spurious 2-residue helix is dropped: only the two real helices are
+    // drawn as SS polygons, joined by a single continuous loop path.
+    expect(svg!.querySelectorAll('polygon').length).toBe(2);
+    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    expect(loopPaths.length).toBe(1);
+    expect(loopPaths[0].getAttribute('stroke-dasharray')).toBeNull();
+  });
+
+  it('reports SS counts excluding sub-3-residue elements', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tinySsLoopProtein();
+
+    const label = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
+    expect(label).toContain('2 helices');
+  });
+
+  it('renders the chain-break connector as a dashed Catmull-Rom curve', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = chainBreakProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // No in-segment loops; the only path is the break connector.
+    const paths = Array.from(svg!.querySelectorAll('path'));
+    expect(paths.length).toBe(1);
+    const d = paths[0].getAttribute('d') ?? '';
+    expect(d.startsWith('M')).toBe(true);
+    // A curved connector is a multi-segment cubic-Bézier spline, not a line.
+    expect((d.match(/C/g) ?? []).length).toBeGreaterThan(1);
+    expect(d).not.toContain('L');
+    expect(paths[0].getAttribute('stroke-dasharray')).toBe('3 5');
+  });
+
+  it('merges trailing/leading coil stubs into a single cross-break curve', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = chainBreakWithCoilProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // The trailing coil of segment 1 and the leading coil of segment 2 should
+    // NOT appear as separate stub paths — only the one cross-break connector.
+    const paths = Array.from(svg!.querySelectorAll('path'));
+    expect(paths.length).toBe(1);
+    expect(paths[0].getAttribute('stroke-dasharray')).toBe('3 5');
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {
