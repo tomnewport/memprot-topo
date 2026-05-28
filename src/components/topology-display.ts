@@ -298,33 +298,36 @@ function placeResidueLabel(
   const w = approxTextWidth(text, fontSize);
   const h = fontSize;
 
-  let cx = 0,
-    cy = 0;
+  let cx = sx + outX * LABEL.offsetPx;
+  let cy = sy + outY * LABEL.offsetPx;
   let box: LabelBox = { cx, cy, w, h };
 
   // Try bumping along the tangent direction first.
-  for (let attempt = 0; attempt < LABEL.maxBumpAttempts / 2; attempt++) {
+  for (let attempt = 1; attempt < LABEL.maxBumpAttempts / 2; attempt++) {
+    if (!placedBoxes.some((p) => boxesOverlap(box, p))) break;
     const dist = LABEL.offsetPx + attempt * LABEL.bumpStepPx;
     cx = sx + outX * dist;
     cy = sy + outY * dist;
     box = { cx, cy, w, h };
-    if (!placedBoxes.some((p) => boxesOverlap(box, p))) break;
   }
 
   // If still overlapping, try perpendicular bumps.
   if (placedBoxes.some((p) => boxesOverlap(box, p))) {
-    for (let attempt = 1; attempt <= LABEL.maxBumpAttempts / 2; attempt++) {
-      const perpDist = attempt * LABEL.bumpStepPx;
+    for (let perpAttempt = 1; perpAttempt <= LABEL.maxBumpAttempts / 2; perpAttempt++) {
+      let placed = false;
       for (const perpSign of [1, -1]) {
-        const dist = LABEL.offsetPx + Math.floor(LABEL.maxBumpAttempts / 4) * LABEL.bumpStepPx;
-        cx = sx + outX * dist + perpX * perpDist * perpSign;
-        cy = sy + outY * dist + perpY * perpDist * perpSign;
+        const tangentDist =
+          LABEL.offsetPx + Math.floor(LABEL.maxBumpAttempts / 4) * LABEL.bumpStepPx;
+        const perpDist = perpAttempt * LABEL.bumpStepPx;
+        cx = sx + outX * tangentDist + perpX * perpDist * perpSign;
+        cy = sy + outY * tangentDist + perpY * perpDist * perpSign;
         box = { cx, cy, w, h };
         if (!placedBoxes.some((p) => boxesOverlap(box, p))) {
-          attempt = LABEL.maxBumpAttempts;
+          placed = true;
           break;
         }
       }
+      if (placed) break;
     }
   }
 
