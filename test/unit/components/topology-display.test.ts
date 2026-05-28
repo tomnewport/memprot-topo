@@ -507,24 +507,25 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(loopPaths[0].getAttribute('stroke-dasharray')).toBe('3 5');
   });
 
-  it('shows loop control-point markers by default and hides them via the debug-loops attribute', () => {
+  it('hides loop control-point markers by default and shows them via the debug-loops attribute', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
 
-    // Default: control-point markers are drawn (4 per continuous loop × 3 loops).
+    // Default: control-point markers are hidden.
     let markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
-    expect(markers.length).toBe(12);
-
-    // Hiding via attribute removes them without affecting the loop paths.
-    el.setAttribute('debug-loops', 'off');
-    markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
     expect(markers.length).toBe(0);
+
+    // Showing via attribute draws them without affecting the loop paths.
+    el.setAttribute('debug-loops', 'on');
+    markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(12);
     expect(el.shadowRoot!.querySelectorAll('.svg-scroll svg path').length).toBe(3);
   });
 
   it('adds two vertical-extreme control points when a loop overshoots the tangent range', () => {
     const el = new TopologyDisplay();
+    el.setAttribute('debug-loops', 'on');
     document.body.appendChild(el);
     // The loop (z up to 9) reaches above the tangent points (z 8) of the
     // flanking helices, triggering the two extreme points: 4 base + 2 = 6.
@@ -536,6 +537,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
   it('omits vertical-extreme points when loop-extreme-points is off', () => {
     const el = new TopologyDisplay();
+    el.setAttribute('debug-loops', 'on');
     el.setAttribute('loop-extreme-points', 'off');
     document.body.appendChild(el);
     el.proteinData = discontinuousLoopProtein();
@@ -547,6 +549,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
   it('respects a raised loop-extreme-threshold by suppressing the extreme points', () => {
     const el = new TopologyDisplay();
+    el.setAttribute('debug-loops', 'on');
     // A large threshold relative to the flanking tangents' narrow z-range
     // suppresses the extreme points (4 base markers, no extreme pair).
     el.setAttribute('loop-extreme-threshold', '50');

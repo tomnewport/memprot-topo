@@ -1369,12 +1369,12 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Whether loop control points are drawn for debugging. Shown by default;
-   * set the `debug-loops` attribute to "off"/"false"/"hidden"/"0" to hide them.
+   * Whether loop control points are drawn for debugging. Hidden by default;
+   * set the `debug-loops` attribute to "on"/"true"/"show"/"1" to display them.
    */
   private get showLoopPoints(): boolean {
     const v = this.getAttribute('debug-loops');
-    return v === null || !['off', 'false', 'hidden', '0'].includes(v.toLowerCase());
+    return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
   }
 
   /** Assemble the loop rendering options from the component's attributes. */
