@@ -4,7 +4,13 @@ import type {
   SecondaryStructureSegment,
   SecondaryStructureType,
 } from '../types.js';
-import { unrollChain, type UnrolledSegment, type UnrolledPoint } from '../unroll/index.js';
+import {
+  unrollChain,
+  sampleCurve,
+  type UnrolledSegment,
+  type UnrolledPoint,
+  type Vec,
+} from '../unroll/index.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -134,12 +140,27 @@ const COLOURS = {
 
 const LOOP = {
   /**
-   * Gap in screen pixels between an SS element polygon endpoint and the loop
-   * curve endpoint.  0 = connect directly at the boundary sample.  Values > 0
-   * add breathing room but risk reversing the Bézier handle on near-flat loops
-   * (the offset can push the endpoint past the loop's extremal z).
+   * Fixed horizontal distance (screen px) between adjacent SS elements, measured
+   * centre-of-path to centre-of-path (end of the previous element to the start
+   * of the next).  SS elements are repositioned so every inter-element gap is
+   * exactly this wide, regardless of the loop's real arc length.
    */
-  gapPx: 0,
+  elementGapPx: 30,
+  /**
+   * Distance (screen px) to follow each element's end/start tangent when placing
+   * the loop's tangent control points (points 2 and 6 in the sequence).
+   */
+  tangentMagPx: 10,
+  /**
+   * If the loop's vertical extreme lies more than this fraction of the
+   * tangent-points' z-range beyond that range, three extra control points are
+   * placed at the extreme to pull the curve out to the real excursion.
+   */
+  extremeThreshold: 0.2,
+  /** Horizontal spacing (screen px) between the three vertical-extreme points. */
+  extremeSpacingPx: 5,
+  /** Samples per Catmull-Rom segment when rasterising the loop curve. */
+  curveSamples: 12,
 };
 
 function isBetaBarrel(chain: ChainData): boolean {
@@ -463,49 +484,114 @@ function drawSsPolygon(
   plot.appendChild(poly);
 }
 
+/** A loop control point in plot (arc, z) Ångström coordinates, tagged for debug colouring. */
+interface LoopControlPoint {
+  arc: number;
+  z: number;
+  kind: 'endpoint' | 'tangent' | 'extreme';
+}
+
+const LOOP_DEBUG_FILL: Record<LoopControlPoint['kind'], string> = {
+  endpoint: '#1f77b4',
+  tangent: '#2ca02c',
+  extreme: '#d62728',
+};
+
+/** Unit (arc, z) tangent between two display samples; falls back to +arc. */
+function unitTangent(samples: UnrolledPoint[], from: number, to: number): { a: number; z: number } {
+  const da = samples[to].arc - samples[from].arc;
+  const dz = samples[to].z - samples[from].z;
+  const len = Math.sqrt(da * da + dz * dz);
+  if (len < 1e-9) return { a: 1, z: 0 };
+  return { a: da / len, z: dz / len };
+}
+
 /**
- * Render a loop (coil) as a smooth cubic Bézier curve.
+ * Render a loop (coil) as a smooth Catmull-Rom spline through an explicit
+ * control-point sequence:
+ *   1. previous element end (centre of path)            — if a previous element exists
+ *   2. point 1 + previous element end-tangent × tangentMag
+ *   3-5. three points at the loop's vertical extreme    — only if the loop reaches
+ *        more than `extremeThreshold` of the tangent-points' z-range beyond it
+ *   6. next element start − next element start-tangent × tangentMag
+ *   7. next element start (centre of path)              — if a next element exists
  *
- * The curve starts and ends tangent-parallel to the adjacent SS elements so
- * transitions look natural.  Its extremal z matches the loop's actual furthest
- * excursion from the membrane midplane.  A configurable gap separates the curve
- * from the SS element polygons.  Loops with sequence gaps are dashed with a
- * slightly wider physical gap to hint at missing residues.
+ * Loops with sequence gaps (missing residue numbers) are dashed.  When
+ * `showPoints` is set, each control point is marked with a small circle for
+ * debugging.  Distances quoted in pixels assume a 1:1 arc/z aspect ratio.
  */
 function drawLoop(
   plot: SVGGElement,
+  markers: SVGGElement,
   samples: UnrolledPoint[],
+  loopRun: SsRun,
+  prevRun: SsRun | null,
+  nextRun: SsRun | null,
   loopResidues: { resSeq: number }[],
-  startSample: number,
-  endSample: number,
+  showPoints: boolean,
 ): void {
-  if (endSample <= startSample) return;
+  const magA = LOOP.tangentMagPx / PLOT.arcPxPerA;
+  const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
+  const extremeSpacingA = LOOP.extremeSpacingPx / PLOT.arcPxPerA;
 
-  // Tangent of the previous SS element at its endpoint (= direction into the loop).
-  let t0a = 1,
-    t0z = 0;
-  if (startSample > 0) {
-    const da = samples[startSample].arc - samples[startSample - 1].arc;
-    const dz = samples[startSample].z - samples[startSample - 1].z;
-    const len = Math.sqrt(da * da + dz * dz);
-    if (len > 1e-9) {
-      t0a = da / len;
-      t0z = dz / len;
-    }
+  const points: LoopControlPoint[] = [];
+
+  // Points 1 & 2: previous element end and its outward tangent.
+  let prevEnd: { arc: number; z: number } | null = null;
+  if (prevRun) {
+    const i = prevRun.endResSampleIdx;
+    prevEnd = { arc: samples[i].arc, z: samples[i].z };
+    const t = unitTangent(samples, Math.max(0, i - 1), i);
+    points.push({ ...prevEnd, kind: 'endpoint' });
+    points.push({ arc: prevEnd.arc + magA * t.a, z: prevEnd.z + magA * t.z, kind: 'tangent' });
   }
 
-  // Tangent of the next SS element at its start (= direction out of the loop).
-  let t1a = 1,
-    t1z = 0;
-  if (endSample < samples.length - 1) {
-    const da = samples[endSample + 1].arc - samples[endSample].arc;
-    const dz = samples[endSample + 1].z - samples[endSample].z;
-    const len = Math.sqrt(da * da + dz * dz);
-    if (len > 1e-9) {
-      t1a = da / len;
-      t1z = dz / len;
-    }
+  // Points 6 & 7: next element start and its inward tangent (added after extremes).
+  let nextStart: { arc: number; z: number } | null = null;
+  let nextTangent: LoopControlPoint | null = null;
+  if (nextRun) {
+    const i = nextRun.startSample;
+    nextStart = { arc: samples[i].arc, z: samples[i].z };
+    const t = unitTangent(samples, i, Math.min(samples.length - 1, i + 1));
+    nextTangent = { arc: nextStart.arc - magA * t.a, z: nextStart.z - magA * t.z, kind: 'tangent' };
   }
+
+  // Vertical extreme of the loop's real path (z is unaffected by the layout shift).
+  let loopMaxZ = -Infinity;
+  let loopMinZ = Infinity;
+  for (let i = loopRun.startSample; i <= loopRun.endSample; i++) {
+    if (samples[i].z > loopMaxZ) loopMaxZ = samples[i].z;
+    if (samples[i].z < loopMinZ) loopMinZ = samples[i].z;
+  }
+
+  // z-range spanned by the tangent control points placed so far (points 1, 2, 6, 7).
+  const tangentZs = [...points.map((p) => p.z)];
+  if (nextStart) tangentZs.push(nextStart.z);
+  if (nextTangent) tangentZs.push(nextTangent.z);
+  const rangeMin = Math.min(...tangentZs);
+  const rangeMax = Math.max(...tangentZs);
+  const span = rangeMax - rangeMin;
+  const margin = LOOP.extremeThreshold * span;
+
+  // Decide whether the loop escapes the tangent-points' z-range, and on which side.
+  let extremeZ: number | null = null;
+  const aboveBy = loopMaxZ - rangeMax;
+  const belowBy = rangeMin - loopMinZ;
+  if (aboveBy > margin && aboveBy >= belowBy) extremeZ = loopMaxZ;
+  else if (belowBy > margin) extremeZ = loopMinZ;
+
+  if (extremeZ !== null) {
+    // Centre the extreme triple horizontally between the two elements.
+    const centreArc = prevEnd ? prevEnd.arc + gapA / 2 : nextStart ? nextStart.arc - gapA / 2 : 0;
+    points.push({ arc: centreArc - extremeSpacingA, z: extremeZ, kind: 'extreme' });
+    points.push({ arc: centreArc, z: extremeZ, kind: 'extreme' });
+    points.push({ arc: centreArc + extremeSpacingA, z: extremeZ, kind: 'extreme' });
+  }
+
+  if (nextTangent) points.push(nextTangent);
+  if (nextStart) points.push({ ...nextStart, kind: 'endpoint' });
+
+  if (points.length < 2) return;
 
   // Detect sequence gaps within the loop (missing residues).
   let discontinuous = false;
@@ -516,46 +602,18 @@ function drawLoop(
     }
   }
 
-  // Gap-offset endpoints: shift the curve start/end away from the SS element
-  // polygons by LOOP.gapPx screen pixels along the tangent direction.
-  const gapU = LOOP.gapPx / PLOT.arcPxPerA;
-  const p0a = samples[startSample].arc + gapU * t0a;
-  const p0z = samples[startSample].z + gapU * t0z;
-  const p3a = samples[endSample].arc - gapU * t1a;
-  const p3z = samples[endSample].z - gapU * t1z;
-
-  // Extremal z: the actual furthest z among all samples in the loop range.
-  let extremeZ = samples[startSample].z;
-  for (let i = startSample; i <= endSample; i++) {
-    if (Math.abs(samples[i].z) > Math.abs(extremeZ)) extremeZ = samples[i].z;
-  }
-
-  // Bézier handle length h scaled so that B_z(t=0.5) ≈ extremeZ.
-  // For P1 = P0 + h·T0 and P2 = P3 − h·T1:
-  //   B_z(0.5) = 0.5·(p0z + p3z) + 0.375·h·(t0z − t1z)
-  const midZ = 0.5 * (p0z + p3z);
-  const denom = 0.375 * (t0z - t1z);
-  let h: number;
-  if (Math.abs(denom) > 1e-6) {
-    h = (extremeZ - midZ) / denom;
-    // Clamp to prevent runaway control points on nearly-flat or very short loops.
-    const maxH = 2 * (Math.abs(p3a - p0a) + Math.abs(p3z - p0z));
-    h = Math.max(-maxH, Math.min(maxH, h));
-  } else {
-    // Tangents nearly co-directional in z — fall back to arc-span-based length.
-    h = Math.abs(p3a - p0a) * 0.4;
-  }
-
-  const p1a = p0a + h * t0a;
-  const p1z = p0z + h * t0z;
-  const p2a = p3a - h * t1a;
-  const p2z = p3z - h * t1z;
+  // Smooth the control polygon with a centripetal Catmull-Rom spline.
+  const curveInput: Vec[] = points.map((p) => ({ x: p.arc, y: p.z, z: 0 }));
+  const curve = sampleCurve(curveInput, LOOP.curveSamples).samples;
+  const d =
+    `M${curve[0].x.toFixed(2)},${curve[0].y.toFixed(2)} ` +
+    curve
+      .slice(1)
+      .map((s) => `L${s.x.toFixed(2)},${s.y.toFixed(2)}`)
+      .join(' ');
 
   const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute(
-    'd',
-    `M${p0a.toFixed(2)},${p0z.toFixed(2)} C${p1a.toFixed(2)},${p1z.toFixed(2)} ${p2a.toFixed(2)},${p2z.toFixed(2)} ${p3a.toFixed(2)},${p3z.toFixed(2)}`,
-  );
+  path.setAttribute('d', d);
   path.setAttribute('fill', 'none');
   path.setAttribute('stroke', COLOURS.coil);
   path.setAttribute('stroke-width', '1.8');
@@ -564,13 +622,97 @@ function drawLoop(
   path.setAttribute('vector-effect', 'non-scaling-stroke');
   if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
   plot.appendChild(path);
+
+  if (showPoints) {
+    for (const p of points) {
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.setAttribute('class', 'loop-debug-point');
+      dot.setAttribute('cx', (p.arc * PLOT.arcPxPerA).toFixed(2));
+      dot.setAttribute('cy', (-p.z * PLOT.zPxPerA).toFixed(2));
+      dot.setAttribute('r', '2.5');
+      dot.setAttribute('fill', LOOP_DEBUG_FILL[p.kind]);
+      dot.setAttribute('stroke', '#fff');
+      dot.setAttribute('stroke-width', '0.5');
+      markers.appendChild(dot);
+    }
+  }
 }
 
-function renderChainSvg(chain: ChainData): SVGSVGElement {
+/** A chain segment with its samples repositioned into display (fixed-gap) space. */
+interface SegmentLayout {
+  /** Samples with arc shifted into display space; z is unchanged. */
+  samples: UnrolledPoint[];
+  /** One entry per input Cα (unchanged from the unroll). */
+  residues: UnrolledSegment['residues'];
+  runs: SsRun[];
+}
+
+/**
+ * Reposition SS elements so the horizontal gap between consecutive elements is
+ * a fixed `LOOP.elementGapPx`, regardless of each loop's real arc length. Each
+ * SS element keeps its own internal arc geometry; only the offset between
+ * elements changes. Loops (and chain breaks) collapse to the fixed gap width.
+ */
+function layoutSegments(
+  segments: UnrolledSegment[],
+  ssSegments: SecondaryStructureSegment[],
+): { layouts: SegmentLayout[]; totalArc: number } {
+  const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
+  const layouts: SegmentLayout[] = [];
+  let cursor = 0;
+  let maxArc = 0;
+
+  for (const segment of segments) {
+    const runs = runsBySs(segment.residues, ssSegments);
+    const n = segment.samples.length;
+
+    if (runs.length === 0) {
+      const base = segment.samples[0]?.arc ?? 0;
+      const sh = cursor - base;
+      const display = segment.samples.map((p) => ({ arc: p.arc + sh, z: p.z }));
+      const end = cursor + ((segment.samples[n - 1]?.arc ?? base) - base);
+      layouts.push({ samples: display, residues: segment.residues, runs });
+      if (end > maxArc) maxArc = end;
+      cursor = end + gapA;
+      continue;
+    }
+
+    const shift = new Array<number>(n).fill(NaN);
+    let firstShift = 0;
+    for (let r = 0; r < runs.length; r++) {
+      const run = runs[r];
+      const sh = cursor - segment.samples[run.startSample].arc;
+      if (r === 0) firstShift = sh;
+      const ownEnd = r < runs.length - 1 ? runs[r + 1].startSample : n;
+      for (let i = run.startSample; i < ownEnd; i++) shift[i] = sh;
+      if (run.type === 'helix' || run.type === 'strand') {
+        cursor += segment.samples[run.endResSampleIdx].arc - segment.samples[run.startSample].arc;
+      } else {
+        cursor += gapA;
+      }
+    }
+    // Forward-fill any samples outside a run's owned range (leading/interior gaps).
+    let last = firstShift;
+    for (let i = 0; i < n; i++) {
+      if (!Number.isNaN(shift[i])) last = shift[i];
+      else shift[i] = last;
+    }
+
+    const displaySamples = segment.samples.map((p, i) => ({ arc: p.arc + shift[i], z: p.z }));
+    layouts.push({ samples: displaySamples, residues: segment.residues, runs });
+    if (cursor > maxArc) maxArc = cursor;
+    cursor += gapA;
+  }
+
+  return { layouts, totalArc: maxArc };
+}
+
+function renderChainSvg(chain: ChainData, showPoints: boolean): SVGSVGElement {
   const unroll = unrollChain(chain.calphas, { ssSegments: chain.segments });
+  const { layouts, totalArc } = layoutSegments(unroll.segments, chain.segments);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
-  const plotWidth = Math.max(200, unroll.totalArcLength * PLOT.arcPxPerA);
+  const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
   const plotHeight = zRange * 2 * PLOT.zPxPerA;
   const svgWidth = PLOT.margin.left + plotWidth + PLOT.margin.right;
   const svgHeight = PLOT.margin.top + plotHeight + PLOT.margin.bottom;
@@ -605,7 +747,7 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
   const slab = document.createElementNS(SVG_NS, 'rect');
   slab.setAttribute('x', '0');
   slab.setAttribute('y', `${-PLOT.membraneHalf}`);
-  slab.setAttribute('width', `${unroll.totalArcLength.toFixed(2)}`);
+  slab.setAttribute('width', `${totalArc.toFixed(2)}`);
   slab.setAttribute('height', `${PLOT.membraneHalf * 2}`);
   slab.setAttribute('fill', COLOURS.membraneFill);
   slab.setAttribute('fill-opacity', '0.55');
@@ -618,7 +760,7 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
   // Zero (z = 0) reference line — membrane midplane.
   const mid = document.createElementNS(SVG_NS, 'line');
   mid.setAttribute('x1', '0');
-  mid.setAttribute('x2', `${unroll.totalArcLength.toFixed(2)}`);
+  mid.setAttribute('x2', `${totalArc.toFixed(2)}`);
   mid.setAttribute('y1', '0');
   mid.setAttribute('y2', '0');
   mid.setAttribute('stroke', COLOURS.zAxis);
@@ -636,16 +778,21 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
   labelsGroup.setAttribute('font-family', 'sans-serif');
   const placedBoxes: LabelBox[] = [];
 
+  // Debug markers for loop control points. Non-scaled (translate only) so the
+  // dots stay circular; drawn last so they sit on top.
+  const markersGroup = document.createElementNS(SVG_NS, 'g');
+  markersGroup.setAttribute('transform', `translate(${cx}, ${cy})`);
+
   // For each contiguous chain segment, draw the smoothed (arc, z) trace,
   // segmented by secondary structure type for colouring.
-  for (let s = 0; s < unroll.segments.length; s++) {
-    const segment = unroll.segments[s];
-    drawSegment(plot, labelsGroup, segment, chain.segments, barrel, placedBoxes);
+  for (let s = 0; s < layouts.length; s++) {
+    const layout = layouts[s];
+    drawSegment(plot, labelsGroup, markersGroup, layout, barrel, placedBoxes, showPoints);
     // Dashed connector across chain breaks.
     if (s > 0) {
-      const prev = unroll.segments[s - 1];
-      const a = prev.samples[prev.samples.length - 1];
-      const b = segment.samples[0];
+      const prev = layouts[s - 1].samples;
+      const a = prev[prev.length - 1];
+      const b = layout.samples[0];
       const connector = document.createElementNS(SVG_NS, 'line');
       connector.setAttribute('x1', `${a.arc}`);
       connector.setAttribute('y1', `${a.z}`);
@@ -659,6 +806,7 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
   }
 
   svg.appendChild(labelsGroup);
+  svg.appendChild(markersGroup);
 
   // Expand viewBox to fit all placed labels if they extend beyond the current bounds.
   let minX = 0,
@@ -687,31 +835,30 @@ function renderChainSvg(chain: ChainData): SVGSVGElement {
   return svg;
 }
 
+function isSs(run: SsRun | undefined): run is SsRun {
+  return !!run && (run.type === 'helix' || run.type === 'strand');
+}
+
 function drawSegment(
   plot: SVGGElement,
   labelsGroup: SVGGElement,
-  segment: UnrolledSegment,
-  ssSegments: SecondaryStructureSegment[],
+  markersGroup: SVGGElement,
+  layout: SegmentLayout,
   isBarrel: boolean,
   placedBoxes: LabelBox[],
+  showPoints: boolean,
 ): void {
-  const runs = runsBySs(segment.residues, ssSegments);
-  for (const run of runs) {
+  const { samples, residues, runs } = layout;
+  for (let j = 0; j < runs.length; j++) {
+    const run = runs[j];
     if (run.type === 'helix' || run.type === 'strand') {
       const withArrow = isBarrel && run.type === 'strand';
-      drawSsPolygon(plot, segment.samples, run.startSample, run.endSample, run.type, withArrow);
-      placeResidueLabel(
-        labelsGroup,
-        segment.samples,
-        run.startSample,
-        run.startResSeq,
-        true,
-        placedBoxes,
-      );
+      drawSsPolygon(plot, samples, run.startSample, run.endResSampleIdx, run.type, withArrow);
+      placeResidueLabel(labelsGroup, samples, run.startSample, run.startResSeq, true, placedBoxes);
       if (run.endResSeq !== run.startResSeq) {
         placeResidueLabel(
           labelsGroup,
-          segment.samples,
+          samples,
           run.endResSampleIdx,
           run.endResSeq,
           false,
@@ -720,8 +867,10 @@ function drawSegment(
       }
       continue;
     }
-    const loopResidues = segment.residues.slice(run.residueStart, run.residueEnd + 1);
-    drawLoop(plot, segment.samples, loopResidues, run.startSample, run.endSample);
+    const prevRun = isSs(runs[j - 1]) ? runs[j - 1] : null;
+    const nextRun = isSs(runs[j + 1]) ? runs[j + 1] : null;
+    const loopResidues = residues.slice(run.residueStart, run.residueEnd + 1);
+    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, showPoints);
   }
 }
 
@@ -1058,7 +1207,7 @@ function renderChainPicker(
 let _instanceCounter = 0;
 
 export class TopologyDisplay extends HTMLElement {
-  static observedAttributes = ['protein-data'];
+  static observedAttributes = ['protein-data', 'debug-loops'];
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
@@ -1086,6 +1235,10 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, _old: string | null, value: string | null) {
+    if (name === 'debug-loops') {
+      this.render();
+      return;
+    }
     if (name !== 'protein-data') return;
     if (value === null) {
       this._data = null;
@@ -1098,6 +1251,15 @@ export class TopologyDisplay extends HTMLElement {
     }
     this._selectedChainId = null;
     this.render();
+  }
+
+  /**
+   * Whether loop control points are drawn for debugging. Shown by default;
+   * set the `debug-loops` attribute to "off"/"false"/"hidden"/"0" to hide them.
+   */
+  private get showLoopPoints(): boolean {
+    const v = this.getAttribute('debug-loops');
+    return v === null || !['off', 'false', 'hidden', '0'].includes(v.toLowerCase());
   }
 
   connectedCallback() {
@@ -1221,7 +1383,7 @@ export class TopologyDisplay extends HTMLElement {
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
-    scroll.appendChild(renderChainSvg(selectedChain));
+    scroll.appendChild(renderChainSvg(selectedChain, this.showLoopPoints));
     block.appendChild(scroll);
     region.appendChild(block);
 

@@ -356,7 +356,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     }
   });
 
-  it('renders each coil run as a cubic Bézier SVG path', () => {
+  it('renders each coil run as a smooth spline path through control points', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
@@ -365,9 +365,12 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     // betaBarrelChain has 3 inter-strand loops → 3 path elements.
     const loopPaths = Array.from(svg!.querySelectorAll('path'));
     expect(loopPaths.length).toBe(3);
-    // Each path must use a cubic Bézier command ('C').
+    // Each loop is a densely-sampled polyline curve: starts with a moveto and
+    // has many lineto segments (a Catmull-Rom rasterisation).
     for (const p of loopPaths) {
-      expect(p.getAttribute('d')).toContain('C');
+      const d = p.getAttribute('d') ?? '';
+      expect(d.startsWith('M')).toBe(true);
+      expect((d.match(/L/g) ?? []).length).toBeGreaterThan(3);
     }
   });
 
@@ -384,7 +387,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     }
   });
 
-  it('renders discontinuous loops as dashed paths with a wider gap', () => {
+  it('renders discontinuous loops as dashed paths', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = discontinuousLoopProtein();
@@ -394,6 +397,33 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     // One loop with sequence gaps.
     expect(loopPaths.length).toBe(1);
     expect(loopPaths[0].getAttribute('stroke-dasharray')).toBe('3 5');
+  });
+
+  it('shows loop control-point markers by default and hides them via the debug-loops attribute', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    // Default: control-point markers are drawn (4 per continuous loop × 3 loops).
+    let markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(12);
+
+    // Hiding via attribute removes them without affecting the loop paths.
+    el.setAttribute('debug-loops', 'off');
+    markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(0);
+    expect(el.shadowRoot!.querySelectorAll('.svg-scroll svg path').length).toBe(3);
+  });
+
+  it('adds three vertical-extreme control points when a loop overshoots the tangent range', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    // The loop (z up to 9) reaches above the tangent points (z 8) of the
+    // flanking helices, triggering the three extreme points: 4 base + 3 = 7.
+    el.proteinData = discontinuousLoopProtein();
+
+    const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
+    expect(markers.length).toBe(7);
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {
