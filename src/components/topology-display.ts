@@ -133,10 +133,13 @@ const COLOURS = {
 };
 
 const LOOP = {
-  /** Gap between an SS element polygon endpoint and the loop curve, in screen pixels. */
-  gapPx: 6,
-  /** Wider gap for discontinuous (sequence-gapped) loops to hint at missing residues. */
-  discontinuousGapPx: 10,
+  /**
+   * Gap in screen pixels between an SS element polygon endpoint and the loop
+   * curve endpoint.  0 = connect directly at the boundary sample.  Values > 0
+   * add breathing room but risk reversing the Bézier handle on near-flat loops
+   * (the offset can push the endpoint past the loop's extremal z).
+   */
+  gapPx: 0,
 };
 
 function isBetaBarrel(chain: ChainData): boolean {
@@ -513,10 +516,9 @@ function drawLoop(
     }
   }
 
-  // Gap-offset endpoints: pull the loop curve away from the SS element polygons
-  // by a fixed number of screen pixels so each junction has breathing room.
-  const gapPx = discontinuous ? LOOP.discontinuousGapPx : LOOP.gapPx;
-  const gapU = gapPx / PLOT.arcPxPerA;
+  // Gap-offset endpoints: shift the curve start/end away from the SS element
+  // polygons by LOOP.gapPx screen pixels along the tangent direction.
+  const gapU = LOOP.gapPx / PLOT.arcPxPerA;
   const p0a = samples[startSample].arc + gapU * t0a;
   const p0z = samples[startSample].z + gapU * t0z;
   const p3a = samples[endSample].arc - gapU * t1a;
