@@ -356,6 +356,46 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     }
   });
 
+  it('renders each coil run as a cubic Bézier SVG path', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // betaBarrelChain has 3 inter-strand loops → 3 path elements.
+    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    expect(loopPaths.length).toBe(3);
+    // Each path must use a cubic Bézier command ('C').
+    for (const p of loopPaths) {
+      expect(p.getAttribute('d')).toContain('C');
+    }
+  });
+
+  it('does not dash continuous loop paths', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    const loopPaths = svg!.querySelectorAll('path');
+    expect(loopPaths.length).toBeGreaterThan(0);
+    for (const p of loopPaths) {
+      expect(p.getAttribute('stroke-dasharray')).toBeNull();
+    }
+  });
+
+  it('renders discontinuous loops as dashed paths with a wider gap', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = discontinuousLoopProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    // One loop with sequence gaps.
+    expect(loopPaths.length).toBe(1);
+    expect(loopPaths[0].getAttribute('stroke-dasharray')).toBe('3 5');
+  });
+
   it('warns when the user views a chain that does not cross the bilayer', () => {
     const tm = tmHelixProtein().chains[0];
     const solubleChain = {

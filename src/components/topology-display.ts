@@ -132,6 +132,13 @@ const COLOURS = {
   break: '#aaa',
 };
 
+const LOOP = {
+  /** Gap between an SS element polygon endpoint and the loop curve, in screen pixels. */
+  gapPx: 6,
+  /** Wider gap for discontinuous (sequence-gapped) loops to hint at missing residues. */
+  discontinuousGapPx: 10,
+};
+
 function isBetaBarrel(chain: ChainData): boolean {
   let helixRes = 0,
     strandRes = 0;
@@ -454,12 +461,15 @@ function drawSsPolygon(
 }
 
 /**
- * Render a loop (coil) as a rectangular bracket that conveys the vertical
- * extent: a vertical rise from the start z to the extremal z, a horizontal
- * cap at that extreme, then a vertical drop back to the end z.  Loops with
- * sequence gaps (missing residues) are drawn with a dashed stroke.
+ * Render a loop (coil) as a smooth cubic Bézier curve.
+ *
+ * The curve starts and ends tangent-parallel to the adjacent SS elements so
+ * transitions look natural.  Its extremal z matches the loop's actual furthest
+ * excursion from the membrane midplane.  A configurable gap separates the curve
+ * from the SS element polygons.  Loops with sequence gaps are dashed with a
+ * slightly wider physical gap to hint at missing residues.
  */
-function drawLoopSimplified(
+function drawLoop(
   plot: SVGGElement,
   samples: UnrolledPoint[],
   loopResidues: { resSeq: number }[],
@@ -468,16 +478,33 @@ function drawLoopSimplified(
 ): void {
   if (endSample <= startSample) return;
 
-  const startPt = samples[startSample];
-  const endPt = samples[endSample];
-
-  // Extremal z: the sample furthest from the membrane midplane.
-  let extremeZ = startPt.z;
-  for (let i = startSample; i <= endSample; i++) {
-    if (Math.abs(samples[i].z) > Math.abs(extremeZ)) extremeZ = samples[i].z;
+  // Tangent of the previous SS element at its endpoint (= direction into the loop).
+  let t0a = 1,
+    t0z = 0;
+  if (startSample > 0) {
+    const da = samples[startSample].arc - samples[startSample - 1].arc;
+    const dz = samples[startSample].z - samples[startSample - 1].z;
+    const len = Math.sqrt(da * da + dz * dz);
+    if (len > 1e-9) {
+      t0a = da / len;
+      t0z = dz / len;
+    }
   }
 
-  // Sequence discontinuity = gaps in residue numbering within the loop.
+  // Tangent of the next SS element at its start (= direction out of the loop).
+  let t1a = 1,
+    t1z = 0;
+  if (endSample < samples.length - 1) {
+    const da = samples[endSample + 1].arc - samples[endSample].arc;
+    const dz = samples[endSample + 1].z - samples[endSample].z;
+    const len = Math.sqrt(da * da + dz * dz);
+    if (len > 1e-9) {
+      t1a = da / len;
+      t1z = dz / len;
+    }
+  }
+
+  // Detect sequence gaps within the loop (missing residues).
   let discontinuous = false;
   for (let i = 1; i < loopResidues.length; i++) {
     if (loopResidues[i].resSeq - loopResidues[i - 1].resSeq > 1) {
@@ -486,27 +513,55 @@ function drawLoopSimplified(
     }
   }
 
-  const strokeOpts: [string, string][] = [
-    ['stroke', COLOURS.coil],
-    ['stroke-width', '1.8'],
-    ['stroke-linecap', 'round'],
-    ['vector-effect', 'non-scaling-stroke'],
-  ];
-  if (discontinuous) strokeOpts.push(['stroke-dasharray', '3 3']);
+  // Gap-offset endpoints: pull the loop curve away from the SS element polygons
+  // by a fixed number of screen pixels so each junction has breathing room.
+  const gapPx = discontinuous ? LOOP.discontinuousGapPx : LOOP.gapPx;
+  const gapU = gapPx / PLOT.arcPxPerA;
+  const p0a = samples[startSample].arc + gapU * t0a;
+  const p0z = samples[startSample].z + gapU * t0z;
+  const p3a = samples[endSample].arc - gapU * t1a;
+  const p3z = samples[endSample].z - gapU * t1z;
 
-  const seg = (x1: number, y1: number, x2: number, y2: number) => {
-    const el = document.createElementNS(SVG_NS, 'line');
-    el.setAttribute('x1', x1.toFixed(2));
-    el.setAttribute('y1', y1.toFixed(2));
-    el.setAttribute('x2', x2.toFixed(2));
-    el.setAttribute('y2', y2.toFixed(2));
-    for (const [k, v] of strokeOpts) el.setAttribute(k, v);
-    plot.appendChild(el);
-  };
+  // Extremal z: the actual furthest z among all samples in the loop range.
+  let extremeZ = samples[startSample].z;
+  for (let i = startSample; i <= endSample; i++) {
+    if (Math.abs(samples[i].z) > Math.abs(extremeZ)) extremeZ = samples[i].z;
+  }
 
-  seg(startPt.arc, startPt.z, startPt.arc, extremeZ);
-  seg(startPt.arc, extremeZ, endPt.arc, extremeZ);
-  seg(endPt.arc, extremeZ, endPt.arc, endPt.z);
+  // Bézier handle length h scaled so that B_z(t=0.5) ≈ extremeZ.
+  // For P1 = P0 + h·T0 and P2 = P3 − h·T1:
+  //   B_z(0.5) = 0.5·(p0z + p3z) + 0.375·h·(t0z − t1z)
+  const midZ = 0.5 * (p0z + p3z);
+  const denom = 0.375 * (t0z - t1z);
+  let h: number;
+  if (Math.abs(denom) > 1e-6) {
+    h = (extremeZ - midZ) / denom;
+    // Clamp to prevent runaway control points on nearly-flat or very short loops.
+    const maxH = 2 * (Math.abs(p3a - p0a) + Math.abs(p3z - p0z));
+    h = Math.max(-maxH, Math.min(maxH, h));
+  } else {
+    // Tangents nearly co-directional in z — fall back to arc-span-based length.
+    h = Math.abs(p3a - p0a) * 0.4;
+  }
+
+  const p1a = p0a + h * t0a;
+  const p1z = p0z + h * t0z;
+  const p2a = p3a - h * t1a;
+  const p2z = p3z - h * t1z;
+
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute(
+    'd',
+    `M${p0a.toFixed(2)},${p0z.toFixed(2)} C${p1a.toFixed(2)},${p1z.toFixed(2)} ${p2a.toFixed(2)},${p2z.toFixed(2)} ${p3a.toFixed(2)},${p3z.toFixed(2)}`,
+  );
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', COLOURS.coil);
+  path.setAttribute('stroke-width', '1.8');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  path.setAttribute('vector-effect', 'non-scaling-stroke');
+  if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
+  plot.appendChild(path);
 }
 
 function renderChainSvg(chain: ChainData): SVGSVGElement {
@@ -664,7 +719,7 @@ function drawSegment(
       continue;
     }
     const loopResidues = segment.residues.slice(run.residueStart, run.residueEnd + 1);
-    drawLoopSimplified(plot, segment.samples, loopResidues, run.startSample, run.endSample);
+    drawLoop(plot, segment.samples, loopResidues, run.startSample, run.endSample);
   }
 }
 
