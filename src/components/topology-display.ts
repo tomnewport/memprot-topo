@@ -6,7 +6,7 @@ import type {
 } from '../types.js';
 import {
   unrollChain,
-  sampleCurve,
+  catmullRomBezier,
   type UnrolledSegment,
   type UnrolledPoint,
   type Vec,
@@ -158,9 +158,19 @@ const LOOP = {
   extremeThreshold: 0.2,
   /** Horizontal spacing (screen px) between the two vertical-extreme points. */
   extremeSpacingPx: 5,
-  /** Samples per Catmull-Rom segment when rasterising the loop curve. */
-  curveSamples: 12,
 };
+
+/**
+ * Minimum residue count for a helix/strand to be drawn as a discrete SS
+ * element. Shorter assignments (1-2 residues) are folded into the surrounding
+ * loop so they don't fragment it into multiple stubs.
+ */
+const MIN_SS_RESIDUES = 3;
+
+/** Drop sub-`MIN_SS_RESIDUES` helix/strand assignments so they read as coil. */
+function effectiveSsSegments(segments: SecondaryStructureSegment[]): SecondaryStructureSegment[] {
+  return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= MIN_SS_RESIDUES);
+}
 
 function isBetaBarrel(chain: ChainData): boolean {
   let helixRes = 0,
@@ -628,14 +638,17 @@ function renderLoopCurve(
 ): void {
   if (points.length < 2) return;
 
+  // Express the centripetal Catmull-Rom curve as native cubic Bézier segments
+  // so the SVG path stays smooth and compact (one `C` per segment).
   const curveInput: Vec[] = points.map((p) => ({ x: p.arc, y: p.z, z: 0 }));
-  const curve = sampleCurve(curveInput, LOOP.curveSamples).samples;
-  const d =
-    `M${curve[0].x.toFixed(2)},${curve[0].y.toFixed(2)} ` +
-    curve
-      .slice(1)
-      .map((s) => `L${s.x.toFixed(2)},${s.y.toFixed(2)}`)
-      .join(' ');
+  const bez = catmullRomBezier(curveInput);
+  let d = `M${bez.start.x.toFixed(2)},${bez.start.y.toFixed(2)}`;
+  for (const seg of bez.segments) {
+    d +=
+      ` C${seg.c1.x.toFixed(2)},${seg.c1.y.toFixed(2)}` +
+      ` ${seg.c2.x.toFixed(2)},${seg.c2.y.toFixed(2)}` +
+      ` ${seg.end.x.toFixed(2)},${seg.end.y.toFixed(2)}`;
+  }
 
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('d', d);
@@ -765,8 +778,9 @@ function layoutSegments(
 }
 
 function renderChainSvg(chain: ChainData, opts: LoopRenderOptions): SVGSVGElement {
-  const unroll = unrollChain(chain.calphas, { ssSegments: chain.segments });
-  const { layouts, totalArc } = layoutSegments(unroll.segments, chain.segments);
+  const ssSegments = effectiveSsSegments(chain.segments);
+  const unroll = unrollChain(chain.calphas, { ssSegments });
+  const { layouts, totalArc } = layoutSegments(unroll.segments, ssSegments);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
   const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
@@ -1439,8 +1453,9 @@ export class TopologyDisplay extends HTMLElement {
 
     const label = document.createElement('div');
     label.className = 'chain-label';
-    const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
-    const strands = selectedChain.segments.filter((s) => s.type === 'strand').length;
+    const effective = effectiveSsSegments(selectedChain.segments);
+    const helices = effective.filter((s) => s.type === 'helix').length;
+    const strands = effective.filter((s) => s.type === 'strand').length;
     label.append(
       'Chain ',
       chainLabelNode(selectedLabel),

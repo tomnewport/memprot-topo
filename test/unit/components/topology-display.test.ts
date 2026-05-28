@@ -76,6 +76,46 @@ function discontinuousLoopProtein(): ProteinData {
   };
 }
 
+function tinySsLoopProtein(): ProteinData {
+  // Two real helices joined by a loop that the SS assignment splits with a
+  // spurious 2-residue "helix" (res 8-9). All Cα-Cα distances < 5.5 Å (no
+  // break). The tiny helix should be folded into the loop, leaving one
+  // continuous coil run and just two SS polygons.
+  const calphas = [
+    { resSeq: 1, iCode: '', x: 0, y: 0, z: -12 },
+    { resSeq: 2, iCode: '', x: 0, y: 0, z: -9 },
+    { resSeq: 3, iCode: '', x: 0, y: 0, z: -6 },
+    { resSeq: 4, iCode: '', x: 0, y: 0, z: -3 },
+    { resSeq: 5, iCode: '', x: 0, y: 0, z: 0 },
+    { resSeq: 6, iCode: '', x: 1, y: 0, z: 3 },
+    { resSeq: 7, iCode: '', x: 3, y: 0, z: 5 },
+    { resSeq: 8, iCode: '', x: 6, y: 0, z: 6 },
+    { resSeq: 9, iCode: '', x: 9, y: 0, z: 6 },
+    { resSeq: 10, iCode: '', x: 12, y: 0, z: 5 },
+    { resSeq: 11, iCode: '', x: 14, y: 0, z: 3 },
+    { resSeq: 12, iCode: '', x: 15, y: 0, z: 0 },
+    { resSeq: 13, iCode: '', x: 15, y: 0, z: -3 },
+    { resSeq: 14, iCode: '', x: 15, y: 0, z: -6 },
+    { resSeq: 15, iCode: '', x: 15, y: 0, z: -9 },
+    { resSeq: 16, iCode: '', x: 15, y: 0, z: -12 },
+  ];
+  return {
+    pdbId: 'tny1',
+    chains: [
+      {
+        chainId: 'A',
+        residueCount: 16,
+        segments: [
+          { start: 1, end: 5, type: 'helix' },
+          { start: 8, end: 9, type: 'helix' },
+          { start: 12, end: 16, type: 'helix' },
+        ],
+        calphas,
+      },
+    ],
+  };
+}
+
 function chainBreakProtein(): ProteinData {
   // Two helices separated by a large 3-D gap (> 5.5 Å between consecutive Cα),
   // so the unroller splits them into separate segments joined by a chain-break
@@ -396,12 +436,13 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     // betaBarrelChain has 3 inter-strand loops → 3 path elements.
     const loopPaths = Array.from(svg!.querySelectorAll('path'));
     expect(loopPaths.length).toBe(3);
-    // Each loop is a densely-sampled polyline curve: starts with a moveto and
-    // has many lineto segments (a Catmull-Rom rasterisation).
+    // Each loop is a smooth cubic-Bézier spline: a moveto followed by multiple
+    // `C` segments, with no straight `L` rasterisation.
     for (const p of loopPaths) {
       const d = p.getAttribute('d') ?? '';
       expect(d.startsWith('M')).toBe(true);
-      expect((d.match(/L/g) ?? []).length).toBeGreaterThan(3);
+      expect((d.match(/C/g) ?? []).length).toBeGreaterThan(1);
+      expect(d).not.toContain('L');
     }
   });
 
@@ -480,6 +521,29 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(markers.length).toBe(4);
   });
 
+  it('folds sub-3-residue SS elements into the surrounding loop', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tinySsLoopProtein();
+
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    // The spurious 2-residue helix is dropped: only the two real helices are
+    // drawn as SS polygons, joined by a single continuous loop path.
+    expect(svg!.querySelectorAll('polygon').length).toBe(2);
+    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    expect(loopPaths.length).toBe(1);
+    expect(loopPaths[0].getAttribute('stroke-dasharray')).toBeNull();
+  });
+
+  it('reports SS counts excluding sub-3-residue elements', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = tinySsLoopProtein();
+
+    const label = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
+    expect(label).toContain('2 helices');
+  });
+
   it('renders the chain-break connector as a dashed Catmull-Rom curve', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
@@ -491,8 +555,9 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(paths.length).toBe(1);
     const d = paths[0].getAttribute('d') ?? '';
     expect(d.startsWith('M')).toBe(true);
-    // A curved connector is a densely-sampled polyline, not a single straight line.
-    expect((d.match(/L/g) ?? []).length).toBeGreaterThan(3);
+    // A curved connector is a multi-segment cubic-Bézier spline, not a line.
+    expect((d.match(/C/g) ?? []).length).toBeGreaterThan(1);
+    expect(d).not.toContain('L');
     expect(paths[0].getAttribute('stroke-dasharray')).toBe('3 5');
   });
 
