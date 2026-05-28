@@ -415,15 +415,15 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(el.shadowRoot!.querySelectorAll('.svg-scroll svg path').length).toBe(3);
   });
 
-  it('adds three vertical-extreme control points when a loop overshoots the tangent range', () => {
+  it('adds two vertical-extreme control points when a loop overshoots the tangent range', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     // The loop (z up to 9) reaches above the tangent points (z 8) of the
-    // flanking helices, triggering the three extreme points: 4 base + 3 = 7.
+    // flanking helices, triggering the two extreme points: 4 base + 2 = 6.
     el.proteinData = discontinuousLoopProtein();
 
     const markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
-    expect(markers.length).toBe(7);
+    expect(markers.length).toBe(6);
   });
 
   it('warns when the user views a chain that does not cross the bilayer', () => {

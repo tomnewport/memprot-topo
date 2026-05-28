@@ -153,11 +153,11 @@ const LOOP = {
   tangentMagPx: 10,
   /**
    * If the loop's vertical extreme lies more than this fraction of the
-   * tangent-points' z-range beyond that range, three extra control points are
+   * tangent-points' z-range beyond that range, two extra control points are
    * placed at the extreme to pull the curve out to the real excursion.
    */
   extremeThreshold: 0.2,
-  /** Horizontal spacing (screen px) between the three vertical-extreme points. */
+  /** Horizontal spacing (screen px) between the two vertical-extreme points. */
   extremeSpacingPx: 5,
   /** Samples per Catmull-Rom segment when rasterising the loop curve. */
   curveSamples: 12,
@@ -511,10 +511,10 @@ function unitTangent(samples: UnrolledPoint[], from: number, to: number): { a: n
  * control-point sequence:
  *   1. previous element end (centre of path)            — if a previous element exists
  *   2. point 1 + previous element end-tangent × tangentMag
- *   3-5. three points at the loop's vertical extreme    — only if the loop reaches
+ *   3-4. two points at the loop's vertical extreme      — only if the loop reaches
  *        more than `extremeThreshold` of the tangent-points' z-range beyond it
- *   6. next element start − next element start-tangent × tangentMag
- *   7. next element start (centre of path)              — if a next element exists
+ *   5. next element start − next element start-tangent × tangentMag
+ *   6. next element start (centre of path)              — if a next element exists
  *
  * Loops with sequence gaps (missing residue numbers) are dashed.  When
  * `showPoints` is set, each control point is marked with a small circle for
@@ -581,11 +581,11 @@ function drawLoop(
   else if (belowBy > margin) extremeZ = loopMinZ;
 
   if (extremeZ !== null) {
-    // Centre the extreme triple horizontally between the two elements.
+    // Two points at the extreme z give the interpolating curve a flat plateau
+    // there; centre the pair horizontally between the two elements.
     const centreArc = prevEnd ? prevEnd.arc + gapA / 2 : nextStart ? nextStart.arc - gapA / 2 : 0;
-    points.push({ arc: centreArc - extremeSpacingA, z: extremeZ, kind: 'extreme' });
-    points.push({ arc: centreArc, z: extremeZ, kind: 'extreme' });
-    points.push({ arc: centreArc + extremeSpacingA, z: extremeZ, kind: 'extreme' });
+    points.push({ arc: centreArc - extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
+    points.push({ arc: centreArc + extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
   }
 
   if (nextTangent) points.push(nextTangent);
