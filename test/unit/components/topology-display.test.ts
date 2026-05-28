@@ -280,33 +280,45 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     }
   });
 
-  it('does not place residue-number labels that overlap each other', () => {
+  it('places each residue-number label snug against its SS polygon (not drifted away)', () => {
+    // The label for each helix/strand endpoint should sit just past the
+    // polygon tip along the tangent — not pushed several tens of pixels
+    // away as a collision-avoidance side-effect.
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg')!;
-    const texts = Array.from(svg.querySelectorAll('text'));
-    const fontSize = 11;
-    const pad = 2;
-    const boxes = texts.map((t) => {
-      const cx = parseFloat(t.getAttribute('x') ?? '0');
-      const cy = parseFloat(t.getAttribute('y') ?? '0');
-      const w = (t.textContent ?? '').length * fontSize * 0.6;
-      const h = fontSize;
-      return { cx, cy, w, h };
-    });
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i];
-        const b = boxes[j];
-        const overlap =
-          Math.abs(a.cx - b.cx) < (a.w + b.w) / 2 + pad &&
-          Math.abs(a.cy - b.cy) < (a.h + b.h) / 2 + pad;
-        expect(overlap, `labels ${texts[i].textContent} and ${texts[j].textContent} overlap`).toBe(
-          false,
-        );
+    // Polygon points are in user-space (Å). Labels live in screen space.
+    // Convert vertices to the same scale to compare distances.
+    const arcPxPerA = 2.5;
+    const zPxPerA = 2.5;
+    const polygonVerts = Array.from(svg.querySelectorAll('polygon')).flatMap((p) =>
+      (p.getAttribute('points') ?? '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((pt) => {
+          const [x, y] = pt.split(',').map(Number);
+          return { x: x * arcPxPerA, y: -y * zPxPerA };
+        }),
+    );
+
+    const labels = Array.from(svg.querySelectorAll('text'));
+    expect(labels.length).toBeGreaterThan(0);
+    const MAX_DIST_PX = 15;
+    for (const label of labels) {
+      const cx = parseFloat(label.getAttribute('x') ?? '0');
+      const cy = parseFloat(label.getAttribute('y') ?? '0');
+      let minDist = Infinity;
+      for (const v of polygonVerts) {
+        const d = Math.hypot(cx - v.x, cy - v.y);
+        if (d < minDist) minDist = d;
       }
+      expect(
+        minDist,
+        `label "${label.textContent}" is ${minDist.toFixed(1)}px from the nearest polygon vertex`,
+      ).toBeLessThan(MAX_DIST_PX);
     }
   });
 

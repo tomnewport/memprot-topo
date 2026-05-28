@@ -217,18 +217,12 @@ const SS_STYLE: Record<'helix' | 'strand', { fill: string; stroke: string }> = {
 
 const LABEL = {
   fontSizePx: 11,
-  /** Initial distance (screen pixels) from the SS endpoint to the label centre. */
-  offsetPx: 10,
-  /** Step used to bump a label further outward when it overlaps another. */
-  bumpStepPx: 5,
-  /** Maximum number of bump attempts before placing anyway. */
-  maxBumpAttempts: 6,
+  /** Gap (screen pixels) between the polygon tip and the nearest label edge. */
+  gapPx: 3,
   /** How many samples to step across when computing the endpoint tangent.
    * Stepping > 1 averages out the helix curl that makes single-sample
    * tangents jitter at the ends. */
   tangentStepSamples: 3,
-  /** Padding (screen pixels) added when checking label box overlap. */
-  overlapPaddingPx: 2,
   fill: '#333',
 };
 
@@ -244,20 +238,13 @@ function approxTextWidth(text: string, fontSizePx: number): number {
   return text.length * fontSizePx * 0.6;
 }
 
-function boxesOverlap(a: LabelBox, b: LabelBox): boolean {
-  const pad = LABEL.overlapPaddingPx;
-  return (
-    Math.abs(a.cx - b.cx) < (a.w + b.w) / 2 + pad && Math.abs(a.cy - b.cy) < (a.h + b.h) / 2 + pad
-  );
-}
-
 /**
  * Render a residue-number label just past the start or end of a helix/strand
  * polygon. The label sits along the outward direction of the SS's local
- * tangent so it appears as a continuation of the element rather than crowding
- * its body. When the candidate position would overlap a previously placed
- * label, the label is bumped further outward. If tangent-along bumping doesn't
- * clear a collision, perpendicular bumps are tried next.
+ * tangent so it reads as a continuation of the element. The distance from the
+ * endpoint is chosen so the label's nearest edge clears the polygon tip by
+ * `LABEL.gapPx` regardless of the tangent angle — keeping every label snug to
+ * the feature it identifies.
  */
 function placeResidueLabel(
   labelsGroup: SVGGElement,
@@ -289,49 +276,21 @@ function placeResidueLabel(
   const outX = (sign * tdx) / tlen;
   const outY = (sign * tdy) / tlen;
 
-  // Perpendicular direction (90° counterclockwise from outward).
-  const perpX = -outY;
-  const perpY = outX;
-
   const text = String(resSeq);
   const fontSize = LABEL.fontSizePx;
   const w = approxTextWidth(text, fontSize);
   const h = fontSize;
 
-  let cx = sx + outX * LABEL.offsetPx;
-  let cy = sy + outY * LABEL.offsetPx;
-  let box: LabelBox = { cx, cy, w, h };
+  // Distance from endpoint to label centre such that the label's inner edge
+  // sits `gapPx` past the endpoint. The label box projects half-width along x
+  // and half-height along y onto the outward unit vector.
+  const projHalf = Math.abs(outX) * (w / 2) + Math.abs(outY) * (h / 2);
+  const offset = projHalf + LABEL.gapPx;
 
-  // Try bumping along the tangent direction first.
-  for (let attempt = 1; attempt < LABEL.maxBumpAttempts / 2; attempt++) {
-    if (!placedBoxes.some((p) => boxesOverlap(box, p))) break;
-    const dist = LABEL.offsetPx + attempt * LABEL.bumpStepPx;
-    cx = sx + outX * dist;
-    cy = sy + outY * dist;
-    box = { cx, cy, w, h };
-  }
+  const cx = sx + outX * offset;
+  const cy = sy + outY * offset;
 
-  // If still overlapping, try perpendicular bumps.
-  if (placedBoxes.some((p) => boxesOverlap(box, p))) {
-    for (let perpAttempt = 1; perpAttempt <= LABEL.maxBumpAttempts / 2; perpAttempt++) {
-      let placed = false;
-      for (const perpSign of [1, -1]) {
-        const tangentDist =
-          LABEL.offsetPx + Math.floor(LABEL.maxBumpAttempts / 4) * LABEL.bumpStepPx;
-        const perpDist = perpAttempt * LABEL.bumpStepPx;
-        cx = sx + outX * tangentDist + perpX * perpDist * perpSign;
-        cy = sy + outY * tangentDist + perpY * perpDist * perpSign;
-        box = { cx, cy, w, h };
-        if (!placedBoxes.some((p) => boxesOverlap(box, p))) {
-          placed = true;
-          break;
-        }
-      }
-      if (placed) break;
-    }
-  }
-
-  placedBoxes.push(box);
+  placedBoxes.push({ cx, cy, w, h });
 
   const textEl = document.createElementNS(SVG_NS, 'text');
   textEl.setAttribute('x', cx.toFixed(2));
