@@ -111,9 +111,33 @@ describe('analyseBarrel', () => {
     const a = analyseBarrel(calphas, segments);
     expect(a.closed).toBe(false);
     expect(a.cylindrical).toBe(false);
-    // The open sheet is still a connected path of three adjacent pairs.
+    // The open sheet is still a connected path of three adjacent pairs…
     expect(a.pairings).toHaveLength(3);
-    expect(a.ringOrder).toEqual([0, 1, 2, 3]);
+    // …but only the two interior strands have a partner on each side, so the
+    // ring walk (which runs over wall strands) does not wrap shut.
+    expect(a.ringOrder).toEqual([1, 2]);
+  });
+
+  it('merges duplicated/overlapping SHEET records into one strand each', () => {
+    // Real PDB/DSSP annotation lists a barrel strand once per sheet
+    // relationship, so each physical strand appears several times as
+    // overlapping ranges (the OmpF failure mode). Detection must still recover
+    // the 8-strand closed barrel.
+    const chain = syntheticBarrel({ n: 8 });
+    const dup = chain.segments.flatMap((s) =>
+      s.type === 'strand'
+        ? [
+            s,
+            { ...s },
+            { start: s.start, end: Math.floor((s.start + s.end) / 2), type: 'strand' as const },
+          ]
+        : [s],
+    );
+    const a = analyseBarrel(chain.calphas, dup);
+    expect(a.strands).toHaveLength(8);
+    expect(a.closed).toBe(true);
+    expect(a.cylindrical).toBe(true);
+    expect(a.strandCount).toBe(8);
   });
 
   it('returns an empty analysis when there are too few strands', () => {

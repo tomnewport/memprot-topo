@@ -89,19 +89,29 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     return { segments: [], totalArcLength: 0, zMin: 0, zMax: 0 };
   }
 
-  // Mean cylindrical radius of all Cα about the axis — a single R keeps the
-  // horizontal scale uniform across strands.
-  let radiusSum = 0;
-  for (const c of calphas) radiusSum += Math.hypot(c.x - centre.x, c.y - centre.y);
-  const radius = radiusSum / calphas.length || 1;
+  // Per-Cα cylindrical radius about the axis; the mean sets a single R so the
+  // horizontal scale is uniform across strands.
+  const r = calphas.map((c) => Math.hypot(c.x - centre.x, c.y - centre.y));
+  const radius = r.reduce((s, x) => s + x, 0) / r.length || 1;
+  // Below this radius a residue sits near the barrel axis (e.g. a loop folded
+  // *inside* the barrel, like OmpF's L3), where the unwrap angle is unstable —
+  // a tiny xy wobble swings θ wildly. Such residues carry the previous angle
+  // forward instead of jumping, so they don't fan into spurious slants or
+  // stretch the plot.
+  const minRadius = 0.4 * radius;
 
   // Continuously unwrapped angle along the whole chain, then scaled to arc.
   const u = new Array<number>(calphas.length);
   let theta = Math.atan2(calphas[0].y - centre.y, calphas[0].x - centre.x);
   u[0] = radius * theta;
+  let prevAngle = theta;
   for (let i = 1; i < calphas.length; i++) {
     const a = Math.atan2(calphas[i].y - centre.y, calphas[i].x - centre.x);
-    theta += wrapPi(a - Math.atan2(calphas[i - 1].y - centre.y, calphas[i - 1].x - centre.x));
+    if (r[i] >= minRadius && r[i - 1] >= minRadius) {
+      theta += wrapPi(a - prevAngle);
+    }
+    // Interior residues hold θ; reliable residues advance prevAngle.
+    if (r[i] >= minRadius) prevAngle = a;
     u[i] = radius * theta;
   }
   // Orient so the chain winds in the +arc direction (left-to-right unrolling).

@@ -197,16 +197,42 @@ function strandAxis(calphas: Calpha[]): { centroid: Vec3; axis: Vec3 } {
 }
 
 /**
- * Extract β-strands from a chain's Cα and secondary-structure annotation,
- * one {@link Strand} per `strand` segment, in sequence order.  Segments with
- * fewer than three resolved Cα are skipped (too short for a meaningful axis).
+ * Merge overlapping strand segments into one range each. PDB/DSSP SHEET records
+ * list a barrel strand once per sheet relationship, so the same physical strand
+ * routinely appears several times as overlapping ranges (e.g. `9–23` and
+ * `9–12`); collapsing them is what turns a 42-record OmpF annotation back into
+ * its ~16 physical strands. Distinct strands are always separated by a turn, so
+ * merging on overlap (not mere adjacency) never fuses two real strands.
+ */
+function mergeStrandSegments(segments: SecondaryStructureSegment[]): SecondaryStructureSegment[] {
+  const sorted = segments.filter((s) => s.type === 'strand').sort((a, b) => a.start - b.start);
+  const merged: SecondaryStructureSegment[] = [];
+  for (const seg of sorted) {
+    const last = merged[merged.length - 1];
+    // Merge only on overlap — distinct strands are always separated by at least
+    // a turn (a resSeq gap), whereas duplicated SHEET records of one strand
+    // overlap (e.g. `9–23` and `9–12`, or an exact `2–6`/`2–6`).
+    if (last && seg.start <= last.end) {
+      last.end = Math.max(last.end, seg.end);
+    } else {
+      merged.push({ ...seg });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Extract β-strands from a chain's Cα and secondary-structure annotation, one
+ * {@link Strand} per *physical* strand (overlapping/duplicate SHEET records are
+ * merged first), in sequence order.  Segments with fewer than two resolved Cα
+ * are skipped (too short for a meaningful axis).
  */
 export function extractStrands(calphas: Calpha[], segments: SecondaryStructureSegment[]): Strand[] {
   const byRes = new Map<number, Calpha>();
   for (const c of calphas) byRes.set(c.resSeq, c);
 
   const strands: Strand[] = [];
-  const strandSegs = segments.filter((s) => s.type === 'strand').sort((a, b) => a.start - b.start);
+  const strandSegs = mergeStrandSegments(segments);
 
   for (const seg of strandSegs) {
     const cas: Calpha[] = [];
@@ -279,48 +305,90 @@ export function pairStrands(
 }
 
 /**
- * Walk the pairing graph to recover ring (or path) order and decide closure.
- * Returns the ordered strand indices and whether the order is a closed cycle.
+ * Recover the barrel's ring order from the pairing graph, robustly enough for
+ * real structures that carry a few stray β-bridges alongside the barrel.
+ *
+ * Each strand keeps only its (up to) two closest partners — in a sheet a strand
+ * has exactly two neighbours — and an edge survives only if it is mutual. That
+ * reduces the graph to a union of simple paths and cycles; the barrel is the
+ * largest cycle. Returns its ordered strand indices, or an open path's order
+ * with `closed = false` when nothing wraps shut.
  */
 function ringFromPairings(
-  strandCount: number,
+  nodes: number[],
   pairings: StrandPairing[],
 ): { order: number[]; closed: boolean } {
-  const adj = new Map<number, number[]>();
-  for (let i = 0; i < strandCount; i++) adj.set(i, []);
+  const nodeSet = new Set(nodes);
+  // Two closest partners per node.
+  const partners = new Map<number, { other: number; spacing: number }[]>();
+  for (const i of nodes) partners.set(i, []);
   for (const p of pairings) {
-    adj.get(p.a)!.push(p.b);
-    adj.get(p.b)!.push(p.a);
+    if (!nodeSet.has(p.a) || !nodeSet.has(p.b)) continue;
+    partners.get(p.a)!.push({ other: p.b, spacing: p.spacing });
+    partners.get(p.b)!.push({ other: p.a, spacing: p.spacing });
+  }
+  const top = new Map<number, Set<number>>();
+  for (const [i, list] of partners) {
+    list.sort((x, y) => x.spacing - y.spacing);
+    top.set(i, new Set(list.slice(0, 2).map((e) => e.other)));
   }
 
-  // A clean β-barrel is a single cycle (all degree 2); a flat sheet is a path
-  // (two degree-1 ends).  Anything more tangled (a strand paired to 3+ others)
-  // is not a simple sheet and is reported as not closed.
-  const degOne: number[] = [];
-  for (let i = 0; i < strandCount; i++) {
-    const d = adj.get(i)!.length;
-    if (d === 0 || d > 2) return { order: [], closed: false };
-    if (d === 1) degOne.push(i);
+  // Keep only mutual edges → every node now has degree ≤ 2.
+  const adj = new Map<number, number[]>();
+  for (const i of nodes) adj.set(i, []);
+  for (const [i, set] of top) {
+    for (const j of set) {
+      if (i < j && top.get(j)?.has(i)) {
+        adj.get(i)!.push(j);
+        adj.get(j)!.push(i);
+      }
+    }
   }
-  if (degOne.length !== 0 && degOne.length !== 2) return { order: [], closed: false };
 
-  const start = degOne.length === 2 ? degOne[0] : 0;
-  const order: number[] = [start];
-  const visited = new Set<number>([start]);
-  let current = start;
-  while (order.length < strandCount) {
-    const next = adj.get(current)!.find((n) => !visited.has(n));
-    if (next === undefined) break;
-    order.push(next);
-    visited.add(next);
-    current = next;
+  // Walk each connected component (linear, since degree ≤ 2). A component that
+  // returns to its start is a cycle; track the largest cycle and largest path.
+  const seen = new Set<number>();
+  let bestCycle: number[] = [];
+  let bestPath: number[] = [];
+  for (const s of nodes) {
+    if (seen.has(s) || adj.get(s)!.length === 0) continue;
+    const compSeen = new Set<number>();
+    const stack = [s];
+    while (stack.length) {
+      const c = stack.pop()!;
+      if (compSeen.has(c)) continue;
+      compSeen.add(c);
+      for (const m of adj.get(c)!) if (!compSeen.has(m)) stack.push(m);
+    }
+    for (const n of compSeen) seen.add(n);
+
+    // Start a path at its lowest-index degree-1 end (deterministic); a pure
+    // cycle has no end, so start at the lowest-index node.
+    const ends = [...compSeen].filter((n) => adj.get(n)!.length === 1).sort((x, y) => x - y);
+    const start = ends.length > 0 ? ends[0] : Math.min(...compSeen);
+
+    const order: number[] = [start];
+    let prev = -1;
+    let cur = start;
+    let closedHere = false;
+    for (;;) {
+      const next = adj.get(cur)!.find((n) => n !== prev);
+      if (next === undefined) break;
+      if (next === start) {
+        closedHere = true;
+        break;
+      }
+      order.push(next);
+      prev = cur;
+      cur = next;
+    }
+    if (closedHere && order.length > bestCycle.length) bestCycle = order;
+    if (!closedHere && order.length > bestPath.length) bestPath = order;
   }
-  if (order.length !== strandCount) return { order: [], closed: false };
 
-  // Closed when the two ends are themselves paired (the sheet wraps shut).
-  const ends = adj.get(order[order.length - 1])!;
-  const closed = degOne.length === 0 && ends.includes(order[0]);
-  return { order, closed };
+  return bestCycle.length > 0
+    ? { order: bestCycle, closed: true }
+    : { order: bestPath, closed: false };
 }
 
 /** Mean rise per residue along each strand's own axis (Å). */
@@ -355,10 +423,26 @@ export function analyseBarrel(
   const pairings = pairStrands(strands, options);
   const axis: Vec3 = { x: 0, y: 0, z: 1 };
 
-  // Centre of the strand Cα (used as the cylinder axis position in xy).
+  // A barrel-wall strand hydrogen-bonds to a neighbour on each side, so it has
+  // ≥2 partners. This filter drops the short edge strands and the loop strands
+  // that fold *inside* the barrel (OmpF's L3), leaving just the cylinder wall —
+  // which is what should define the frame and carry the ring.
+  const degree = new Map<number, number>();
+  for (const s of strands) degree.set(s.index, 0);
+  for (const p of pairings) {
+    degree.set(p.a, (degree.get(p.a) ?? 0) + 1);
+    degree.set(p.b, (degree.get(p.b) ?? 0) + 1);
+  }
+  const wallStrands = strands.filter((s) => (degree.get(s.index) ?? 0) >= 2);
+  const { order, closed } = ringFromPairings(
+    wallStrands.map((s) => s.index),
+    pairings,
+  );
+  const wall = wallStrands.length >= 3 ? wallStrands : strands;
+
   const centre: Vec3 = { x: 0, y: 0, z: 0 };
   let nCa = 0;
-  for (const s of strands)
+  for (const s of wall)
     for (const c of s.calphas) {
       centre.x += c.x;
       centre.y += c.y;
@@ -375,7 +459,7 @@ export function analyseBarrel(
     strands,
     pairings,
     closed: false,
-    ringOrder: [],
+    ringOrder: order,
     strandCount: strands.length,
     shear: NaN,
     tiltDeg: NaN,
@@ -384,21 +468,19 @@ export function analyseBarrel(
     radius: 0,
     cylindrical: false,
   };
-  if (strands.length < 3) return empty;
+  if (wall.length < 3) return empty;
 
-  const { order, closed } = ringFromPairings(strands.length, pairings);
-
-  // Mean tilt of the strands to the barrel axis.
+  // Mean tilt of the wall strands to the barrel axis.
   let tiltSum = 0;
-  for (const s of strands) tiltSum += Math.acos(Math.min(1, Math.abs(dot3(s.axis, axis))));
-  const tiltDeg = (tiltSum / strands.length) * (180 / Math.PI);
+  for (const s of wall) tiltSum += Math.acos(Math.min(1, Math.abs(dot3(s.axis, axis))));
+  const tiltDeg = (tiltSum / wall.length) * (180 / Math.PI);
 
-  // Radius and angular spread of strand centroids about the z-axis through the
-  // centre.  Genuine barrels wrap the axis (large angular coverage); a planar
-  // strand bundle has its centroids collinear, leaving a ~π angular gap.
+  // Radius and angular spread of the wall strands about the z-axis through the
+  // centre.  A genuine barrel wraps the axis (small max angular gap); a planar
+  // strand bundle has its centroids collinear, leaving a ~π gap.
   const radii: number[] = [];
   const angles: number[] = [];
-  for (const s of strands) {
+  for (const s of wall) {
     const rx = s.centroid.x - centre.x;
     const ry = s.centroid.y - centre.y;
     radii.push(Math.hypot(rx, ry));
@@ -408,26 +490,24 @@ export function analyseBarrel(
   angles.sort((a, b) => a - b);
   let maxGap = angles[0] + 2 * Math.PI - angles[angles.length - 1];
   for (let i = 1; i < angles.length; i++) maxGap = Math.max(maxGap, angles[i] - angles[i - 1]);
-  const cylindrical = closed && radius > 1 && maxGap < 2.4;
+  const cylindrical = closed && wall.length >= 6 && radius > 1 && maxGap < 2.4;
 
   // Shear S from geometry: tan α = S·a / (n·b)  ⇒  S = n·b·tan α / a, with
   // a = rise per residue along the strand and b = inter-strand spacing.
-  let shear = NaN;
-  if (order.length > 0) {
-    const n = order.length;
-    const a = meanRisePerResidue(strands);
-    const ringPairs = pairings.filter((p) => order.includes(p.a) && order.includes(p.b));
-    const measuredB = median(ringPairs.map((p) => p.spacing));
-    const b = Number.isFinite(measuredB) ? measuredB : (2 * Math.PI * radius) / n;
-    shear = (n * b * Math.tan((tiltDeg * Math.PI) / 180)) / a;
-  }
+  const n = order.length > 0 ? order.length : wall.length;
+  const a = meanRisePerResidue(wall);
+  const ringSet = new Set(order);
+  const ringPairs = pairings.filter((p) => ringSet.has(p.a) && ringSet.has(p.b));
+  const measuredB = median(ringPairs.map((p) => p.spacing));
+  const b = Number.isFinite(measuredB) ? measuredB : (2 * Math.PI * radius) / n;
+  const shear = (n * b * Math.tan((tiltDeg * Math.PI) / 180)) / a;
 
   return {
     strands,
     pairings,
     closed,
     ringOrder: order,
-    strandCount: order.length || strands.length,
+    strandCount: n,
     shear,
     tiltDeg,
     axis,

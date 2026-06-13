@@ -835,17 +835,36 @@ function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: Segm
   plot.appendChild(group);
 }
 
+/**
+ * Secondary-structure segments for barrel-unwrap rendering: the barrel-wall
+ * strands (in ring order, merged ranges) plus any helices. β-strands that fold
+ * inside the barrel are omitted, so they fall through to coil and render as
+ * part of the connecting loop rather than as spurious bars near the axis.
+ */
+function barrelWallSegments(
+  analysis: BarrelAnalysis,
+  effective: SecondaryStructureSegment[],
+): SecondaryStructureSegment[] {
+  const wall = analysis.ringOrder.map((i) => analysis.strands[i].segment);
+  const helices = effective.filter((s) => s.type === 'helix');
+  return [...wall, ...helices].sort((a, b) => a.start - b.start);
+}
+
 function renderChainSvg(
   chain: ChainData,
   opts: LoopRenderOptions,
   analysis: BarrelAnalysis,
   showContacts: boolean,
 ): SVGSVGElement {
-  const ssSegments = effectiveSsSegments(chain.segments);
   // A genuine, closed cylindrical barrel is unrolled by angle so its strands
   // render parallel at true spacing; everything else uses the arc-length
   // unroll with fixed inter-element gaps.
   const useUnwrap = analysis.cylindrical;
+  // In barrel mode only the wall strands are drawn as strands; any β-strands
+  // that fold inside the barrel (e.g. OmpF's L3) sit near the axis where the
+  // unwrap angle is meaningless, so they read as part of the connecting loop.
+  const effective = effectiveSsSegments(chain.segments);
+  const ssSegments = useUnwrap ? barrelWallSegments(analysis, effective) : effective;
   const unroll = useUnwrap
     ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
     : unrollChain(chain.calphas, { ssSegments });
@@ -1580,10 +1599,12 @@ export class TopologyDisplay extends HTMLElement {
     label.className = 'chain-label';
     const effective = effectiveSsSegments(selectedChain.segments);
     const helices = effective.filter((s) => s.type === 'helix').length;
-    const strands = effective.filter((s) => s.type === 'strand').length;
     // Analyse the β-sheet topology once: it drives both the summary label and
     // the parallel-strand unwrap inside renderChainSvg.
     const analysis = analyseBarrel(selectedChain.calphas, effective);
+    // Count physical strands from the analysis (overlapping SHEET records are
+    // merged there); raw segment counts over-report on real structures.
+    const strands = analysis.strands.length;
     label.append(
       'Chain ',
       chainLabelNode(selectedLabel),

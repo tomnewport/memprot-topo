@@ -46,17 +46,23 @@ rendering exploits.
 [`analyseBarrel`](../src/contacts/beta-sheet.ts) recovers the picture above from
 Cα alone (no atoms beyond Cα, in keeping with the project's input contract):
 
-1. **Extract strands.** One strand per `strand` segment; its axis is the
-   dominant principal component of its Cα (PCA / power iteration), oriented N→C.
+1. **Extract strands.** One strand per _physical_ strand. Real PDB/DSSP SHEET
+   records list a barrel strand once per sheet relationship, so the same strand
+   appears several times as overlapping ranges (OmpF's annotation has 42 records
+   for 16 strands); these are merged first. Each strand's axis is the dominant
+   principal component of its Cα (PCA / power iteration), oriented N→C.
 2. **Pair strands.** For every pair, the median nearest-neighbour Cα–Cα distance
    is computed. A pair counts as β-sheet neighbours when that spacing falls in
    the sheet range (3.5–6.5 Å), there are enough residue contacts, and the axes
    are roughly (anti)parallel. The sign of the axis dot product gives
    **parallel vs antiparallel**; the per-residue contacts give the register and
    drive the optional contact overlay.
-3. **Close the ring.** The pairing graph is walked: a clean barrel is a single
-   cycle in which every strand has exactly two neighbours and the first strand
-   pairs with the last (`closed`). A flat sheet is an open path instead.
+3. **Close the ring.** Only barrel-_wall_ strands — those with a partner on each
+   side (≥2 pairings) — carry the ring, which drops short edge strands and any
+   strands that fold _inside_ the barrel (OmpF's L3). Each wall strand keeps its
+   two closest partners, mutual edges are walked, and the barrel is the largest
+   cycle (`closed`); a flat sheet is an open path instead. This tolerance for
+   stray β-bridges is what makes detection work on real structures.
 4. **Report geometry.** Strand count `n`, mean tilt, the barrel frame
    (axis = membrane normal, centre, radius) and the shear number `S` — derived
    from the measured tilt, `n` and spacing via the relation above.
@@ -103,7 +109,10 @@ than cumulative arc length).
 The display ([`topology-display.ts`](../src/components/topology-display.ts))
 switches to the unwrap **only** for a chain that `analyseBarrel` reports as a
 closed, cylindrical barrel; helical bundles and planar sheets keep the existing
-arc-length layout.
+arc-length layout. In barrel mode only the wall strands are drawn as strands;
+β-strands folded inside the barrel sit near the axis, where the unwrap angle is
+unstable, so they hold the previous angle and read as part of the connecting
+loop rather than as spurious bars.
 
 ---
 
