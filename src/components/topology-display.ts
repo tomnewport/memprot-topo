@@ -165,12 +165,18 @@ const LOOP = {
 
 const BARREL = {
   /**
-   * Extra horizontal gap (screen px) added between consecutive barrel strands
-   * on top of their true inter-strand spacing, purely for legibility. About one
-   * strand-body width (8 px) so neighbours read as distinct without distorting
-   * the tilt.
+   * Centre-to-centre horizontal spacing (screen px) between consecutive barrel
+   * strands. Each strand is placed in its own fixed-width lane so neighbours are
+   * always visually separated, regardless of the barrel's shear/tilt.
    */
-  strandGapPx: 8,
+  laneStepPx: 34,
+  /**
+   * Minimum clear horizontal gap (screen px) between adjacent strand footprints.
+   * The strands' tilt is scaled down uniformly (keeping them parallel) so the
+   * widest strand fits its lane with at least this much clearance — guaranteeing
+   * strands are never drawn on top of each other.
+   */
+  gapPx: 8,
 };
 
 /**
@@ -791,44 +797,100 @@ function layoutSegments(
 }
 
 /**
- * Lay the cylindrical unwrap out, keeping each strand's own geometry but adding
- * a fixed horizontal gap between consecutive strands for legibility. The unwrap
- * already places strands at their true inter-strand spacing; a constant extra
- * shift per strand widens the gaps without scaling (which would exaggerate the
- * tilt), so the strands stay parallel and only spread apart.
+ * Lay the cylindrical unwrap out so strands never overlap. At realistic barrel
+ * tilts (~40°) a strand sweeps far more horizontally than the true inter-strand
+ * spacing, so the honest unwrap draws tilted bars on top of one another. Here
+ * each strand is given its own fixed-width lane and the tilt is scaled down
+ * uniformly — the same factor for every strand, so they stay parallel — until
+ * the widest strand fits its lane with a clear gap. Loops are bridged across the
+ * lanes, and z (membrane depth) is never touched.
  */
 function barrelLayout(
   segments: UnrolledSegment[],
   ssSegments: SecondaryStructureSegment[],
-  extraGapA: number,
 ): { layouts: SegmentLayout[]; totalArc: number } {
-  let totalArc = 0;
-  const layouts = segments.map((segment) => {
+  const laneStepA = BARREL.laneStepPx / PLOT.arcPxPerA;
+  const bodyWidthA = (2 * SS_BODY.arrowHalfWidthPx) / PLOT.arcPxPerA;
+  const gapA = BARREL.gapPx / PLOT.arcPxPerA;
+  // Half-extent each strand body may occupy along arc within its lane.
+  const allowedHalfA = Math.max(0.01, (laneStepA - bodyWidthA - gapA) / 2);
+
+  const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, ssSegments);
     const n = segment.samples.length;
 
-    // Per-sample shift = (number of strands already passed) × extraGapA, so the
-    // k-th strand and the loop that follows it slide right by k gaps.
-    const shift = new Array<number>(n).fill(NaN);
-    let strandsSeen = 0;
-    for (let r = 0; r < runs.length; r++) {
-      const run = runs[r];
-      const ownEnd = r < runs.length - 1 ? runs[r + 1].startSample : n;
-      const sh = strandsSeen * extraGapA;
-      for (let i = run.startSample; i < ownEnd; i++) shift[i] = sh;
-      if (run.type === 'strand') strandsSeen++;
+    // Per-strand centre and half-extent (along arc) over the strand body.
+    const strandRuns = runs.filter((r) => r.type === 'strand');
+    const centres: number[] = [];
+    let maxHalf = 0;
+    for (const run of strandRuns) {
+      let mn = Infinity;
+      let mx = -Infinity;
+      for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
+        const a = segment.samples[i].arc;
+        if (a < mn) mn = a;
+        if (a > mx) mx = a;
+      }
+      centres.push((mn + mx) / 2);
+      maxHalf = Math.max(maxHalf, (mx - mn) / 2);
     }
-    let last = 0;
-    for (let i = 0; i < n; i++) {
-      if (!Number.isNaN(shift[i])) last = shift[i];
-      else shift[i] = last;
+    // Uniform tilt scale: shrink every strand by the same factor so the widest
+    // one just fits its lane (keeps all strands parallel).
+    const scale = maxHalf > 0 ? Math.min(1, allowedHalfA / maxHalf) : 1;
+
+    // Map strand-body samples into their lanes; leave the rest NaN for bridging.
+    const newArc = new Array<number>(n).fill(NaN);
+    strandRuns.forEach((run, k) => {
+      const laneCentre = k * laneStepA;
+      const c = centres[k];
+      for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
+        newArc[i] = laneCentre + (segment.samples[i].arc - c) * scale;
+      }
+    });
+
+    const firstAssigned = newArc.findIndex((v) => !Number.isNaN(v));
+    if (firstAssigned === -1) {
+      // No strands in this segment — fall back to the raw unwrap positions.
+      for (let i = 0; i < n; i++) newArc[i] = segment.samples[i].arc;
+    } else {
+      // Leading gap: hold the first strand's edge.
+      for (let i = 0; i < firstAssigned; i++) newArc[i] = newArc[firstAssigned];
+      // Interior gaps (loops): linear ramp between the bracketing strand edges.
+      let lastAssigned = firstAssigned;
+      for (let j = firstAssigned + 1; j < n; j++) {
+        if (Number.isNaN(newArc[j])) continue;
+        if (j > lastAssigned + 1) {
+          const va = newArc[lastAssigned];
+          const vb = newArc[j];
+          for (let m = lastAssigned + 1; m < j; m++) {
+            newArc[m] = va + ((vb - va) * (m - lastAssigned)) / (j - lastAssigned);
+          }
+        }
+        lastAssigned = j;
+      }
+      // Trailing gap: hold the last strand's edge.
+      for (let j = lastAssigned + 1; j < n; j++) newArc[j] = newArc[lastAssigned];
     }
 
-    const samples = segment.samples.map((p, i) => ({ arc: p.arc + shift[i], z: p.z }));
-    const residues = segment.residues.map((rr) => ({ ...rr, arc: rr.arc + shift[rr.sampleIndex] }));
-    for (const s of samples) if (s.arc > totalArc) totalArc = s.arc;
-    return { samples, residues, runs };
+    return { segment, runs, newArc };
   });
+
+  // Shift everything so the leftmost point sits at arc 0, then report extent.
+  let minArc = Infinity;
+  let maxArc = -Infinity;
+  for (const b of built)
+    for (const v of b.newArc) {
+      if (v < minArc) minArc = v;
+      if (v > maxArc) maxArc = v;
+    }
+  const shift = Number.isFinite(minArc) ? -minArc : 0;
+
+  const layouts = built.map(({ segment, runs, newArc }) => ({
+    samples: segment.samples.map((p, i) => ({ arc: newArc[i] + shift, z: p.z })),
+    residues: segment.residues.map((rr) => ({ ...rr, arc: newArc[rr.sampleIndex] + shift })),
+    runs,
+  }));
+  const totalArc = Number.isFinite(maxArc) ? maxArc - minArc : 0;
   return { layouts, totalArc };
 }
 
@@ -899,7 +961,7 @@ function renderChainSvg(
     ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
     : unrollChain(chain.calphas, { ssSegments });
   const { layouts, totalArc } = useUnwrap
-    ? barrelLayout(unroll.segments, ssSegments, BARREL.strandGapPx / PLOT.arcPxPerA)
+    ? barrelLayout(unroll.segments, ssSegments)
     : layoutSegments(unroll.segments, ssSegments);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
