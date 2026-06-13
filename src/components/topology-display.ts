@@ -165,11 +165,24 @@ const LOOP = {
 
 const BARREL = {
   /**
-   * Clear horizontal gap (screen px) left between adjacent strand footprints in
-   * the unrolled barrel. Strands keep their true tilt and are packed left to
-   * right so their horizontal extents never overlap, separated by this gap.
+   * Target closest distance between two adjacent strands, expressed in strand
+   * widths. Each strand keeps its true tilt; the next strand is slid in until
+   * the shortest centreline-to-centreline distance to the previous strand hits
+   * this target, so neighbours sit a fixed clearance apart however they tilt.
    */
-  gapPx: 10,
+  minStrandWidths: 2,
+  /**
+   * Larger target (strand widths) used when something other than a plain turn
+   * sits between two strands — an intervening helix or a non-barrel strand —
+   * which reads better with extra separation.
+   */
+  interruptedStrandWidths: 4,
+  /**
+   * Fallback clear gap (screen px) when two adjacent strands don't overlap in z
+   * at all (no centreline pair within the target), so closest-distance packing
+   * has nothing to bind on.
+   */
+  gapPx: 8,
 };
 
 /**
@@ -790,45 +803,85 @@ function layoutSegments(
 }
 
 /**
- * Lay the cylindrical unwrap out so strands never overlap, without altering any
- * strand's shape or angle. At realistic barrel tilts (~40°) a strand sweeps far
- * more horizontally than the true inter-strand spacing, so the honest unwrap
- * draws tilted bars on top of one another. Here each strand keeps its exact
- * geometry (a rigid horizontal shift only — tilt and curvature preserved) and is
- * packed left-to-right so its horizontal footprint clears the previous strand by
- * a fixed gap. Loops bridge across the shifts; membrane depth (z) is untouched.
+ * Lay the cylindrical unwrap out so strands sit a fixed clearance apart without
+ * altering any strand's shape or angle. At realistic barrel tilts (~40°) a
+ * strand sweeps far more horizontally than the true inter-strand spacing, so
+ * the honest unwrap draws tilted bars on top of one another.
+ *
+ * Each strand keeps its exact geometry (a rigid horizontal shift only) and is
+ * placed left to right by the algorithm:
+ *   1. take the next strand,
+ *   2. find the shortest distance between its centreline and the previous
+ *      strand's centreline,
+ *   3. slide it along until that shortest distance equals a fixed target
+ *      (default two strand widths).
+ * When the two strands are separated by something more than a plain turn — an
+ * intervening helix or a non-barrel strand — a larger target is used. Loops
+ * bridge across the shifts; membrane depth (z) is never touched.
  */
 function barrelLayout(
   segments: UnrolledSegment[],
-  ssSegments: SecondaryStructureSegment[],
+  wallSegments: SecondaryStructureSegment[],
+  allSegments: SecondaryStructureSegment[],
 ): { layouts: SegmentLayout[]; totalArc: number } {
-  // Horizontal padding for the polygon body/arrow either side of the centreline,
-  // plus the clear gap to leave between adjacent strand footprints.
-  const padA = SS_BODY.arrowHalfWidthPx / PLOT.arcPxPerA;
+  const strandWidthPx = SS_BODY.halfWidthPx * 2;
+  const targetA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
+  const interruptedTargetA = (BARREL.interruptedStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
   const gapA = BARREL.gapPx / PLOT.arcPxPerA;
 
+  // A helix or a non-barrel strand sitting strictly between two wall strands
+  // (by residue number) means more than a plain turn separates them.
+  const interrupted = (afterRes: number, beforeRes: number): boolean =>
+    allSegments.some(
+      (s) => (s.type === 'helix' || s.type === 'strand') && s.start > afterRes && s.end < beforeRes,
+    );
+
   const built = segments.map((segment) => {
-    const runs = runsBySs(segment.residues, ssSegments);
+    const runs = runsBySs(segment.residues, wallSegments);
     const n = segment.samples.length;
     const strandRuns = runs.filter((r) => r.type === 'strand');
 
-    // Pack each strand into the next free horizontal slot via a rigid shift, so
-    // its [min,max] arc footprint (padded) clears the previous strand by gapA.
     const newArc = new Array<number>(n).fill(NaN);
-    let cursor = 0;
+    let prevPts: { arc: number; z: number }[] | null = null;
+    let prevEndResSeq = -Infinity;
+
     for (const run of strandRuns) {
-      let mn = Infinity;
-      let mx = -Infinity;
-      for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
-        const a = segment.samples[i].arc;
-        if (a < mn) mn = a;
-        if (a > mx) mx = a;
+      // This strand's centreline points (one per residue), in raw unwrap arc.
+      const pts: { arc: number; z: number }[] = [];
+      for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
+        const r = segment.residues[ri];
+        pts.push({ arc: r.arc, z: r.z });
       }
-      const shift = cursor - (mn - padA);
+
+      let shift = 0;
+      if (prevPts) {
+        const target = interrupted(prevEndResSeq, run.startResSeq) ? interruptedTargetA : targetA;
+        // Smallest rightward shift s such that every centreline pair is ≥ target
+        // apart, with the binding pair exactly at target:
+        //   |(a_i + s) − P_j| ≥ √(target² − Δz²)  for pairs with |Δz| < target.
+        let smin = -Infinity;
+        for (const p of pts) {
+          for (const q of prevPts) {
+            const dz = p.z - q.z;
+            if (Math.abs(dz) >= target) continue;
+            const need = Math.sqrt(target * target - dz * dz) + q.arc - p.arc;
+            if (need > smin) smin = need;
+          }
+        }
+        if (!Number.isFinite(smin)) {
+          // No vertical overlap to bind on — fall back to a bounding-box gap.
+          const prevMax = Math.max(...prevPts.map((q) => q.arc));
+          const curMin = Math.min(...pts.map((p) => p.arc));
+          smin = prevMax + gapA - curMin;
+        }
+        shift = smin;
+      }
+
       for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
         newArc[i] = segment.samples[i].arc + shift;
       }
-      cursor = mx + padA + shift + gapA;
+      prevPts = pts.map((p) => ({ arc: p.arc + shift, z: p.z }));
+      prevEndResSeq = run.endResSeq;
     }
 
     const firstAssigned = newArc.findIndex((v) => !Number.isNaN(v));
@@ -944,7 +997,7 @@ function renderChainSvg(
     ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
     : unrollChain(chain.calphas, { ssSegments });
   const { layouts, totalArc } = useUnwrap
-    ? barrelLayout(unroll.segments, ssSegments)
+    ? barrelLayout(unroll.segments, ssSegments, effective)
     : layoutSegments(unroll.segments, ssSegments);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
