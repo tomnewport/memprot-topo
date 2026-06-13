@@ -244,19 +244,31 @@ curvature or kinks survive. Two equally defensible mechanisms achieve this:
 
 1. **PCA local-axis projection**, reusing the helix machinery with a smaller
    window (the pleat period is 2, versus 3.6 for the helix, so a window of ±2
-   residues spans ~2 repeats). This gives an _exact_ straight line for a
-   straight strand in a single step and preserves the strand axis (hence the
-   crossing angle) by construction. It keeps strands and helices on one shared
-   code path.
+   residues spans ~2 repeats). Projecting each Cα onto the local axis through
+   the window centroid preserves the strand axis — hence the crossing angle —
+   _exactly_, and keeps strands and helices on one shared code path.
 2. **Iterated neighbour averaging**, exactly PyMOL's sheet method (§2.1). A
    single `[1, 2, 1]/4` pass annihilates a period-2 signal exactly; PyMOL's
    uniform ±1 box filter over four passes achieves ~99% removal. This is the
    battle-tested choice of the reference tools and is trivially simple.
 
+**These two mechanisms are the same operation.** For the component
+_perpendicular_ to a straight axis, projecting onto that axis replaces each
+coordinate with the mean over the window — i.e. a box low-pass filter. So a
+sliding-window axis projection (option 1) and neighbour averaging (option 2)
+differ only in window length and iteration count. A single pass with a 5-point
+window (`windowHalf = 2`) leaves ~1/5 of a period-2 signal — an ~80% reduction
+of the ~1 Å pleat to ~0.2 Å (well under a pixel at publication scale), with
+interior residues collapsing furthest and the strand tips retaining a little
+more (their windows are one-sided, exactly as PyMOL pins sheet endpoints).
+Stronger removal, if ever wanted, comes from a wider window, an even-length
+window, or a second pass — but it trades against eroding genuine short-range
+curvature.
+
 The project leans toward **(1) PCA projection** for consistency with the
 existing helix path, with **(2)** documented as the proven reference-tool
-fallback. Either way the fix is to stop interpolating through the raw pleat. The
-implementation is tracked as a follow-up change.
+fallback. Either way the fix is to stop interpolating through the raw pleat.
+This is implemented in a follow-up change.
 
 **Alternatives considered.**
 
