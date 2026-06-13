@@ -66,8 +66,11 @@ and [Wikipedia: Beta sheet](https://en.wikipedia.org/wiki/Beta_sheet)):
 
 - **~3.4–3.5 Å rise per residue** (~3.2 Å parallel, ~3.4 Å antiparallel)
 - **~6.8–7 Å pitch** per two-residue repeat
-- a **pleat**: successive Cα alternate to either side of the strand axis by
-  ~1 Å, because of the tetrahedral geometry at each Cα
+- a **pleat**: successive Cα alternate to either side of the strand axis,
+  because of the tetrahedral geometry at each Cα. With a ~3.8 Å virtual
+  Cα–Cα bond and only ~3.4 Å of that projecting onto the axis as rise, the
+  remaining ~1.7 Å resolves into a perpendicular zigzag of ~1.7 Å peak-to-peak
+  (≈ ±0.85 Å about the axis).
 
 The pleat is a period-2 oscillation — the highest frequency a residue-sampled
 signal can carry (the Nyquist frequency). It is what makes a β-strand Cα trace
@@ -244,19 +247,50 @@ curvature or kinks survive. Two equally defensible mechanisms achieve this:
 
 1. **PCA local-axis projection**, reusing the helix machinery with a smaller
    window (the pleat period is 2, versus 3.6 for the helix, so a window of ±2
-   residues spans ~2 repeats). This gives an _exact_ straight line for a
-   straight strand in a single step and preserves the strand axis (hence the
-   crossing angle) by construction. It keeps strands and helices on one shared
-   code path.
+   residues spans ~2 repeats). Projecting each Cα onto the local axis through
+   the window centroid preserves the strand axis — hence the crossing angle —
+   _exactly_, and keeps strands and helices on one shared code path.
 2. **Iterated neighbour averaging**, exactly PyMOL's sheet method (§2.1). A
    single `[1, 2, 1]/4` pass annihilates a period-2 signal exactly; PyMOL's
    uniform ±1 box filter over four passes achieves ~99% removal. This is the
    battle-tested choice of the reference tools and is trivially simple.
 
+**These two mechanisms are the same operation.** For the component
+_perpendicular_ to a straight axis, projecting onto that axis replaces each
+coordinate with the mean over the window — i.e. a box low-pass filter. So a
+sliding-window axis projection (option 1) and neighbour averaging (option 2)
+differ only in window length and iteration count. A single pass with a 5-point
+window (`windowHalf = 2`) leaves ~1/5 of a period-2 signal — an ~80% reduction
+of the ~±0.85 Å pleat to ~±0.17 Å (well under a pixel at publication scale),
+with interior residues collapsing furthest and the strand tips retaining a
+little more (their windows are one-sided, exactly as PyMOL pins sheet
+endpoints). The 5-point window is odd, so it cannot null the period-2 signal
+exactly; an even window would cancel it perfectly but centres between residues.
+Stronger removal, if ever wanted, comes from a wider window, an even-length
+window, or a second pass — but it trades against eroding genuine short-range
+curvature.
+
 The project leans toward **(1) PCA projection** for consistency with the
 existing helix path, with **(2)** documented as the proven reference-tool
-fallback. Either way the fix is to stop interpolating through the raw pleat. The
-implementation is tracked as a follow-up change.
+fallback. Either way the fix is to stop interpolating through the raw pleat.
+This is implemented in a follow-up change.
+
+**Caveats of the projection approach.**
+
+- **Strand↔coil junctions are arc-continuous, not position-continuous.**
+  Projecting the whole chain group _before_ splitting it by SS type keeps the
+  accumulated arc length continuous across the boundary (no phantom step in the
+  unrolled coordinate). But the strand's terminal Cα is itself moved by up to
+  the pleat amplitude (~±0.85 Å) perpendicular to its axis, so a small cosmetic
+  kink can remain where the flattened strand meets the unprojected coil. This
+  is purely visual; it does not break arc continuity.
+- **Degenerate short strands.** A strand of 1–2 residues has too few Cα to
+  express a pleat at all, and the renderer folds sub-3-residue SS assignments
+  into the surrounding coil anyway (`MIN_SS_RESIDUES`), so they never reach the
+  projection. Strands of 3+ residues have ≥3 masked neighbours in every window
+  and are flattened normally — a 3-residue strand de-pleats to a straight
+  segment. There is therefore no length at which a real strand keeps its full
+  zigzag.
 
 **Alternatives considered.**
 

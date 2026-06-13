@@ -1,7 +1,7 @@
 import type { Calpha, SecondaryStructureSegment } from '../types.js';
 import { sampleCurve, type Vec } from './catmull-rom.js';
 import { fitBSpline, sampleBSpline } from './bspline.js';
-import { projectHelixAxis } from './helix-axis.js';
+import { projectLocalAxis } from './helix-axis.js';
 
 /**
  * One point on the unrolled trace: `arc` is the cumulative arc length of the
@@ -57,10 +57,10 @@ export interface UnrollOptions {
   /** Z-coordinate to use as the membrane midplane (subtracted from all z). */
   membraneCentre?: number;
   /**
-   * Secondary-structure annotation for the chain.  When provided, helix
-   * segments are projected onto the local helix axis before spline fitting,
-   * eliminating the high-frequency arc-length oscillations caused by helical
-   * twist.
+   * Secondary-structure annotation for the chain.  When provided, helix and
+   * strand segments are projected onto their local element axis before spline
+   * fitting, removing the periodic oscillation about that axis (helix twist,
+   * strand pleat) that would otherwise survive as arc-length / depth noise.
    */
   ssSegments?: SecondaryStructureSegment[];
   /**
@@ -80,6 +80,14 @@ const DEFAULTS = {
   membraneCentre: 0,
   aminosPerDof: 4,
 };
+
+/**
+ * Sliding-window half-widths for local-axis projection, chosen as roughly two
+ * periods of each element's oscillation about its axis: helices spiral with a
+ * period of ~3.6 residues, strands pleat with a period of 2.  See
+ * `docs/rendering.md`.
+ */
+const AXIS_WINDOW_HALF = { helix: 4, strand: 2 } as const;
 
 function splitOnBreaks(calphas: Calpha[], breakDistance: number): Calpha[][] {
   const groups: Calpha[][] = [];
@@ -189,14 +197,16 @@ function splitBySSType(
  *  1. Split the Cα list on long jumps (chain breaks).
  *  2. For each contiguous run:
  *     a. Build a resSeq → SS-type map (O(N log S)).
- *     b. Project the ENTIRE group with `projectHelixAxis` (non-helix Cα pass
- *        through unchanged).  Projecting before splitting keeps coordinates
- *        continuous at helix↔coil boundaries, eliminating phantom arc steps.
- *     c. Sub-split by SS type; each region gets the appropriate fitting:
- *        - helix/coil: clamped cubic B-spline, max(4, ceil(n/aminosPerDof)) c.p.
- *        - strand: Catmull-Rom (effectiveDof=1 forces k≥subN, preserving the
- *          xy arc that encodes strand crossing angle).
- *        Very short runs (≤ 3 Cα) always fall back to Catmull–Rom.
+ *     b. Project the ENTIRE group with `projectLocalAxis`, once per regular
+ *        element type (helix, then strand); coil Cα pass through unchanged.
+ *        This strips the periodic oscillation about each element's axis (helix
+ *        spiral, strand pleat). Projecting before splitting keeps the
+ *        accumulated arc continuous (no phantom step) across element↔coil
+ *        boundaries; the projected terminal Cα may itself shift slightly
+ *        perpendicular to its axis, which can read as a small kink at the join.
+ *     c. Sub-split by SS type; each region gets a clamped cubic B-spline with
+ *        max(4, ceil(n/aminosPerDof)) control points. Very short runs (≤ 3 Cα)
+ *        fall back to Catmull–Rom.
  *     d. Densely sample and accumulate xy chord lengths for arc.
  *  3. Each residue's arc comes from the spline; z is the actual Cα z for
  *     physically accurate membrane depth.
@@ -227,10 +237,17 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
     // eliminating the phantom arc step at each transition.
     const typeMap = ssSegments ? buildSSTypeMap(group, ssSegments) : undefined;
     const groupPts: Vec[] = group.map((c) => ({ x: c.x, y: c.y, z: c.z - membraneCentre }));
-    const isHelixMask = typeMap
-      ? group.map((c) => (typeMap.get(c.resSeq) ?? 'coil') === 'helix')
-      : group.map(() => false);
-    const projectedGroupPts = ssSegments ? projectHelixAxis(groupPts, isHelixMask) : groupPts;
+    // Project helices and strands onto their local axes to strip the periodic
+    // oscillation (helix spiral, strand pleat) that would otherwise survive
+    // into the 2-D trace.  Coil is left untouched.  The two passes use
+    // disjoint masks, so order is irrelevant.
+    let projectedGroupPts = groupPts;
+    if (typeMap) {
+      const helixMask = group.map((c) => (typeMap.get(c.resSeq) ?? 'coil') === 'helix');
+      const strandMask = group.map((c) => (typeMap.get(c.resSeq) ?? 'coil') === 'strand');
+      projectedGroupPts = projectLocalAxis(projectedGroupPts, helixMask, AXIS_WINDOW_HALF.helix);
+      projectedGroupPts = projectLocalAxis(projectedGroupPts, strandMask, AXIS_WINDOW_HALF.strand);
+    }
 
     const subGroups = splitBySSType(group, typeMap);
 
@@ -246,9 +263,16 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
       // Slice pre-projected coordinates for this sub-group.
       const fittingPts = projectedGroupPts.slice(sub.startGroupIndex, sub.startGroupIndex + subN);
 
-      // Per-SS-type DOF: strands use DOF=1 so k≥subN triggers the Catmull-Rom
-      // fallback, preserving the xy zigzag that encodes strand crossing angle.
-      const DOF_PER_TYPE = { helix: aminosPerDof, coil: aminosPerDof, strand: 1 } as const;
+      // All element types share the same control-point budget. Strands used to
+      // use DOF=1 (Catmull-Rom through every Cα), which traced the period-2
+      // pleat; now that strand Cα are projected onto their axis above, a
+      // low-DOF B-spline gives a smooth de-pleated trace whose orientation
+      // still carries the strand's membrane crossing angle.
+      const DOF_PER_TYPE = {
+        helix: aminosPerDof,
+        coil: aminosPerDof,
+        strand: aminosPerDof,
+      } as const;
       const effectiveDof = DOF_PER_TYPE[sub.type];
       const totalSamples = (subN - 1) * sampleDensity + 1;
       const k = Math.max(4, Math.ceil(subN / effectiveDof));
