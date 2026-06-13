@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
 import type { ProteinData, ChainData } from '../../../src/types.js';
+import { syntheticBarrel } from '../fixtures/barrel.js';
 
 function tmHelixProtein(): ProteinData {
   // 28-residue chain: idealised TM helix with z spanning -20 → +20, then a
@@ -727,5 +728,86 @@ describe('TopologyDisplay live attribute updates', () => {
     attach(el);
     // connectedCallback triggers render() after the element is inserted
     expect(el.shadowRoot!.querySelector('.svg-scroll svg')).not.toBeNull();
+  });
+});
+
+describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
+  const mounted: HTMLElement[] = [];
+  function mount(protein: ProteinData, attrs: Record<string, string> = {}): TopologyDisplay {
+    const el = new TopologyDisplay();
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    document.body.appendChild(el);
+    mounted.push(el);
+    el.proteinData = protein;
+    return el;
+  }
+  afterEach(() => {
+    for (const el of mounted) el.remove();
+    mounted.length = 0;
+  });
+
+  function barrelProtein(): ProteinData {
+    return { pdbId: 'barl', chains: [syntheticBarrel({ n: 8 })] };
+  }
+
+  it('annotates the chain label with the detected barrel geometry', () => {
+    const el = mount(barrelProtein());
+    const label = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
+    expect(label).toContain('β-barrel');
+    expect(label).toContain('8 strands');
+  });
+
+  it('draws one arrowed strand polygon per strand of the barrel', () => {
+    const el = mount(barrelProtein());
+    const strandPolys = Array.from(
+      el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'),
+    ).filter((p) => p.getAttribute('fill') === '#6ea76d');
+    expect(strandPolys.length).toBe(8);
+    // Arrowheads give an odd vertex count > 5.
+    for (const poly of strandPolys) {
+      const count = (poly.getAttribute('points') ?? '').trim().split(/\s+/).length;
+      expect(count % 2).toBe(1);
+    }
+  });
+
+  it('renders the barrel strands parallel (consistent slant, not a chevron)', () => {
+    // Each strand polygon's principal axis should share the same slant sign;
+    // a cumulative-arc unroll would alternate the sign between up/down strands.
+    const el = mount(barrelProtein());
+    const strandPolys = Array.from(
+      el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'),
+    ).filter((p) => p.getAttribute('fill') === '#6ea76d');
+
+    const slantSigns = strandPolys.map((poly) => {
+      const verts = (poly.getAttribute('points') ?? '')
+        .trim()
+        .split(/\s+/)
+        .map((pt) => pt.split(',').map(Number));
+      let minY = Infinity;
+      let maxY = -Infinity;
+      let xAtMin = 0;
+      let xAtMax = 0;
+      for (const [x, y] of verts) {
+        if (y < minY) {
+          minY = y;
+          xAtMin = x;
+        }
+        if (y > maxY) {
+          maxY = y;
+          xAtMax = x;
+        }
+      }
+      return Math.sign(xAtMax - xAtMin);
+    });
+    // All strands lean the same way.
+    expect(new Set(slantSigns).size).toBe(1);
+  });
+
+  it('overlays β-sheet contact ties only when show-contacts is enabled', () => {
+    const off = mount(barrelProtein());
+    expect(off.shadowRoot!.querySelectorAll('.contact-ties line').length).toBe(0);
+
+    const on = mount(barrelProtein(), { 'show-contacts': 'on' });
+    expect(on.shadowRoot!.querySelectorAll('.contact-ties line').length).toBeGreaterThan(0);
   });
 });

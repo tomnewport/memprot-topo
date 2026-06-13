@@ -6,12 +6,14 @@ import type {
 } from '../types.js';
 import {
   unrollChain,
+  unwrapBarrel,
   catmullRomBezier,
   type UnrolledSegment,
   type UnrolledPoint,
   type Vec,
 } from '../unroll/index.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
+import { analyseBarrel, type BarrelAnalysis } from '../contacts/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -135,6 +137,7 @@ const COLOURS = {
   helixEdge: '#3e587a',
   strand: '#6ea76d',
   strandEdge: '#3d6d3d',
+  contact: '#c98a3b',
 };
 
 const LOOP = {
@@ -777,10 +780,78 @@ function layoutSegments(
   return { layouts, totalArc: maxArc };
 }
 
-function renderChainSvg(chain: ChainData, opts: LoopRenderOptions): SVGSVGElement {
+/**
+ * Lay segments out without repositioning: the cylindrical unwrap already
+ * assigns every residue its true circumferential position, so strands sit at
+ * their real inter-strand spacing and run parallel. We only need to compute the
+ * SS runs and the overall arc extent.
+ */
+function identityLayout(
+  segments: UnrolledSegment[],
+  ssSegments: SecondaryStructureSegment[],
+): { layouts: SegmentLayout[]; totalArc: number } {
+  let totalArc = 0;
+  const layouts = segments.map((segment) => {
+    for (const s of segment.samples) if (s.arc > totalArc) totalArc = s.arc;
+    return {
+      samples: segment.samples,
+      residues: segment.residues,
+      runs: runsBySs(segment.residues, ssSegments),
+    };
+  });
+  return { layouts, totalArc };
+}
+
+/**
+ * Overlay the detected β-sheet residue contacts as faint ties between paired
+ * strands. Only meaningful in the cylindrical-unwrap layout, where residue
+ * (arc, z) positions reflect true 3-D adjacency, so a tie reads as "these two
+ * residues hydrogen-bond across the sheet".
+ */
+function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: SegmentLayout[]): void {
+  const pos = new Map<number, { arc: number; z: number }>();
+  for (const layout of layouts) {
+    for (const r of layout.residues) pos.set(r.resSeq, { arc: r.arc, z: r.z });
+  }
+  const group = document.createElementNS(SVG_NS, 'g');
+  group.setAttribute('class', 'contact-ties');
+  for (const pairing of analysis.pairings) {
+    for (const c of pairing.contacts) {
+      const a = pos.get(c.aResSeq);
+      const b = pos.get(c.bResSeq);
+      if (!a || !b) continue;
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('x1', a.arc.toFixed(3));
+      line.setAttribute('y1', a.z.toFixed(3));
+      line.setAttribute('x2', b.arc.toFixed(3));
+      line.setAttribute('y2', b.z.toFixed(3));
+      line.setAttribute('stroke', COLOURS.contact);
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-opacity', '0.5');
+      line.setAttribute('vector-effect', 'non-scaling-stroke');
+      group.appendChild(line);
+    }
+  }
+  plot.appendChild(group);
+}
+
+function renderChainSvg(
+  chain: ChainData,
+  opts: LoopRenderOptions,
+  analysis: BarrelAnalysis,
+  showContacts: boolean,
+): SVGSVGElement {
   const ssSegments = effectiveSsSegments(chain.segments);
-  const unroll = unrollChain(chain.calphas, { ssSegments });
-  const { layouts, totalArc } = layoutSegments(unroll.segments, ssSegments);
+  // A genuine, closed cylindrical barrel is unrolled by angle so its strands
+  // render parallel at true spacing; everything else uses the arc-length
+  // unroll with fixed inter-element gaps.
+  const useUnwrap = analysis.cylindrical;
+  const unroll = useUnwrap
+    ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
+    : unrollChain(chain.calphas, { ssSegments });
+  const { layouts, totalArc } = useUnwrap
+    ? identityLayout(unroll.segments, ssSegments)
+    : layoutSegments(unroll.segments, ssSegments);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
   const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
@@ -840,6 +911,9 @@ function renderChainSvg(chain: ChainData, opts: LoopRenderOptions): SVGSVGElemen
   plot.appendChild(mid);
 
   const barrel = isBetaBarrel(chain);
+
+  // β-sheet contact ties, drawn first so the strand polygons sit on top of them.
+  if (showContacts && useUnwrap) drawContacts(plot, analysis, layouts);
 
   // Labels group: same origin as `plot` but no scale, so text isn't
   // y-flipped or stretched by the plot transform. Appended after the plot
@@ -1318,6 +1392,7 @@ export class TopologyDisplay extends HTMLElement {
     'debug-loops',
     'loop-extreme-points',
     'loop-extreme-threshold',
+    'show-contacts',
   ];
 
   private readonly _instanceId = ++_instanceCounter;
@@ -1349,7 +1424,8 @@ export class TopologyDisplay extends HTMLElement {
     if (
       name === 'debug-loops' ||
       name === 'loop-extreme-points' ||
-      name === 'loop-extreme-threshold'
+      name === 'loop-extreme-threshold' ||
+      name === 'show-contacts'
     ) {
       this.render();
       return;
@@ -1374,6 +1450,15 @@ export class TopologyDisplay extends HTMLElement {
    */
   private get showLoopPoints(): boolean {
     const v = this.getAttribute('debug-loops');
+    return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
+  }
+
+  /**
+   * Whether β-sheet residue contacts are overlaid as ties between paired
+   * strands. Off by default; set `show-contacts` to "on"/"true"/"show"/"1".
+   */
+  private get showContacts(): boolean {
+    const v = this.getAttribute('show-contacts');
     return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
   }
 
@@ -1496,11 +1581,20 @@ export class TopologyDisplay extends HTMLElement {
     const effective = effectiveSsSegments(selectedChain.segments);
     const helices = effective.filter((s) => s.type === 'helix').length;
     const strands = effective.filter((s) => s.type === 'strand').length;
+    // Analyse the β-sheet topology once: it drives both the summary label and
+    // the parallel-strand unwrap inside renderChainSvg.
+    const analysis = analyseBarrel(selectedChain.calphas, effective);
     label.append(
       'Chain ',
       chainLabelNode(selectedLabel),
       ` · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`,
     );
+    if (analysis.cylindrical) {
+      const shear = Number.isFinite(analysis.shear) ? `, shear ${Math.round(analysis.shear)}` : '';
+      label.append(
+        ` · β-barrel (${analysis.strandCount} strands${shear}, ${Math.round(analysis.tiltDeg)}° tilt)`,
+      );
+    }
     block.appendChild(label);
 
     const scroll = document.createElement('div');
@@ -1509,7 +1603,9 @@ export class TopologyDisplay extends HTMLElement {
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
-    scroll.appendChild(renderChainSvg(selectedChain, this.loopOptions));
+    scroll.appendChild(
+      renderChainSvg(selectedChain, this.loopOptions, analysis, this.showContacts),
+    );
     block.appendChild(scroll);
     region.appendChild(block);
 
