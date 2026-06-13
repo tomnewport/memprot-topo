@@ -200,8 +200,10 @@ function splitBySSType(
  *     b. Project the ENTIRE group with `projectLocalAxis`, once per regular
  *        element type (helix, then strand); coil Cα pass through unchanged.
  *        This strips the periodic oscillation about each element's axis (helix
- *        spiral, strand pleat). Projecting before splitting keeps coordinates
- *        continuous at element↔coil boundaries, eliminating phantom arc steps.
+ *        spiral, strand pleat). Projecting before splitting keeps the
+ *        accumulated arc continuous (no phantom step) across element↔coil
+ *        boundaries; the projected terminal Cα may itself shift slightly
+ *        perpendicular to its axis, which can read as a small kink at the join.
  *     c. Sub-split by SS type; each region gets a clamped cubic B-spline with
  *        max(4, ceil(n/aminosPerDof)) control points. Very short runs (≤ 3 Cα)
  *        fall back to Catmull–Rom.
