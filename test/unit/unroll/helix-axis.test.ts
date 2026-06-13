@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { projectHelixAxis } from '../../../src/unroll/helix-axis.js';
+import { projectHelixAxis, projectLocalAxis } from '../../../src/unroll/helix-axis.js';
 import type { Vec } from '../../../src/unroll/catmull-rom.js';
 
 const DEG = Math.PI / 180;
@@ -93,5 +93,74 @@ describe('projectHelixAxis', () => {
 
     expect(result[0]).toMatchObject({ x: 10, y: 10, z: -5 });
     expect(result[result.length - 1]).toMatchObject({ x: 20, y: 20, z: 30 });
+  });
+});
+
+/**
+ * Generate an idealised β-strand: axis along +x with 3.4 Å rise per residue,
+ * and a period-2 pleat of amplitude `pleat` alternating in y.
+ */
+function strandCa(n: number, rise = 3.4, pleat = 1.0): Vec[] {
+  return Array.from({ length: n }, (_, i) => ({
+    x: rise * i,
+    y: i % 2 === 0 ? pleat : -pleat,
+    z: 0,
+  }));
+}
+
+describe('projectLocalAxis (strands)', () => {
+  it('collapses the period-2 pleat onto the strand axis', () => {
+    const n = 8;
+    const pts = strandCa(n, 3.4, 1.0);
+    const mask = new Array(n).fill(true);
+    const result = projectLocalAxis(pts, mask, 2);
+
+    // The pleat lives entirely in y; projecting onto the +x axis through the
+    // window centroid replaces y with its windowed mean — i.e. a box filter on
+    // the perpendicular component.  A 5-point (windowHalf=2) window leaves
+    // ~1/5 of a period-2 signal, so interior residues drop from 1.0 Å to
+    // ≤0.2 Å (an ~80% reduction); boundary residues keep a little more because
+    // their window is one-sided (as for helices — PyMOL likewise pins SS ends).
+    for (let i = 1; i < n - 1; i++) {
+      expect(Math.abs(result[i].y)).toBeLessThan(0.25);
+    }
+    for (let i = 0; i < n; i++) {
+      expect(Math.abs(result[i].y)).toBeLessThan(0.4); // >60% reduction even at the tips
+    }
+  });
+
+  it('preserves the strand axis direction (and so its crossing angle)', () => {
+    // Tilted strand: axis along (1, 0, 1)/√2, with a ±1 Å pleat in y.
+    const n = 8;
+    const pts: Vec[] = Array.from({ length: n }, (_, i) => ({
+      x: 2.4 * i,
+      y: i % 2 === 0 ? 1.0 : -1.0,
+      z: 2.4 * i,
+    }));
+    const result = projectLocalAxis(pts, new Array(n).fill(true), 2);
+
+    // End-to-end direction stays ~45° in the xz plane (the real axis) and the
+    // perpendicular pleat is gone.
+    const dx = result[n - 1].x - result[0].x;
+    const dz = result[n - 1].z - result[0].z;
+    expect(dz / dx).toBeCloseTo(1, 1);
+    for (let i = 1; i < n - 1; i++) {
+      expect(Math.abs(result[i].y)).toBeLessThan(0.25);
+    }
+  });
+
+  it('keeps a genuine kink in the strand axis', () => {
+    // Two straight half-strands meeting at a ~30° kink, each pleated in y.
+    const n = 10;
+    const pts: Vec[] = Array.from({ length: n }, (_, i) => {
+      const along = 3.4 * i;
+      const bend = i < 5 ? 0 : (i - 5) * 1.5; // axis turns in x after the midpoint
+      return { x: along, y: i % 2 === 0 ? 1.0 : -1.0, z: bend };
+    });
+    const result = projectLocalAxis(pts, new Array(n).fill(true), 2);
+
+    // The pleat is removed but the post-kink z excursion is retained.
+    for (let i = 0; i < n; i++) expect(Math.abs(result[i].y)).toBeLessThan(0.4);
+    expect(result[n - 1].z).toBeGreaterThan(2.0);
   });
 });

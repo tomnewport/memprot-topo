@@ -167,14 +167,24 @@ describe('unrollChain with ssSegments (helix axis)', () => {
     const ssStrand: SecondaryStructureSegment[] = [{ start: 1, end: n, type: 'strand' }];
     const r = unrollChain(strandCa, { ssSegments: ssStrand });
 
-    // The strand sub-segment gets its own B-spline, capturing the net lateral
-    // drift without the per-residue zigzag noise.
+    // The strand is projected onto its axis (removing the ±1 Å pleat) and fit
+    // with a B-spline, capturing the net lateral drift without the per-residue
+    // zigzag noise.  The crossing angle survives as the axis direction.
     expect(r.totalArcLength).toBeGreaterThan(1.0 * 7); // at least net-drift arc
 
     const residues = r.segments[0].residues;
     for (let i = 1; i < residues.length; i++) {
       expect(residues[i].arc).toBeGreaterThan(residues[i - 1].arc);
     }
+
+    // De-pleating shows up as near-uniform arc spacing: the raw pleat made
+    // consecutive xy steps alternate long/short, so a low coefficient of
+    // variation on the per-residue arc increments confirms the zigzag is gone.
+    const incs: number[] = [];
+    for (let i = 1; i < residues.length; i++) incs.push(residues[i].arc - residues[i - 1].arc);
+    const mean = incs.reduce((s, x) => s + x, 0) / incs.length;
+    const sd = Math.sqrt(incs.reduce((s, x) => s + (x - mean) ** 2, 0) / incs.length);
+    expect(sd / mean).toBeLessThan(0.25);
   });
 
   it('aminosPerDof=2 gives more control points than aminosPerDof=8', () => {
