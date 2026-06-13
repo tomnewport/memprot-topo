@@ -163,6 +163,16 @@ const LOOP = {
   extremeSpacingPx: 5,
 };
 
+const BARREL = {
+  /**
+   * Extra horizontal gap (screen px) added between consecutive barrel strands
+   * on top of their true inter-strand spacing, purely for legibility. About one
+   * strand-body width (8 px) so neighbours read as distinct without distorting
+   * the tilt.
+   */
+  strandGapPx: 8,
+};
+
 /**
  * Minimum residue count for a helix/strand to be drawn as a discrete SS
  * element. Shorter assignments (1-2 residues) are folded into the surrounding
@@ -781,23 +791,43 @@ function layoutSegments(
 }
 
 /**
- * Lay segments out without repositioning: the cylindrical unwrap already
- * assigns every residue its true circumferential position, so strands sit at
- * their real inter-strand spacing and run parallel. We only need to compute the
- * SS runs and the overall arc extent.
+ * Lay the cylindrical unwrap out, keeping each strand's own geometry but adding
+ * a fixed horizontal gap between consecutive strands for legibility. The unwrap
+ * already places strands at their true inter-strand spacing; a constant extra
+ * shift per strand widens the gaps without scaling (which would exaggerate the
+ * tilt), so the strands stay parallel and only spread apart.
  */
-function identityLayout(
+function barrelLayout(
   segments: UnrolledSegment[],
   ssSegments: SecondaryStructureSegment[],
+  extraGapA: number,
 ): { layouts: SegmentLayout[]; totalArc: number } {
   let totalArc = 0;
   const layouts = segments.map((segment) => {
-    for (const s of segment.samples) if (s.arc > totalArc) totalArc = s.arc;
-    return {
-      samples: segment.samples,
-      residues: segment.residues,
-      runs: runsBySs(segment.residues, ssSegments),
-    };
+    const runs = runsBySs(segment.residues, ssSegments);
+    const n = segment.samples.length;
+
+    // Per-sample shift = (number of strands already passed) × extraGapA, so the
+    // k-th strand and the loop that follows it slide right by k gaps.
+    const shift = new Array<number>(n).fill(NaN);
+    let strandsSeen = 0;
+    for (let r = 0; r < runs.length; r++) {
+      const run = runs[r];
+      const ownEnd = r < runs.length - 1 ? runs[r + 1].startSample : n;
+      const sh = strandsSeen * extraGapA;
+      for (let i = run.startSample; i < ownEnd; i++) shift[i] = sh;
+      if (run.type === 'strand') strandsSeen++;
+    }
+    let last = 0;
+    for (let i = 0; i < n; i++) {
+      if (!Number.isNaN(shift[i])) last = shift[i];
+      else shift[i] = last;
+    }
+
+    const samples = segment.samples.map((p, i) => ({ arc: p.arc + shift[i], z: p.z }));
+    const residues = segment.residues.map((rr) => ({ ...rr, arc: rr.arc + shift[rr.sampleIndex] }));
+    for (const s of samples) if (s.arc > totalArc) totalArc = s.arc;
+    return { samples, residues, runs };
   });
   return { layouts, totalArc };
 }
@@ -869,7 +899,7 @@ function renderChainSvg(
     ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
     : unrollChain(chain.calphas, { ssSegments });
   const { layouts, totalArc } = useUnwrap
-    ? identityLayout(unroll.segments, ssSegments)
+    ? barrelLayout(unroll.segments, ssSegments, BARREL.strandGapPx / PLOT.arcPxPerA)
     : layoutSegments(unroll.segments, ssSegments);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
