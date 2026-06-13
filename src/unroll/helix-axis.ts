@@ -1,19 +1,24 @@
 /**
- * Project Cα positions in helix regions onto the local helix axis.
+ * Project Cα positions in a secondary-structure region onto their local
+ * element axis.
  *
- * For each Cα that belongs to a helix, a sliding window of neighbouring
- * helix-only Cα is used to estimate the local helix axis via the dominant
- * eigenvector of the position covariance matrix (power iteration).  The Cα
- * is then projected onto the axis through the window centroid, giving its
- * axial footprint.
+ * For each Cα flagged in the mask, a sliding window of neighbouring flagged
+ * Cα is used to estimate the local element axis via the dominant eigenvector
+ * of the position covariance matrix (power iteration).  The Cα is then
+ * projected onto the axis through the window centroid, giving its axial
+ * footprint.  Un-flagged Cα are returned unchanged.
  *
- * Non-helix Cα are returned unchanged.
+ * Why this helps: both regular secondary structures carry a periodic
+ * oscillation about their axis that is noise under a 2-D projection.
+ * Alpha-helix Cα spiral ~2.3 Å around the axis at 100°/residue (period ~3.6
+ * residues); beta-strand Cα pleat ~1 Å either side of the axis (period 2
+ * residues).  Fitting a spline directly through them inherits that
+ * oscillation.  Projecting onto the axis first removes it, leaving only the
+ * smooth trajectory of the element — its tilt, curvature and kinks.  The axis
+ * orientation itself (e.g. a strand's membrane crossing angle) is preserved.
  *
- * Why this helps: alpha-helix Cα atoms spiral ~2.3 Å (0.23 nm) around the
- * axis at 100°/residue.  Fitting a spline directly through them produces
- * high-frequency oscillations in the membrane-plane arc length.  Projecting
- * to the axis first removes the twist, leaving only the smooth trajectory of
- * the helix backbone.
+ * See `docs/rendering.md` for the geometry and the comparison with how PyMOL
+ * and VMD handle the same problem.
  */
 
 import type { Vec } from './catmull-rom.js';
@@ -55,29 +60,31 @@ function dominantEigenvector(
 // ---------------------------------------------------------------------------
 
 /**
- * Return a copy of `pts` in which every helix position has been projected
- * onto the local helix axis estimated from a sliding window of helix-only
+ * Return a copy of `pts` in which every masked position has been projected
+ * onto the local element axis estimated from a sliding window of masked
  * neighbours.
  *
- * @param pts       3-D Cα positions (already membrane-frame, in the same
- *                  order as `isHelix`).
- * @param isHelix   Boolean mask — true for each position that belongs to a
- *                  helix secondary-structure segment.
- * @param windowHalf Half-width of the sliding window (default 4, covering
- *                  ~2.5 turns of helix).  At least 3 points in the window
- *                  are required to estimate an axis.
+ * @param pts        3-D Cα positions (already membrane-frame, in the same
+ *                   order as `mask`).
+ * @param mask       Boolean mask — true for each position belonging to the
+ *                   secondary-structure element being projected.
+ * @param windowHalf Half-width of the sliding window.  Choose roughly two
+ *                   periods of the element's oscillation: ~4 for helices
+ *                   (period ~3.6 residues), ~2 for strands (period 2).  At
+ *                   least 3 points in the window are required to estimate an
+ *                   axis.
  */
-export function projectHelixAxis(pts: Vec[], isHelix: boolean[], windowHalf = 4): Vec[] {
+export function projectLocalAxis(pts: Vec[], mask: boolean[], windowHalf = 4): Vec[] {
   const n = pts.length;
   const result: Vec[] = pts.map((p) => ({ ...p }));
 
   for (let i = 0; i < n; i++) {
-    if (!isHelix[i]) continue;
+    if (!mask[i]) continue;
 
-    // Collect helix-only neighbours within the window.
+    // Collect masked neighbours within the window.
     const window: Vec[] = [];
     for (let j = Math.max(0, i - windowHalf); j <= Math.min(n - 1, i + windowHalf); j++) {
-      if (isHelix[j]) window.push(pts[j]);
+      if (mask[j]) window.push(pts[j]);
     }
     if (window.length < 3) continue;
 
@@ -126,4 +133,14 @@ export function projectHelixAxis(pts: Vec[], isHelix: boolean[], windowHalf = 4)
   }
 
   return result;
+}
+
+/**
+ * Project helix Cα onto their local helix axis.  Thin wrapper over
+ * {@link projectLocalAxis} with the helix-appropriate default window
+ * (~2.5 turns).  Retained for callers and tests that target helices
+ * specifically.
+ */
+export function projectHelixAxis(pts: Vec[], isHelix: boolean[], windowHalf = 4): Vec[] {
+  return projectLocalAxis(pts, isHelix, windowHalf);
 }
