@@ -810,4 +810,60 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
     const on = mount(barrelProtein(), { 'show-contacts': 'on' });
     expect(on.shadowRoot!.querySelectorAll('.contact-ties line').length).toBeGreaterThan(0);
   });
+
+  /** Strand polygons' vertex lists (x,y user-space coords) in document order. */
+  function strandVerts(el: TopologyDisplay): number[][][] {
+    return Array.from(el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'))
+      .filter((p) => p.getAttribute('fill') === '#6ea76d')
+      .map((p) =>
+        (p.getAttribute('points') ?? '')
+          .trim()
+          .split(/\s+/)
+          .map((pt) => pt.split(',').map(Number)),
+      );
+  }
+
+  function minVertexDistance(a: number[][], b: number[][]): number {
+    let m = Infinity;
+    for (const [ax, ay] of a)
+      for (const [bx, by] of b) m = Math.min(m, Math.hypot(ax - bx, ay - by));
+    return m;
+  }
+
+  it('never draws strands tangled — strand centres advance and no two strands overlap', () => {
+    const polys = strandVerts(mount(barrelProtein()));
+    // Centres strictly left-to-right (no strand slid back over an earlier one).
+    let prev = -Infinity;
+    for (const v of polys) {
+      const xs = v.map((p) => p[0]);
+      const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+      expect(centre).toBeGreaterThan(prev);
+      prev = centre;
+    }
+    // No two strand polygons come within touching distance of each other.
+    for (let i = 0; i < polys.length; i++)
+      for (let j = i + 1; j < polys.length; j++)
+        expect(minVertexDistance(polys[i], polys[j])).toBeGreaterThan(0.5);
+  });
+
+  it('keeps strands untangled when a floating loop helix sits between them', () => {
+    // OmpF's L-loop helix sits ~28 Å above the membrane, sharing no z-overlap
+    // with the strands. Packing each element against all previously placed ones
+    // (not just the immediately previous) stops it from shoving a strand back
+    // over an earlier strand.
+    const chain = syntheticBarrel({ n: 8, loopHelixAfterStrand: 0, loopHelixZ: 28 });
+    const el = mount({ pdbId: 'barh', chains: [chain] });
+    const polys = strandVerts(el);
+    expect(polys.length).toBe(8);
+    let prev = -Infinity;
+    for (const v of polys) {
+      const xs = v.map((p) => p[0]);
+      const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+      expect(centre).toBeGreaterThan(prev);
+      prev = centre;
+    }
+    for (let i = 0; i < polys.length; i++)
+      for (let j = i + 1; j < polys.length; j++)
+        expect(minVertexDistance(polys[i], polys[j])).toBeGreaterThan(0.5);
+  });
 });

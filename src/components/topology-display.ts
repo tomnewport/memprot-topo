@@ -165,20 +165,16 @@ const LOOP = {
 
 const BARREL = {
   /**
-   * Target closest distance between two adjacent strands, expressed in strand
-   * widths. Each strand keeps its true tilt; the next strand is slid in until
-   * the shortest centreline-to-centreline distance to the previous strand hits
-   * this target, so neighbours sit a fixed clearance apart however they tilt.
+   * Target closest distance between two adjacent SS elements, expressed in
+   * strand widths. Each element keeps its true tilt; the next element is slid in
+   * until the shortest centreline-to-centreline distance to the previous element
+   * hits this target, so neighbours sit a fixed clearance apart however they
+   * tilt. Helices between strands are packed the same way, so an interrupting
+   * element simply gets the space it would normally get.
    */
   minStrandWidths: 2,
   /**
-   * Larger target (strand widths) used when something other than a plain turn
-   * sits between two strands — an intervening helix or a non-barrel strand —
-   * which reads better with extra separation.
-   */
-  interruptedStrandWidths: 4,
-  /**
-   * Fallback clear gap (screen px) when two adjacent strands don't overlap in z
+   * Fallback clear gap (screen px) when two adjacent elements don't overlap in z
    * at all (no centreline pair within the target), so closest-distance packing
    * has nothing to bind on.
    */
@@ -803,50 +799,46 @@ function layoutSegments(
 }
 
 /**
- * Lay the cylindrical unwrap out so strands sit a fixed clearance apart without
- * altering any strand's shape or angle. At realistic barrel tilts (~40°) a
- * strand sweeps far more horizontally than the true inter-strand spacing, so
- * the honest unwrap draws tilted bars on top of one another.
+ * Lay the cylindrical unwrap out so secondary-structure elements sit a fixed
+ * clearance apart without altering any element's shape or angle. At realistic
+ * barrel tilts (~40°) a strand sweeps far more horizontally than the true
+ * inter-strand spacing, so the honest unwrap draws tilted bars on top of one
+ * another.
  *
- * Each strand keeps its exact geometry (a rigid horizontal shift only) and is
- * placed left to right by the algorithm:
- *   1. take the next strand,
+ * Each element (strand or helix) keeps its exact geometry — a rigid horizontal
+ * shift only — and is placed left to right by the algorithm:
+ *   1. take the next element,
  *   2. find the shortest distance between its centreline and the previous
- *      strand's centreline,
+ *      element's centreline,
  *   3. slide it along until that shortest distance equals a fixed target
  *      (default two strand widths).
- * When the two strands are separated by something more than a plain turn — an
- * intervening helix or a non-barrel strand — a larger target is used. Loops
- * bridge across the shifts; membrane depth (z) is never touched.
+ * Helices between strands are packed exactly like strands, so an interrupting
+ * element simply gets the space it would normally get. Loops bridge across the
+ * shifts; membrane depth (z) is never touched.
  */
 function barrelLayout(
   segments: UnrolledSegment[],
   wallSegments: SecondaryStructureSegment[],
-  allSegments: SecondaryStructureSegment[],
 ): { layouts: SegmentLayout[]; totalArc: number } {
   const strandWidthPx = SS_BODY.halfWidthPx * 2;
   const targetA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
-  const interruptedTargetA = (BARREL.interruptedStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
   const gapA = BARREL.gapPx / PLOT.arcPxPerA;
-
-  // A helix or a non-barrel strand sitting strictly between two wall strands
-  // (by residue number) means more than a plain turn separates them.
-  const interrupted = (afterRes: number, beforeRes: number): boolean =>
-    allSegments.some(
-      (s) => (s.type === 'helix' || s.type === 'strand') && s.start > afterRes && s.end < beforeRes,
-    );
 
   const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, wallSegments);
     const n = segment.samples.length;
-    const strandRuns = runs.filter((r) => r.type === 'strand');
+    const ssRuns = runs.filter((r) => r.type === 'strand' || r.type === 'helix');
 
     const newArc = new Array<number>(n).fill(NaN);
-    let prevPts: { arc: number; z: number }[] | null = null;
-    let prevEndResSeq = -Infinity;
+    // Every element placed so far, in display coordinates. Each new element is
+    // cleared against *all* of them (not just the immediately previous), so a
+    // strand can't be slid back over an earlier strand when a floating element
+    // (e.g. an extracellular loop helix high above the membrane) sits between
+    // them and shares no z-overlap to bind on. This is the anti-tangle guard.
+    const placed: { arc: number; z: number }[][] = [];
 
-    for (const run of strandRuns) {
-      // This strand's centreline points (one per residue), in raw unwrap arc.
+    for (const run of ssRuns) {
+      // This element's centreline points (one per residue), in raw unwrap arc.
       const pts: { arc: number; z: number }[] = [];
       for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
         const r = segment.residues[ri];
@@ -854,23 +846,27 @@ function barrelLayout(
       }
 
       let shift = 0;
-      if (prevPts) {
-        const target = interrupted(prevEndResSeq, run.startResSeq) ? interruptedTargetA : targetA;
-        // Smallest rightward shift s such that every centreline pair is ≥ target
-        // apart, with the binding pair exactly at target:
+      if (placed.length > 0) {
+        // Smallest rightward shift s such that every centreline pair (against
+        // every already-placed element) is ≥ target apart, the binding pair
+        // exactly at target:
         //   |(a_i + s) − P_j| ≥ √(target² − Δz²)  for pairs with |Δz| < target.
         let smin = -Infinity;
-        for (const p of pts) {
-          for (const q of prevPts) {
-            const dz = p.z - q.z;
-            if (Math.abs(dz) >= target) continue;
-            const need = Math.sqrt(target * target - dz * dz) + q.arc - p.arc;
-            if (need > smin) smin = need;
+        for (const prev of placed) {
+          for (const p of pts) {
+            for (const q of prev) {
+              const dz = p.z - q.z;
+              if (Math.abs(dz) >= targetA) continue;
+              const need = Math.sqrt(targetA * targetA - dz * dz) + q.arc - p.arc;
+              if (need > smin) smin = need;
+            }
           }
         }
         if (!Number.isFinite(smin)) {
-          // No vertical overlap to bind on — fall back to a bounding-box gap.
-          const prevMax = Math.max(...prevPts.map((q) => q.arc));
+          // No vertical overlap with anything placed (a floating element) — fall
+          // back to clearing the rightmost placed point by a bounding-box gap.
+          let prevMax = -Infinity;
+          for (const prev of placed) for (const q of prev) if (q.arc > prevMax) prevMax = q.arc;
           const curMin = Math.min(...pts.map((p) => p.arc));
           smin = prevMax + gapA - curMin;
         }
@@ -880,8 +876,7 @@ function barrelLayout(
       for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
         newArc[i] = segment.samples[i].arc + shift;
       }
-      prevPts = pts.map((p) => ({ arc: p.arc + shift, z: p.z }));
-      prevEndResSeq = run.endResSeq;
+      placed.push(pts.map((p) => ({ arc: p.arc + shift, z: p.z })));
     }
 
     const firstAssigned = newArc.findIndex((v) => !Number.isNaN(v));
@@ -997,7 +992,7 @@ function renderChainSvg(
     ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
     : unrollChain(chain.calphas, { ssSegments });
   const { layouts, totalArc } = useUnwrap
-    ? barrelLayout(unroll.segments, ssSegments, effective)
+    ? barrelLayout(unroll.segments, ssSegments)
     : layoutSegments(unroll.segments, ssSegments);
 
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));

@@ -11,6 +11,15 @@ export interface SyntheticBarrelOptions {
   tiltDeg?: number;
   /** Residues per connecting loop. @default 3 */
   loopLen?: number;
+  /**
+   * If set, the loop after this strand index is replaced by one that rises to a
+   * short helix sitting high above the membrane (z ≈ `loopHelixZ`) before
+   * descending — reproducing an extracellular loop helix (e.g. OmpF's), which
+   * is a floating element that must not disturb strand packing.
+   */
+  loopHelixAfterStrand?: number;
+  /** Height (Å) of the injected loop helix above the midplane. @default 28 */
+  loopHelixZ?: number;
 }
 
 /**
@@ -20,12 +29,14 @@ export interface SyntheticBarrelOptions {
  * closes. Mirrors the parametric barrel the gallery uses for synthetic renders.
  */
 export function syntheticBarrel(options: SyntheticBarrelOptions = {}): ChainData {
-  const { n, strandLen, interStrand, tiltDeg, loopLen } = {
+  const { n, strandLen, interStrand, tiltDeg, loopLen, loopHelixAfterStrand, loopHelixZ } = {
     n: 8,
     strandLen: 10,
     interStrand: 4.8,
     tiltDeg: 30,
     loopLen: 3,
+    loopHelixAfterStrand: undefined as number | undefined,
+    loopHelixZ: 28,
     ...options,
   };
 
@@ -67,6 +78,58 @@ export function syntheticBarrel(options: SyntheticBarrelOptions = {}): ChainData
       const nextTheta = nextBase + (nextDir * nextCentred * dzTang) / R;
       const nx = R * Math.cos(nextTheta);
       const ny = R * Math.sin(nextTheta);
+
+      if (s === loopHelixAfterStrand) {
+        // Loop that rises to a short helix high above the membrane, then drops
+        // to the next strand. The helix shares no z-overlap with the strands.
+        // Risers/descenders keep every Cα–Cα step short so no chain break is
+        // inferred.
+        const mx = (last.x + nx) / 2;
+        const my = (last.y + ny) / 2;
+        const step = 3.5;
+
+        const riserStart = resSeq;
+        for (let z = last.z + step; z < loopHelixZ; z += step) {
+          const t = (z - last.z) / (loopHelixZ - last.z);
+          calphas.push({
+            resSeq: resSeq++,
+            iCode: '',
+            x: last.x + (mx - last.x) * t,
+            y: last.y + (my - last.y) * t,
+            z,
+          });
+        }
+        if (resSeq > riserStart)
+          segments.push({ start: riserStart, end: resSeq - 1, type: 'coil' });
+
+        const helixStart = resSeq;
+        for (let j = 0; j < 6; j++) {
+          calphas.push({
+            resSeq: resSeq++,
+            iCode: '',
+            x: mx + Math.cos(j) * 1.5,
+            y: my + Math.sin(j) * 1.5,
+            z: loopHelixZ + j * 0.4,
+          });
+        }
+        segments.push({ start: helixStart, end: resSeq - 1, type: 'helix' });
+        const helixTopZ = loopHelixZ + 5 * 0.4;
+
+        const descStart = resSeq;
+        for (let z = helixTopZ - step; z > nextZ; z -= step) {
+          const t = (helixTopZ - z) / (helixTopZ - nextZ);
+          calphas.push({
+            resSeq: resSeq++,
+            iCode: '',
+            x: mx + (nx - mx) * t,
+            y: my + (ny - my) * t,
+            z,
+          });
+        }
+        if (resSeq > descStart) segments.push({ start: descStart, end: resSeq - 1, type: 'coil' });
+        continue;
+      }
+
       const loopStart = resSeq;
       for (let j = 0; j < loopLen; j++) {
         const t = (j + 1) / (loopLen + 1);
