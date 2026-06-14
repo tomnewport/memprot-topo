@@ -26,6 +26,7 @@
 import type { Calpha, SecondaryStructureSegment } from '../types.js';
 import { sampleCurve, type Vec } from './catmull-rom.js';
 import { fitBSpline, sampleBSpline } from './bspline.js';
+import { projectHelixAxis } from './helix-axis.js';
 import type { UnrolledPoint, UnrolledResidue, UnrolledSegment, UnrollResult } from './unroll.js';
 
 export interface UnwrapBarrelOptions {
@@ -89,9 +90,24 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     return { segments: [], totalArcLength: 0, zMin: 0, zMax: 0 };
   }
 
+  // De-spiral helices first. A helix's Cα coil around its axis; if that axis lies
+  // tangential to the barrel (e.g. a helix sitting flat above the membrane) the
+  // coil makes the unwrapped angle θ oscillate back and forth, so the drawn
+  // helix would double back on itself. Projecting each helix Cα onto its local
+  // axis (as unrollChain does) removes the coil, leaving a clean monotonic path.
+  const isHelix = ssSegments
+    ? calphas.map((c) => ssTypeAt(ssSegments, c.resSeq) === 'helix')
+    : calphas.map(() => false);
+  const proj = ssSegments
+    ? projectHelixAxis(
+        calphas.map((c) => ({ x: c.x, y: c.y, z: c.z })),
+        isHelix,
+      )
+    : calphas.map((c) => ({ x: c.x, y: c.y, z: c.z }));
+
   // Per-Cα cylindrical radius about the axis; the mean sets a single R so the
   // horizontal scale is uniform across strands.
-  const r = calphas.map((c) => Math.hypot(c.x - centre.x, c.y - centre.y));
+  const r = proj.map((c) => Math.hypot(c.x - centre.x, c.y - centre.y));
   const radius = r.reduce((s, x) => s + x, 0) / r.length || 1;
   // Below this radius a residue sits near the barrel axis (e.g. a loop folded
   // *inside* the barrel, like OmpF's L3), where the unwrap angle is unstable —
@@ -102,11 +118,11 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
 
   // Continuously unwrapped angle along the whole chain, then scaled to arc.
   const u = new Array<number>(calphas.length);
-  let theta = Math.atan2(calphas[0].y - centre.y, calphas[0].x - centre.x);
+  let theta = Math.atan2(proj[0].y - centre.y, proj[0].x - centre.x);
   u[0] = radius * theta;
   let prevAngle = theta;
   for (let i = 1; i < calphas.length; i++) {
-    const a = Math.atan2(calphas[i].y - centre.y, calphas[i].x - centre.x);
+    const a = Math.atan2(proj[i].y - centre.y, proj[i].x - centre.x);
     if (r[i] >= minRadius && r[i - 1] >= minRadius) {
       theta += wrapPi(a - prevAngle);
     }
@@ -123,7 +139,8 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
   const thr2 = breakDistance * breakDistance;
   for (let i = 0; i < calphas.length; i++) {
     const c = calphas[i];
-    const pt: Vec = { x: u[i], y: c.z - membraneCentre, z: 0 };
+    // De-spiralled z for the drawn path; real z is kept for residue depth below.
+    const pt: Vec = { x: u[i], y: proj[i].z - membraneCentre, z: 0 };
     if (current.calphas.length === 0) {
       current.calphas.push(c);
       current.pts.push(pt);
