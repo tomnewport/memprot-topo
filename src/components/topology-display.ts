@@ -830,15 +830,41 @@ function barrelLayout(
   const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, wallSegments);
     const n = segment.samples.length;
-    const strandRuns = runs.filter((r) => r.type === 'strand');
+
+    // z-band spanned by the strands. A helix is packed (given its own lane) only
+    // if it overlaps this band — i.e. it sits among the strands in the membrane.
+    // Floating loop helices (well above/below, no z-overlap) are left to ride the
+    // loop ramp, since packing them has nothing to bind on and flings them aside.
+    let zLo = Infinity;
+    let zHi = -Infinity;
+    for (const run of runs) {
+      if (run.type !== 'strand') continue;
+      for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
+        const z = segment.residues[ri].z;
+        if (z < zLo) zLo = z;
+        if (z > zHi) zHi = z;
+      }
+    }
+    const elementRuns = runs.filter((run) => {
+      if (run.type === 'strand') return true;
+      if (run.type !== 'helix') return false;
+      let hzLo = Infinity;
+      let hzHi = -Infinity;
+      for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
+        const z = segment.residues[ri].z;
+        if (z < hzLo) hzLo = z;
+        if (z > hzHi) hzHi = z;
+      }
+      return hzLo <= zHi && hzHi >= zLo;
+    });
 
     const newArc = new Array<number>(n).fill(NaN);
-    // Every strand placed so far, in display coordinates. Each new strand is
+    // Every element placed so far, in display coordinates. Each new element is
     // cleared against all of them (not just the immediately previous), so it can
-    // never be slid back over an earlier strand.
+    // never be slid back over an earlier one.
     const placed: { arc: number; z: number }[][] = [];
 
-    for (const run of strandRuns) {
+    for (const run of elementRuns) {
       // This element's centreline points (one per residue), in raw unwrap arc.
       const pts: { arc: number; z: number }[] = [];
       for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
