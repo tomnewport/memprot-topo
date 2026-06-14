@@ -174,11 +174,12 @@ const BARREL = {
    */
   minStrandWidths: 2,
   /**
-   * Wider target (strand widths) for transitions that break the barrel wall —
-   * those involving a helix — so the connecting loops have room and render less
-   * snakey than they would at the tight strand-to-strand spacing.
+   * Loop gap (strand widths) left on each side of a non-barrel element (a helix)
+   * when packing across a transition to or from the barrel. Generous on purpose:
+   * a readable, non-overlapping layout matters more than a compact one, so the
+   * element and its flanking loops always have plenty of room.
    */
-  breakStrandWidths: 4,
+  transitionGapWidths: 4,
 };
 
 /**
@@ -811,14 +812,13 @@ function layoutSegments(
  *      placed strands' centrelines,
  *   3. slide it along until that shortest distance equals a fixed target
  *      (default two strand widths).
- * Only β-strands are packed, so the barrel wall stays continuous. Helices (and
- * coils) ride the loop ramp between their bracketing strands — packing a loop
- * helix as a wall element would split the barrel in two. Where a helix sits in
- * the loop between two strands, that gap is widened (breakStrandWidths) so the
- * helix and its loops have room. Strands are cleared against *all* previously
- * placed strands (not just the immediately previous), and kept in left-to-right
- * order, so none can be slid back over an earlier one. Membrane depth (z) is
- * never touched.
+ * Barrel-wall strands are packed tight (the part that works well — left as is).
+ * A helix — anything not part of the barrel — is packed too, but a transition to
+ * or from it advances generously: the element is placed wholly to the right of
+ * everything so far with a wide loop gap, so it and its flanking loops render
+ * with plenty of space, nothing crosses another element, and no loop doubles
+ * back. Readability is preferred over compactness here. Coils ride the loop ramp
+ * between elements. Membrane depth (z) is never touched.
  */
 function barrelLayout(
   segments: UnrolledSegment[],
@@ -826,31 +826,29 @@ function barrelLayout(
 ): { layouts: SegmentLayout[]; totalArc: number } {
   const strandWidthPx = SS_BODY.halfWidthPx * 2;
   const targetA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
-  const breakTargetA = (BARREL.breakStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
+  const transitionGapA = (BARREL.transitionGapWidths * strandWidthPx) / PLOT.arcPxPerA;
 
   const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, wallSegments);
     const n = segment.samples.length;
 
-    // z-band spanned by the strands. A helix is packed (given its own lane) only
-    // if it overlaps this band — i.e. it sits among the strands in the membrane.
     const newArc = new Array<number>(n).fill(NaN);
-    // Only β-strands form the barrel wall and are packed into lanes; helices and
-    // coils ride the loop ramp so the wall stays continuous (packing a loop
-    // helix as a wall element splits the barrel in two). Each strand is cleared
-    // against all previously placed strands so none can slide over another.
+    // Barrel-wall strands are packed tight (closest centreline distance); helices
+    // — anything that isn't part of the barrel — are packed too, but a transition
+    // to or from a helix advances generously so the loops on each side and the
+    // helix itself render with plenty of space. Every element is placed entirely
+    // to the right of all earlier ones at such a transition, so nothing crosses
+    // and no loop doubles back. Coils ride the loop ramp.
     const placed: { arc: number; z: number }[][] = [];
-    // Laid-out centre of the previously placed strand, for the ordering rule.
-    let prevCentre = -Infinity;
-    // Does a helix sit in the loop since the previous strand? Such a break gets
-    // a wider gap so the helix and its connecting loops have room.
-    let helixSincePrevStrand = false;
+    let prevCentre = -Infinity; // laid-out centre of the previous element
+    let maxRight = -Infinity; // rightmost laid arc among all placed elements
+    let prevHelix = false; // was the previous placed element a helix?
 
     for (const run of runs) {
-      if (run.type === 'helix') helixSincePrevStrand = true;
-      if (run.type !== 'strand') continue;
+      if (run.type !== 'strand' && run.type !== 'helix') continue;
+      const curHelix = run.type === 'helix';
 
-      // This strand's centreline points (one per residue), in raw unwrap arc.
+      // This element's centreline points (one per residue), in raw unwrap arc.
       const pts: { arc: number; z: number }[] = [];
       for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
         const r = segment.residues[ri];
@@ -866,27 +864,31 @@ function barrelLayout(
 
       let shift = 0;
       if (placed.length > 0) {
-        const t = helixSincePrevStrand ? breakTargetA : targetA;
-        // Clearance: smallest rightward shift s such that every centreline pair
-        // (against every already-placed strand) is ≥ target apart, the binding
-        // pair exactly at target:
-        //   |(a_i + s) − P_j| ≥ √(target² − Δz²)  for pairs with |Δz| < target.
-        let smin = -Infinity;
-        for (const prev of placed) {
-          for (const p of pts) {
-            for (const q of prev) {
-              const dz = p.z - q.z;
-              if (Math.abs(dz) >= t) continue;
-              const need = Math.sqrt(t * t - dz * dz) + q.arc - p.arc;
-              if (need > smin) smin = need;
+        if (curHelix || prevHelix) {
+          // Transition to/from a non-barrel element: place this element wholly to
+          // the right of everything placed so far, leaving a generous loop gap.
+          // Full element width is kept, so it renders with plenty of space.
+          shift = maxRight + transitionGapA - rawMin;
+        } else {
+          // Wall-to-wall: the existing tight barrel packing — unchanged.
+          // Clearance: smallest rightward shift s such that every centreline pair
+          // is ≥ target apart, the binding pair exactly at target.
+          let smin = -Infinity;
+          for (const prev of placed) {
+            for (const p of pts) {
+              for (const q of prev) {
+                const dz = p.z - q.z;
+                if (Math.abs(dz) >= targetA) continue;
+                const need = Math.sqrt(targetA * targetA - dz * dz) + q.arc - p.arc;
+                if (need > smin) smin = need;
+              }
             }
           }
+          // Ordering: keep strands left-to-right, each at least `target` past the
+          // previous centre, so none is flung back onto a far strand.
+          const orderShift = prevCentre + targetA - rawCentre;
+          shift = Math.max(Number.isFinite(smin) ? smin : -Infinity, orderShift);
         }
-        // Ordering: keep strands strictly left-to-right, each at least `t` past
-        // the previous strand's centre, so a strand whose only z-overlap is with
-        // a far-back strand can't be flung backwards on a huge loop.
-        const orderShift = prevCentre + t - rawCentre;
-        shift = Math.max(Number.isFinite(smin) ? smin : -Infinity, orderShift);
       }
 
       for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
@@ -894,7 +896,8 @@ function barrelLayout(
       }
       placed.push(pts.map((p) => ({ arc: p.arc + shift, z: p.z })));
       prevCentre = rawCentre + shift;
-      helixSincePrevStrand = false;
+      maxRight = Math.max(maxRight, rawMax + shift);
+      prevHelix = curHelix;
     }
 
     const firstAssigned = newArc.findIndex((v) => !Number.isNaN(v));
