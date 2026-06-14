@@ -866,4 +866,31 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
       for (let j = i + 1; j < polys.length; j++)
         expect(minVertexDistance(polys[i], polys[j])).toBeGreaterThan(0.5);
   });
+
+  it('keeps every helix within the strand span (never flung off on a giant loop)', () => {
+    // A helix must not be placed left of the first strand or right of the last:
+    // the ordering rule stops an element binding to a far-back strand and being
+    // flung backwards on a huge loop to it.
+    const chain = syntheticBarrel({ n: 8, loopHelixAfterStrand: 3, loopHelixZ: 18 });
+    const el = mount({ pdbId: 'barhx', chains: [chain] });
+    const strandCentres = strandVerts(el).map((v) => {
+      const xs = v.map((p) => p[0]);
+      return (Math.min(...xs) + Math.max(...xs)) / 2;
+    });
+    const lo = Math.min(...strandCentres);
+    const hi = Math.max(...strandCentres);
+    const helixCentres = Array.from(el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'))
+      .filter((p) => p.getAttribute('fill') === '#6e8db6')
+      .map((p) => {
+        const xs = (p.getAttribute('points') ?? '')
+          .trim()
+          .split(/\s+/)
+          .map((pt) => Number(pt.split(',')[0]));
+        return (Math.min(...xs) + Math.max(...xs)) / 2;
+      });
+    for (const c of helixCentres) {
+      expect(c).toBeGreaterThanOrEqual(lo);
+      expect(c).toBeLessThanOrEqual(hi);
+    }
+  });
 });

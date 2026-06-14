@@ -167,18 +167,12 @@ const BARREL = {
   /**
    * Target closest distance between two adjacent SS elements, expressed in
    * strand widths. Each element keeps its true tilt; the next element is slid in
-   * until the shortest centreline-to-centreline distance to the previous element
-   * hits this target, so neighbours sit a fixed clearance apart however they
-   * tilt. Helices between strands are packed the same way, so an interrupting
-   * element simply gets the space it would normally get.
+   * until the shortest centreline-to-centreline distance to the previously
+   * placed elements hits this target, so neighbours sit a fixed clearance apart
+   * however they tilt. The same value is the minimum centre-to-centre spacing
+   * used to keep elements ordered left to right.
    */
   minStrandWidths: 2,
-  /**
-   * Fallback clear gap (screen px) when two adjacent elements don't overlap in z
-   * at all (no centreline pair within the target), so closest-distance packing
-   * has nothing to bind on.
-   */
-  gapPx: 8,
 };
 
 /**
@@ -825,7 +819,6 @@ function barrelLayout(
 ): { layouts: SegmentLayout[]; totalArc: number } {
   const strandWidthPx = SS_BODY.halfWidthPx * 2;
   const targetA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
-  const gapA = BARREL.gapPx / PLOT.arcPxPerA;
 
   const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, wallSegments);
@@ -863,6 +856,8 @@ function barrelLayout(
     // cleared against all of them (not just the immediately previous), so it can
     // never be slid back over an earlier one.
     const placed: { arc: number; z: number }[][] = [];
+    // Laid-out centre of the previously placed element, for the ordering rule.
+    let prevCentre = -Infinity;
 
     for (const run of elementRuns) {
       // This element's centreline points (one per residue), in raw unwrap arc.
@@ -871,12 +866,19 @@ function barrelLayout(
         const r = segment.residues[ri];
         pts.push({ arc: r.arc, z: r.z });
       }
+      let rawMin = Infinity;
+      let rawMax = -Infinity;
+      for (const p of pts) {
+        if (p.arc < rawMin) rawMin = p.arc;
+        if (p.arc > rawMax) rawMax = p.arc;
+      }
+      const rawCentre = (rawMin + rawMax) / 2;
 
       let shift = 0;
       if (placed.length > 0) {
-        // Smallest rightward shift s such that every centreline pair (against
-        // every already-placed element) is ≥ target apart, the binding pair
-        // exactly at target:
+        // Clearance: smallest rightward shift s such that every centreline pair
+        // (against every already-placed element) is ≥ target apart, the binding
+        // pair exactly at target:
         //   |(a_i + s) − P_j| ≥ √(target² − Δz²)  for pairs with |Δz| < target.
         let smin = -Infinity;
         for (const prev of placed) {
@@ -889,21 +891,21 @@ function barrelLayout(
             }
           }
         }
-        if (!Number.isFinite(smin)) {
-          // No vertical overlap with anything placed (a floating element) — fall
-          // back to clearing the rightmost placed point by a bounding-box gap.
-          let prevMax = -Infinity;
-          for (const prev of placed) for (const q of prev) if (q.arc > prevMax) prevMax = q.arc;
-          const curMin = Math.min(...pts.map((p) => p.arc));
-          smin = prevMax + gapA - curMin;
-        }
-        shift = smin;
+        // Ordering: keep elements strictly left-to-right, each at least `target`
+        // past the previous element's centre. Without this, an element whose
+        // only z-overlap is with a far-back strand (e.g. a high helix that only
+        // meets the first strand's tip) binds to it and is flung backwards on a
+        // huge loop. Taking the max of the two keeps placement compact where
+        // clearance allows and ordered where it doesn't.
+        const orderShift = prevCentre + targetA - rawCentre;
+        shift = Math.max(Number.isFinite(smin) ? smin : -Infinity, orderShift);
       }
 
       for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
         newArc[i] = segment.samples[i].arc + shift;
       }
       placed.push(pts.map((p) => ({ arc: p.arc + shift, z: p.z })));
+      prevCentre = rawCentre + shift;
     }
 
     const firstAssigned = newArc.findIndex((v) => !Number.isNaN(v));
