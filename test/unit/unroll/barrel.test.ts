@@ -73,4 +73,27 @@ describe('unwrapBarrel', () => {
       }
     }
   });
+
+  it('renders a helix as a straight bar — arc never reverses (no doubling back)', () => {
+    // A helix sits in the loop; its drawn arc must be strictly monotonic so it
+    // can never fold back on itself, whatever its 3-D orientation.
+    const chain = syntheticBarrel({ n: 8, loopHelixAfterStrand: 0, loopHelixZ: 28 });
+    const segs = chain.segments;
+    const { centre } = analyseBarrel(chain.calphas, segs);
+    const r = unwrapBarrel(chain.calphas, { ssSegments: segs, centre });
+    const helix = segs.find((s) => s.type === 'helix')!;
+    const seg = r.segments[0];
+    const idx = seg.residues
+      .filter((res) => res.resSeq >= helix.start && res.resSeq <= helix.end)
+      .map((res) => res.sampleIndex);
+    const lo = Math.min(...idx);
+    const hi = Math.max(...idx);
+    let reversals = 0;
+    for (let i = lo + 2; i <= hi; i++) {
+      const d1 = seg.samples[i - 1].arc - seg.samples[i - 2].arc;
+      const d2 = seg.samples[i].arc - seg.samples[i - 1].arc;
+      if (d1 !== 0 && d2 !== 0 && Math.sign(d1) !== Math.sign(d2)) reversals++;
+    }
+    expect(reversals).toBe(0);
+  });
 });

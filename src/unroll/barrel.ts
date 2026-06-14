@@ -174,14 +174,32 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     // Sub-split by SS type so each run can be smoothed appropriately.
     let runStart = 0;
     let runType = ssTypeAt(ssSegments, groupCa[0].resSeq);
-    const flushRun = (start: number, end: number): void => {
+    const flushRun = (start: number, end: number, type: 'helix' | 'strand' | 'coil'): void => {
       const subPts = pts.slice(start, end + 1);
       const subN = subPts.length;
       const k = Math.max(4, Math.ceil(subN / aminosPerDof));
 
       let splineSamples: Vec[];
       let controlIndex: number[];
-      if (subN <= 3 || k >= subN) {
+      if (type === 'helix' && subN >= 2) {
+        // A helix is drawn as a straight bar between its (de-spiralled) endpoints.
+        // This makes an arc reversal — a helix doubling back on itself in the
+        // unwrap — impossible by construction, whatever the input geometry.
+        const p0 = subPts[0];
+        const p1 = subPts[subN - 1];
+        const total = (subN - 1) * sampleDensity + 1;
+        splineSamples = Array.from({ length: total }, (_, j) => {
+          const t = j / (total - 1);
+          return { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t, z: 0 };
+        });
+        let prev = -1;
+        controlIndex = subPts.map((_, i) => {
+          let idx = Math.round((i / (subN - 1)) * (total - 1));
+          if (idx <= prev) idx = prev + 1;
+          prev = idx;
+          return Math.min(idx, total - 1);
+        });
+      } else if (subN <= 3 || k >= subN) {
         const cr = sampleCurve(subPts, sampleDensity);
         splineSamples = cr.samples;
         controlIndex = cr.controlIndex;
@@ -218,12 +236,12 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     for (let i = 1; i < groupCa.length; i++) {
       const t = ssTypeAt(ssSegments, groupCa[i].resSeq);
       if (t !== runType) {
-        flushRun(runStart, i - 1);
+        flushRun(runStart, i - 1, runType);
         runStart = i;
         runType = t;
       }
     }
-    flushRun(runStart, groupCa.length - 1);
+    flushRun(runStart, groupCa.length - 1, runType);
 
     segments.push({ samples: allSamples, residues: allResidues });
   }
