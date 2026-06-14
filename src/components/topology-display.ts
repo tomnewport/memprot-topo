@@ -173,6 +173,12 @@ const BARREL = {
    * used to keep elements ordered left to right.
    */
   minStrandWidths: 2,
+  /**
+   * Wider target (strand widths) for transitions that break the barrel wall —
+   * those involving a helix — so the connecting loops have room and render less
+   * snakey than they would at the tight strand-to-strand spacing.
+   */
+  breakStrandWidths: 5,
 };
 
 /**
@@ -819,6 +825,7 @@ function barrelLayout(
 ): { layouts: SegmentLayout[]; totalArc: number } {
   const strandWidthPx = SS_BODY.halfWidthPx * 2;
   const targetA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
+  const breakTargetA = (BARREL.breakStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
 
   const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, wallSegments);
@@ -855,11 +862,13 @@ function barrelLayout(
     // Every element placed so far, in display coordinates. Each new element is
     // cleared against all of them (not just the immediately previous), so it can
     // never be slid back over an earlier one.
-    const placed: { arc: number; z: number }[][] = [];
-    // Laid-out centre of the previously placed element, for the ordering rule.
+    const placed: { pts: { arc: number; z: number }[]; helix: boolean }[] = [];
+    // Laid-out centre and helix-ness of the previously placed element.
     let prevCentre = -Infinity;
+    let prevHelix = false;
 
     for (const run of elementRuns) {
+      const curHelix = run.type === 'helix';
       // This element's centreline points (one per residue), in raw unwrap arc.
       const pts: { arc: number; z: number }[] = [];
       for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
@@ -880,32 +889,35 @@ function barrelLayout(
         // (against every already-placed element) is ≥ target apart, the binding
         // pair exactly at target:
         //   |(a_i + s) − P_j| ≥ √(target² − Δz²)  for pairs with |Δz| < target.
+        // A helix breaks the barrel wall, so transitions involving one use a
+        // wider target to give its connecting loops room (less snakey).
         let smin = -Infinity;
         for (const prev of placed) {
+          const t = curHelix || prev.helix ? breakTargetA : targetA;
           for (const p of pts) {
-            for (const q of prev) {
+            for (const q of prev.pts) {
               const dz = p.z - q.z;
-              if (Math.abs(dz) >= targetA) continue;
-              const need = Math.sqrt(targetA * targetA - dz * dz) + q.arc - p.arc;
+              if (Math.abs(dz) >= t) continue;
+              const need = Math.sqrt(t * t - dz * dz) + q.arc - p.arc;
               if (need > smin) smin = need;
             }
           }
         }
-        // Ordering: keep elements strictly left-to-right, each at least `target`
-        // past the previous element's centre. Without this, an element whose
-        // only z-overlap is with a far-back strand (e.g. a high helix that only
-        // meets the first strand's tip) binds to it and is flung backwards on a
-        // huge loop. Taking the max of the two keeps placement compact where
-        // clearance allows and ordered where it doesn't.
-        const orderShift = prevCentre + targetA - rawCentre;
+        // Ordering: keep elements strictly left-to-right, each at least one
+        // target past the previous element's centre, so an element whose only
+        // z-overlap is with a far-back strand can't be flung backwards on a huge
+        // loop. The break target widens this too around helices.
+        const orderTarget = curHelix || prevHelix ? breakTargetA : targetA;
+        const orderShift = prevCentre + orderTarget - rawCentre;
         shift = Math.max(Number.isFinite(smin) ? smin : -Infinity, orderShift);
       }
 
       for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
         newArc[i] = segment.samples[i].arc + shift;
       }
-      placed.push(pts.map((p) => ({ arc: p.arc + shift, z: p.z })));
+      placed.push({ pts: pts.map((p) => ({ arc: p.arc + shift, z: p.z })), helix: curHelix });
       prevCentre = rawCentre + shift;
+      prevHelix = curHelix;
     }
 
     const firstAssigned = newArc.findIndex((v) => !Number.isNaN(v));
