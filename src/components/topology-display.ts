@@ -891,10 +891,26 @@ function barrelLayout(
         }
       }
 
-      for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
-        newArc[i] = segment.samples[i].arc + shift;
+      if (curHelix) {
+        // A helix (a non-barrel element) must read forward — lowest residue on
+        // the left — regardless of which way it happens to wind around the
+        // barrel. Lay its straight bar out in residue order across its own width.
+        // (Barrel wall strands keep their natural alternating direction.)
+        const leftEdge = rawMin + shift;
+        const width = rawMax - rawMin;
+        const span = run.endResSampleIdx - run.startSample;
+        for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
+          const t = span > 0 ? (i - run.startSample) / span : 0;
+          newArc[i] = leftEdge + t * width;
+        }
+        const m = pts.length - 1;
+        placed.push(pts.map((p, ri) => ({ arc: leftEdge + (m > 0 ? ri / m : 0) * width, z: p.z })));
+      } else {
+        for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
+          newArc[i] = segment.samples[i].arc + shift;
+        }
+        placed.push(pts.map((p) => ({ arc: p.arc + shift, z: p.z })));
       }
-      placed.push(pts.map((p) => ({ arc: p.arc + shift, z: p.z })));
       prevCentre = rawCentre + shift;
       maxRight = Math.max(maxRight, rawMax + shift);
       prevHelix = curHelix;

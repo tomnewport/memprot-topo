@@ -893,4 +893,21 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
       expect(c).toBeLessThanOrEqual(hi);
     }
   });
+
+  it('lays helices out forwards — lowest residue number on the left', () => {
+    // Every non-barrel element should read N→C left-to-right (only alternate
+    // barrel strands may run backwards).
+    const chain = syntheticBarrel({ n: 8, loopHelixAfterStrand: 3, loopHelixZ: 4 });
+    const helix = chain.segments.find((s) => s.type === 'helix')!;
+    const el = mount({ pdbId: 'barfwd', chains: [chain] });
+    const labelX = new Map<number, number>();
+    for (const t of el.shadowRoot!.querySelectorAll('.svg-scroll svg text')) {
+      labelX.set(Number(t.textContent), Number(t.getAttribute('x')));
+    }
+    const startX = labelX.get(helix.start);
+    const endX = labelX.get(helix.end);
+    expect(startX).toBeDefined();
+    expect(endX).toBeDefined();
+    expect(endX!).toBeGreaterThanOrEqual(startX!);
+  });
 });
