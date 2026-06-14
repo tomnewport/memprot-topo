@@ -799,22 +799,25 @@ function layoutSegments(
 }
 
 /**
- * Lay the cylindrical unwrap out so secondary-structure elements sit a fixed
- * clearance apart without altering any element's shape or angle. At realistic
- * barrel tilts (~40°) a strand sweeps far more horizontally than the true
- * inter-strand spacing, so the honest unwrap draws tilted bars on top of one
- * another.
+ * Lay the cylindrical unwrap out so strands sit a fixed clearance apart without
+ * altering any strand's shape or angle. At realistic barrel tilts (~40°) a
+ * strand sweeps far more horizontally than the true inter-strand spacing, so
+ * the honest unwrap draws tilted bars on top of one another.
  *
- * Each element (strand or helix) keeps its exact geometry — a rigid horizontal
- * shift only — and is placed left to right by the algorithm:
- *   1. take the next element,
- *   2. find the shortest distance between its centreline and the previous
- *      element's centreline,
+ * Each strand keeps its exact geometry — a rigid horizontal shift only — and is
+ * placed left to right by the algorithm:
+ *   1. take the next strand,
+ *   2. find the shortest distance between its centreline and the previously
+ *      placed strands' centrelines,
  *   3. slide it along until that shortest distance equals a fixed target
  *      (default two strand widths).
- * Helices between strands are packed exactly like strands, so an interrupting
- * element simply gets the space it would normally get. Loops bridge across the
- * shifts; membrane depth (z) is never touched.
+ * Only β-strands are packed. Helices (and coils) are *not* — they ride the loop
+ * ramp between their bracketing strands, so a loop helix, which often floats
+ * well above/below the membrane with no z-overlap to bind on, stays where the
+ * backbone naturally passes instead of being flung aside on a giant loop.
+ * Strands are cleared against *all* previously placed strands (not just the
+ * immediately previous), so none can be slid back over an earlier one. Membrane
+ * depth (z) is never touched.
  */
 function barrelLayout(
   segments: UnrolledSegment[],
@@ -827,17 +830,15 @@ function barrelLayout(
   const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, wallSegments);
     const n = segment.samples.length;
-    const ssRuns = runs.filter((r) => r.type === 'strand' || r.type === 'helix');
+    const strandRuns = runs.filter((r) => r.type === 'strand');
 
     const newArc = new Array<number>(n).fill(NaN);
-    // Every element placed so far, in display coordinates. Each new element is
-    // cleared against *all* of them (not just the immediately previous), so a
-    // strand can't be slid back over an earlier strand when a floating element
-    // (e.g. an extracellular loop helix high above the membrane) sits between
-    // them and shares no z-overlap to bind on. This is the anti-tangle guard.
+    // Every strand placed so far, in display coordinates. Each new strand is
+    // cleared against all of them (not just the immediately previous), so it can
+    // never be slid back over an earlier strand.
     const placed: { arc: number; z: number }[][] = [];
 
-    for (const run of ssRuns) {
+    for (const run of strandRuns) {
       // This element's centreline points (one per residue), in raw unwrap arc.
       const pts: { arc: number; z: number }[] = [];
       for (let ri = run.residueStart; ri <= run.residueEnd; ri++) {
