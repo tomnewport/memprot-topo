@@ -910,4 +910,37 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
     expect(endX).toBeDefined();
     expect(endX!).toBeGreaterThanOrEqual(startX!);
   });
+
+  it('renders a multi-chain assembly barrel with the focal protomer highlighted', () => {
+    // Split one 8-strand barrel into 4 two-strand "protomers" (no single chain
+    // is a barrel), like α-hemolysin's heptamer.
+    const full = syntheticBarrel({ n: 8 });
+    const per = Math.ceil(full.residueCount / 4);
+    const chains: ChainData[] = [];
+    for (let p = 0; p < 4; p++) {
+      const lo = p * per + 1;
+      const hi = Math.min((p + 1) * per, full.residueCount);
+      const calphas = full.calphas.filter((c) => c.resSeq >= lo && c.resSeq <= hi);
+      const segments = full.segments
+        .filter((s) => s.start >= lo && s.end <= hi)
+        .map((s) => ({ ...s }));
+      chains.push({
+        chainId: String.fromCharCode(65 + p),
+        residueCount: calphas.length,
+        segments,
+        calphas,
+      });
+    }
+    const el = mount({ pdbId: 'asm', chains });
+
+    expect(el.shadowRoot!.querySelector('.chain-label')!.textContent).toContain('across 4 chains');
+    const strandPolys = Array.from(
+      el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'),
+    ).filter((p) => p.getAttribute('fill') === '#6ea76d');
+    expect(strandPolys.length).toBe(8); // all 8 strands of the assembly drawn
+    const faded = strandPolys.filter((p) => p.getAttribute('opacity') === '0.32');
+    // Some strands faded (neighbours) and some solid (focal protomer).
+    expect(faded.length).toBeGreaterThan(0);
+    expect(faded.length).toBeLessThan(strandPolys.length);
+  });
 });

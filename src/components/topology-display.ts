@@ -10,10 +10,11 @@ import {
   catmullRomBezier,
   type UnrolledSegment,
   type UnrolledPoint,
+  type UnrollResult,
   type Vec,
 } from '../unroll/index.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
-import { analyseBarrel, type BarrelAnalysis } from '../contacts/index.js';
+import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -396,6 +397,7 @@ function drawSsPolygon(
   endIdx: number,
   type: 'helix' | 'strand',
   withArrow: boolean,
+  faded = false,
 ): void {
   if (endIdx <= startIdx) return;
 
@@ -518,6 +520,9 @@ function drawSsPolygon(
   poly.setAttribute('stroke-width', '1.5');
   poly.setAttribute('stroke-linejoin', 'round');
   poly.setAttribute('vector-effect', 'non-scaling-stroke');
+  // Neighbouring-chain elements (assembly barrels) are desaturated so the focal
+  // protomer reads as the subject.
+  if (faded) poly.setAttribute('opacity', '0.32');
   plot.appendChild(poly);
 }
 
@@ -669,6 +674,7 @@ function renderLoopCurve(
   points: LoopControlPoint[],
   discontinuous: boolean,
   showPoints: boolean,
+  faded = false,
 ): void {
   if (points.length < 2) return;
 
@@ -693,6 +699,7 @@ function renderLoopCurve(
   path.setAttribute('stroke-linejoin', 'round');
   path.setAttribute('vector-effect', 'non-scaling-stroke');
   if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
+  if (faded) path.setAttribute('opacity', '0.32');
   plot.appendChild(path);
 
   if (showPoints) {
@@ -720,6 +727,7 @@ function drawLoop(
   nextRun: SsRun | null,
   loopResidues: { resSeq: number }[],
   opts: LoopRenderOptions,
+  faded = false,
 ): void {
   const prev: LoopEnd | null = prevRun ? { samples, index: prevRun.endResSampleIdx } : null;
   const next: LoopEnd | null = nextRun ? { samples, index: nextRun.startSample } : null;
@@ -739,7 +747,7 @@ function drawLoop(
     }
   }
 
-  renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints);
+  renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints, faded);
 }
 
 /** A chain segment with its samples repositioned into display (fixed-gap) space. */
@@ -837,6 +845,7 @@ function layoutSegments(
 function barrelLayout(
   segments: UnrolledSegment[],
   wallSegments: SecondaryStructureSegment[],
+  continuous = false,
 ): { layouts: SegmentLayout[]; totalArc: number } {
   const strandWidthPx = SS_BODY.halfWidthPx * 2;
   const targetA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
@@ -845,22 +854,31 @@ function barrelLayout(
   // forward if anchoring it to the loop-exit point would crowd anything.
   const clearanceA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
 
+  // Placement state. In `continuous` mode (multi-chain assembly barrels) it
+  // persists across segments so each protomer packs tight against the previous
+  // one around the shared ring; otherwise it resets per segment.
+  const placed: { arc: number; z: number }[][] = [];
+  let prevCentre = -Infinity; // laid-out centre of the previous element
+  let prevExitArc = -Infinity; // laid arc of the previous element's C-terminus
+  let prevHelix = false; // was the previous placed element a helix?
+
   const built = segments.map((segment) => {
     const runs = runsBySs(segment.residues, wallSegments);
     const n = segment.samples.length;
-
     const newArc = new Array<number>(n).fill(NaN);
+    if (!continuous) {
+      placed.length = 0;
+      prevCentre = -Infinity;
+      prevExitArc = -Infinity;
+      prevHelix = false;
+    }
+
     // Barrel-wall strands are packed tight (closest centreline distance); helices
     // — anything that isn't part of the barrel — are packed too, but a transition
     // to or from a helix advances generously so the loops on each side and the
     // helix itself render with plenty of space. Every element is placed entirely
     // to the right of all earlier ones at such a transition, so nothing crosses
     // and no loop doubles back. Coils ride the loop ramp.
-    const placed: { arc: number; z: number }[][] = [];
-    let prevCentre = -Infinity; // laid-out centre of the previous element
-    let prevExitArc = -Infinity; // laid arc of the previous element's C-terminus
-    let prevHelix = false; // was the previous placed element a helix?
-
     for (const run of runs) {
       if (run.type !== 'strand' && run.type !== 'helix') continue;
       const curHelix = run.type === 'helix';
@@ -1041,27 +1059,104 @@ function barrelWallSegments(
   return [...wall, ...helices].sort((a, b) => a.start - b.start);
 }
 
+/**
+ * Unwrap a multi-chain assembly barrel: each protomer's β-hairpin is unwrapped
+ * around the *shared* cylinder centre as its own segment, so barrelLayout
+ * (continuous) packs all protomers tight around one ring. Returns the segments
+ * in ring order, a per-segment focal flag, and the wall strand segments.
+ */
+function unwrapAssembly(
+  chains: ChainData[],
+  analysis: BarrelAnalysis,
+  focalChainId: string,
+): {
+  segments: UnrolledSegment[];
+  focal: boolean[];
+  wallSegments: SecondaryStructureSegment[];
+  zMin: number;
+  zMax: number;
+} {
+  const chainById = new Map(chains.map((c) => [c.chainId, c]));
+  // Protomer order = chains in order of first appearance around the ring.
+  const order: string[] = [];
+  for (const i of analysis.ringOrder) {
+    const cid = analysis.strands[i].chainId;
+    if (cid && !order.includes(cid)) order.push(cid);
+  }
+  const segments: UnrolledSegment[] = [];
+  const focal: boolean[] = [];
+  const wallSet = new Map<string, SecondaryStructureSegment>();
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (const cid of order) {
+    const chain = chainById.get(cid);
+    if (!chain) continue;
+    const strandSegs = analysis.ringOrder
+      .map((i) => analysis.strands[i])
+      .filter((s) => s.chainId === cid)
+      .map((s) => s.segment);
+    if (strandSegs.length === 0) continue;
+    const lo = Math.min(...strandSegs.map((s) => s.start));
+    const hi = Math.max(...strandSegs.map((s) => s.end));
+    const stem = chain.calphas.filter((c) => c.resSeq >= lo && c.resSeq <= hi);
+    const ssSegs = strandSegs.map((s) => ({ ...s }));
+    for (const s of ssSegs) wallSet.set(`${s.start}-${s.end}`, s);
+    const u = unwrapBarrel(stem, { ssSegments: ssSegs, centre: analysis.centre });
+    for (const seg of u.segments) {
+      segments.push(seg);
+      focal.push(cid === focalChainId);
+    }
+    zMin = Math.min(zMin, u.zMin);
+    zMax = Math.max(zMax, u.zMax);
+  }
+  if (!Number.isFinite(zMin)) {
+    zMin = 0;
+    zMax = 0;
+  }
+  return { segments, focal, wallSegments: [...wallSet.values()], zMin, zMax };
+}
+
+interface AssemblyContext {
+  chains: ChainData[];
+  analysis: BarrelAnalysis;
+  focalChainId: string;
+}
+
 function renderChainSvg(
   chain: ChainData,
   opts: LoopRenderOptions,
   analysis: BarrelAnalysis,
   showContacts: boolean,
+  assembly?: AssemblyContext,
 ): SVGSVGElement {
-  // A genuine, closed cylindrical barrel is unrolled by angle so its strands
-  // render parallel at true spacing; everything else uses the arc-length
-  // unroll with fixed inter-element gaps.
-  const useUnwrap = analysis.cylindrical;
+  // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
+  // every protomer around a shared cylinder; a single closed cylindrical barrel
+  // unwraps by angle; everything else uses the arc-length unroll.
+  const asm = assembly
+    ? unwrapAssembly(assembly.chains, assembly.analysis, assembly.focalChainId)
+    : null;
+  const useUnwrap = asm !== null || analysis.cylindrical;
   // In barrel mode only the wall strands are drawn as strands; any β-strands
   // that fold inside the barrel (e.g. OmpF's L3) sit near the axis where the
   // unwrap angle is meaningless, so they read as part of the connecting loop.
   const effective = effectiveSsSegments(chain.segments);
-  const ssSegments = useUnwrap ? barrelWallSegments(analysis, effective) : effective;
-  const unroll = useUnwrap
-    ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
-    : unrollChain(chain.calphas, { ssSegments });
-  const { layouts, totalArc } = useUnwrap
-    ? barrelLayout(unroll.segments, ssSegments)
-    : layoutSegments(unroll.segments, ssSegments);
+  const ssSegments = asm
+    ? asm.wallSegments
+    : analysis.cylindrical
+      ? barrelWallSegments(analysis, effective)
+      : effective;
+  const unroll: UnrollResult = asm
+    ? { segments: asm.segments, totalArcLength: 0, zMin: asm.zMin, zMax: asm.zMax }
+    : analysis.cylindrical
+      ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
+      : unrollChain(chain.calphas, { ssSegments });
+  const { layouts, totalArc } = asm
+    ? barrelLayout(unroll.segments, ssSegments, true)
+    : analysis.cylindrical
+      ? barrelLayout(unroll.segments, ssSegments)
+      : layoutSegments(unroll.segments, ssSegments);
+  // Per-segment focal flag (assembly only): neighbour protomers render faded.
+  const focalFlags = asm ? asm.focal : null;
 
   // In barrel mode, hairpin loops leave each strand parallel to it (long tangent
   // handles following the strand tilt) and skip the centred vertical-extreme
@@ -1086,7 +1181,12 @@ function renderChainSvg(
   svg.setAttribute('width', `${svgWidth}`);
   svg.setAttribute('height', `${svgHeight}`);
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', `Chain ${chain.chainId} membrane unrolling`);
+  svg.setAttribute(
+    'aria-label',
+    assembly
+      ? `Chain ${chain.chainId} highlighted in a ${assembly.analysis.strandCount}-strand assembly β-barrel`
+      : `Chain ${chain.chainId} membrane unrolling`,
+  );
 
   // Inner plot group with a transform that flips z so positive z is up and
   // applies the user-space scale. Inside this group, coordinates are (arc, z)
@@ -1127,10 +1227,12 @@ function renderChainSvg(
   mid.setAttribute('vector-effect', 'non-scaling-stroke');
   plot.appendChild(mid);
 
-  const barrel = isBetaBarrel(chain);
+  const barrel = asm !== null || isBetaBarrel(chain);
 
   // β-sheet contact ties, drawn first so the strand polygons sit on top of them.
-  if (showContacts && useUnwrap) drawContacts(plot, analysis, layouts);
+  // (Assembly barrels pool several chains that may share residue numbers, so the
+  // single-chain contact map doesn't apply.)
+  if (showContacts && useUnwrap && !asm) drawContacts(plot, analysis, layouts);
 
   // Labels group: same origin as `plot` but no scale, so text isn't
   // y-flipped or stretched by the plot transform. Appended after the plot
@@ -1149,8 +1251,11 @@ function renderChainSvg(
   // segmented by secondary structure type for colouring.
   for (let s = 0; s < layouts.length; s++) {
     const layout = layouts[s];
-    const hasBreakBefore = s > 0;
-    const hasBreakAfter = s < layouts.length - 1;
+    // In an assembly barrel each segment is a separate protomer (separate
+    // polypeptide), so there are no cross-segment loops and no leading/trailing
+    // coil stubs to absorb — every segment stands alone.
+    const hasBreakBefore = !asm && s > 0;
+    const hasBreakAfter = !asm && s < layouts.length - 1;
     drawSegment(
       plot,
       labelsGroup,
@@ -1161,11 +1266,13 @@ function renderChainSvg(
       loopOpts,
       hasBreakBefore,
       hasBreakAfter,
+      focalFlags ? !focalFlags[s] : false,
     );
     // Dashed connector across a chain break. Anchor at the nearest SS endpoint
     // on each side so that any trailing/leading coil in the adjacent segments is
     // absorbed into this single curve rather than appearing as a separate stub.
-    if (s > 0) {
+    // Assembly protomers are independent chains — no connector between them.
+    if (!asm && s > 0) {
       const prevLayout = layouts[s - 1];
       const lastSs = lastSsRunOf(prevLayout);
       const firstSs = firstSsRunOf(layout);
@@ -1238,23 +1345,42 @@ function drawSegment(
   opts: LoopRenderOptions,
   hasBreakBefore = false,
   hasBreakAfter = false,
+  faded = false,
 ): void {
   const { samples, residues, runs } = layout;
   for (let j = 0; j < runs.length; j++) {
     const run = runs[j];
     if (run.type === 'helix' || run.type === 'strand') {
       const withArrow = isBarrel && run.type === 'strand';
-      drawSsPolygon(plot, samples, run.startSample, run.endResSampleIdx, run.type, withArrow);
-      placeResidueLabel(labelsGroup, samples, run.startSample, run.startResSeq, true, placedBoxes);
-      if (run.endResSeq !== run.startResSeq) {
+      drawSsPolygon(
+        plot,
+        samples,
+        run.startSample,
+        run.endResSampleIdx,
+        run.type,
+        withArrow,
+        faded,
+      );
+      // Faded neighbouring protomers are context only — don't clutter with labels.
+      if (!faded) {
         placeResidueLabel(
           labelsGroup,
           samples,
-          run.endResSampleIdx,
-          run.endResSeq,
-          false,
+          run.startSample,
+          run.startResSeq,
+          true,
           placedBoxes,
         );
+        if (run.endResSeq !== run.startResSeq) {
+          placeResidueLabel(
+            labelsGroup,
+            samples,
+            run.endResSampleIdx,
+            run.endResSeq,
+            false,
+            placedBoxes,
+          );
+        }
       }
       continue;
     }
@@ -1267,7 +1393,7 @@ function drawSegment(
     // break — the cross-break connector will cover it to the next SS start.
     if (nextRun === null && hasBreakAfter) continue;
     const loopResidues = residues.slice(run.residueStart, run.residueEnd + 1);
-    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts);
+    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts, faded);
   }
 }
 
@@ -1808,10 +1934,36 @@ export class TopologyDisplay extends HTMLElement {
       chainLabelNode(selectedLabel),
       ` · ${selectedChain.residueCount} residues · ${helices} helices · ${strands} strands`,
     );
+
+    // If this chain isn't itself a barrel, it may be one protomer of a
+    // multi-chain assembly barrel (e.g. α-hemolysin's heptameric stem).
+    let assembly: AssemblyContext | undefined;
+    if (!analysis.cylindrical && chainsWithCoords.length > 1) {
+      const asmAnalysis = analyseAssemblyBarrel(chainsWithCoords);
+      const focalInRing = asmAnalysis.ringOrder.some(
+        (i) => asmAnalysis.strands[i].chainId === selectedChain.chainId,
+      );
+      if (asmAnalysis.cylindrical && focalInRing) {
+        assembly = {
+          chains: chainsWithCoords,
+          analysis: asmAnalysis,
+          focalChainId: selectedChain.chainId,
+        };
+      }
+    }
+
     if (analysis.cylindrical) {
       const shear = Number.isFinite(analysis.shear) ? `, shear ${Math.round(analysis.shear)}` : '';
       label.append(
         ` · β-barrel (${analysis.strandCount} strands${shear}, ${Math.round(analysis.tiltDeg)}° tilt)`,
+      );
+    } else if (assembly) {
+      const nChains = new Set(
+        assembly.analysis.ringOrder.map((i) => assembly!.analysis.strands[i].chainId),
+      ).size;
+      label.append(
+        ` · β-barrel (${assembly.analysis.strandCount} strands across ${nChains} chains, ` +
+          `${Math.round(assembly.analysis.tiltDeg)}° tilt)`,
       );
     }
     block.appendChild(label);
@@ -1823,7 +1975,7 @@ export class TopologyDisplay extends HTMLElement {
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
     scroll.appendChild(
-      renderChainSvg(selectedChain, this.loopOptions, analysis, this.showContacts),
+      renderChainSvg(selectedChain, this.loopOptions, analysis, this.showContacts, assembly),
     );
     block.appendChild(scroll);
     region.appendChild(block);
