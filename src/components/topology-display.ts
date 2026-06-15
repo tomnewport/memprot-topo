@@ -187,6 +187,13 @@ const BARREL = {
    * curving to the next, for a clean leaning hairpin rather than a vertical rise.
    */
   loopTangentPx: 14,
+  /**
+   * Residues of the focal protomer's chain to include each side of its stem in
+   * an assembly barrel, so the backbone visibly continues off the strand tops
+   * toward the extramembrane cap. Kept small so the cap stub stays near the
+   * membrane and doesn't blow up the z-range.
+   */
+  capHintResidues: 5,
 };
 
 /**
@@ -1098,7 +1105,11 @@ function unwrapAssembly(
     if (strandSegs.length === 0) continue;
     const lo = Math.min(...strandSegs.map((s) => s.start));
     const hi = Math.max(...strandSegs.map((s) => s.end));
-    const stem = chain.calphas.filter((c) => c.resSeq >= lo && c.resSeq <= hi);
+    // For the focal protomer, include a few cap-proximal residues each side of
+    // the stem so the chain visibly continues off the strand tops toward the
+    // extramembrane cap — a hint that the barrel is part of a larger fold.
+    const margin = cid === focalChainId ? BARREL.capHintResidues : 0;
+    const stem = chain.calphas.filter((c) => c.resSeq >= lo - margin && c.resSeq <= hi + margin);
     const ssSegs = strandSegs.map((s) => ({ ...s }));
     for (const s of ssSegs) wallSet.set(`${s.start}-${s.end}`, s);
     const u = unwrapBarrel(stem, { ssSegments: ssSegs, centre: analysis.centre });
