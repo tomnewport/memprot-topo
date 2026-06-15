@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { extractStrands, pairStrands, analyseBarrel } from '../../../src/contacts/beta-sheet.js';
-import type { Calpha, SecondaryStructureSegment } from '../../../src/types.js';
+import {
+  extractStrands,
+  pairStrands,
+  analyseBarrel,
+  analyseAssemblyBarrel,
+} from '../../../src/contacts/beta-sheet.js';
+import type { Calpha, ChainData, SecondaryStructureSegment } from '../../../src/types.js';
 import { syntheticBarrel } from '../fixtures/barrel.js';
 
 /** Two parallel vertical strands a fixed distance apart in x (planar sheet). */
@@ -144,5 +149,45 @@ describe('analyseBarrel', () => {
     const a = analyseBarrel([], []);
     expect(a.cylindrical).toBe(false);
     expect(a.strands).toHaveLength(0);
+  });
+});
+
+describe('analyseAssemblyBarrel', () => {
+  // Split one barrel's strands across several chains (like α-hemolysin's
+  // heptamer): each chain carries a contiguous slice of the residues, so no
+  // single chain is a closed barrel, but pooled they are.
+  function splitIntoChains(chain: ChainData, parts: number): ChainData[] {
+    const per = Math.ceil(chain.residueCount / parts);
+    const chains: ChainData[] = [];
+    for (let p = 0; p < parts; p++) {
+      const lo = p * per + 1;
+      const hi = Math.min((p + 1) * per, chain.residueCount);
+      const calphas = chain.calphas.filter((c) => c.resSeq >= lo && c.resSeq <= hi);
+      const segments = chain.segments
+        .filter((s) => s.start >= lo && s.end <= hi)
+        .map((s) => ({ ...s }));
+      if (calphas.length) {
+        chains.push({
+          chainId: String.fromCharCode(65 + p),
+          residueCount: calphas.length,
+          segments,
+          calphas,
+        });
+      }
+    }
+    return chains;
+  }
+
+  it('detects a barrel pooled across chains that no single chain forms', () => {
+    const chains = splitIntoChains(syntheticBarrel({ n: 8 }), 4);
+    // Each chain alone has too few strands to be a barrel…
+    for (const c of chains) expect(analyseBarrel(c.calphas, c.segments).cylindrical).toBe(false);
+    // …but pooled they close the cylinder.
+    const a = analyseAssemblyBarrel(chains);
+    expect(a.cylindrical).toBe(true);
+    expect(a.strandCount).toBe(8);
+    expect(a.ringOrder).toHaveLength(8);
+    // Ring strands are tagged with their source chain.
+    expect(a.ringOrder.every((i) => a.strands[i].chainId !== undefined)).toBe(true);
   });
 });

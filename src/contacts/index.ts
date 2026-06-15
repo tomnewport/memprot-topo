@@ -1,4 +1,11 @@
-export { extractStrands, pairStrands, analyseBarrel } from './beta-sheet.js';
+export {
+  extractStrands,
+  pairStrands,
+  analyseBarrel,
+  analyseStrandSet,
+  extractAssemblyStrands,
+  analyseAssemblyBarrel,
+} from './beta-sheet.js';
 export type {
   Vec3,
   Strand,

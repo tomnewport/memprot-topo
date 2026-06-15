@@ -34,7 +34,7 @@
  * barrel axis is taken to be z and the analysis is expressed relative to it.
  */
 
-import type { Calpha, SecondaryStructureSegment } from '../types.js';
+import type { Calpha, ChainData, SecondaryStructureSegment } from '../types.js';
 
 export interface Vec3 {
   x: number;
@@ -51,6 +51,8 @@ export interface Strand {
   centroid: Vec3;
   /** Unit axis direction, oriented from the first to the last residue. */
   axis: Vec3;
+  /** Chain this strand belongs to (set for multi-chain assembly analysis). */
+  chainId?: string;
 }
 
 /** A residue–residue Cα contact across a strand pair. */
@@ -419,7 +421,19 @@ export function analyseBarrel(
   segments: SecondaryStructureSegment[],
   options: BarrelAnalysisOptions = {},
 ): BarrelAnalysis {
-  const strands = extractStrands(calphas, segments);
+  return analyseStrandSet(extractStrands(calphas, segments), options);
+}
+
+/**
+ * Analyse a pre-extracted set of β-strands (which may come from several chains,
+ * each tagged with its `chainId`): pair them, recover ring order, and report the
+ * barrel frame. Shared by single-chain {@link analyseBarrel} and the multi-chain
+ * {@link analyseAssemblyBarrel}.
+ */
+export function analyseStrandSet(
+  strands: Strand[],
+  options: BarrelAnalysisOptions = {},
+): BarrelAnalysis {
   const pairings = pairStrands(strands, options);
   const axis: Vec3 = { x: 0, y: 0, z: 1 };
 
@@ -515,4 +529,31 @@ export function analyseBarrel(
     radius,
     cylindrical,
   };
+}
+
+/**
+ * Extract β-strands from several chains, each tagged with its `chainId` and
+ * given a unique global index, so they can be pooled and analysed together.
+ */
+export function extractAssemblyStrands(chains: ChainData[]): Strand[] {
+  const all: Strand[] = [];
+  for (const chain of chains) {
+    for (const s of extractStrands(chain.calphas, chain.segments)) {
+      all.push({ ...s, index: all.length, chainId: chain.chainId });
+    }
+  }
+  return all;
+}
+
+/**
+ * Detect a β-barrel formed across several chains — e.g. α-hemolysin's heptameric
+ * stem, where each protomer donates a β-hairpin to one shared 14-stranded
+ * barrel. Pools the strands from every chain onto one cylinder and analyses them
+ * together; the returned ring strands carry their `chainId`.
+ */
+export function analyseAssemblyBarrel(
+  chains: ChainData[],
+  options: BarrelAnalysisOptions = {},
+): BarrelAnalysis {
+  return analyseStrandSet(extractAssemblyStrands(chains), options);
 }

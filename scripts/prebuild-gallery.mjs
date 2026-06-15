@@ -18,11 +18,13 @@ import { PROTEINS } from './gallery-data.mjs';
 // proteins we fall back to hand-curated TM segment ranges so the topology
 // display still has secondary structure to work with.
 const FALLBACK_SEGMENTS = {
+  // α-hemolysin (7ahl) OPM has no SHEET records. Each protomer contributes a
+  // membrane-spanning β-hairpin to the shared 14-stranded stem barrel: strand 1
+  // descends (~119–128) to the membrane-distal tip (turn ~129) and strand 2
+  // ascends (~130–141) back to the cap. The cap β-sandwich is left as coil.
   '7ahl': [
-    { start: 106, end: 116, type: 'strand' },
-    { start: 124, end: 134, type: 'strand' },
-    { start: 256, end: 266, type: 'strand' },
-    { start: 274, end: 284, type: 'strand' },
+    { start: 119, end: 128, type: 'strand' },
+    { start: 130, end: 141, type: 'strand' },
   ],
 };
 
