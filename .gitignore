@@ -12,3 +12,7 @@ playwright-report/
 test-results/
 preview-*.svg
 preview-*.png
+
+# Local preview/screenshot artifacts (never committed)
+/*.svg
+/*.png

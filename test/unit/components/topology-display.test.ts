@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
 import type { ProteinData, ChainData } from '../../../src/types.js';
+import { syntheticBarrel } from '../fixtures/barrel.js';
 
 function tmHelixProtein(): ProteinData {
   // 28-residue chain: idealised TM helix with z spanning -20 → +20, then a
@@ -727,5 +728,219 @@ describe('TopologyDisplay live attribute updates', () => {
     attach(el);
     // connectedCallback triggers render() after the element is inserted
     expect(el.shadowRoot!.querySelector('.svg-scroll svg')).not.toBeNull();
+  });
+});
+
+describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
+  const mounted: HTMLElement[] = [];
+  function mount(protein: ProteinData, attrs: Record<string, string> = {}): TopologyDisplay {
+    const el = new TopologyDisplay();
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    document.body.appendChild(el);
+    mounted.push(el);
+    el.proteinData = protein;
+    return el;
+  }
+  afterEach(() => {
+    for (const el of mounted) el.remove();
+    mounted.length = 0;
+  });
+
+  function barrelProtein(): ProteinData {
+    return { pdbId: 'barl', chains: [syntheticBarrel({ n: 8 })] };
+  }
+
+  it('annotates the chain label with the detected barrel geometry', () => {
+    const el = mount(barrelProtein());
+    const label = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
+    expect(label).toContain('β-barrel');
+    expect(label).toContain('8 strands');
+  });
+
+  it('draws one arrowed strand polygon per strand of the barrel', () => {
+    const el = mount(barrelProtein());
+    const strandPolys = Array.from(
+      el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'),
+    ).filter((p) => p.getAttribute('fill') === '#6ea76d');
+    expect(strandPolys.length).toBe(8);
+    // Arrowheads give an odd vertex count > 5.
+    for (const poly of strandPolys) {
+      const count = (poly.getAttribute('points') ?? '').trim().split(/\s+/).length;
+      expect(count % 2).toBe(1);
+    }
+  });
+
+  it('renders the barrel strands parallel (consistent slant, not a chevron)', () => {
+    // Each strand polygon's principal axis should share the same slant sign;
+    // a cumulative-arc unroll would alternate the sign between up/down strands.
+    const el = mount(barrelProtein());
+    const strandPolys = Array.from(
+      el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'),
+    ).filter((p) => p.getAttribute('fill') === '#6ea76d');
+
+    const slantSigns = strandPolys.map((poly) => {
+      const verts = (poly.getAttribute('points') ?? '')
+        .trim()
+        .split(/\s+/)
+        .map((pt) => pt.split(',').map(Number));
+      let minY = Infinity;
+      let maxY = -Infinity;
+      let xAtMin = 0;
+      let xAtMax = 0;
+      for (const [x, y] of verts) {
+        if (y < minY) {
+          minY = y;
+          xAtMin = x;
+        }
+        if (y > maxY) {
+          maxY = y;
+          xAtMax = x;
+        }
+      }
+      return Math.sign(xAtMax - xAtMin);
+    });
+    // All strands lean the same way.
+    expect(new Set(slantSigns).size).toBe(1);
+  });
+
+  it('overlays β-sheet contact ties only when show-contacts is enabled', () => {
+    const off = mount(barrelProtein());
+    expect(off.shadowRoot!.querySelectorAll('.contact-ties line').length).toBe(0);
+
+    const on = mount(barrelProtein(), { 'show-contacts': 'on' });
+    expect(on.shadowRoot!.querySelectorAll('.contact-ties line').length).toBeGreaterThan(0);
+  });
+
+  /** Strand polygons' vertex lists (x,y user-space coords) in document order. */
+  function strandVerts(el: TopologyDisplay): number[][][] {
+    return Array.from(el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'))
+      .filter((p) => p.getAttribute('fill') === '#6ea76d')
+      .map((p) =>
+        (p.getAttribute('points') ?? '')
+          .trim()
+          .split(/\s+/)
+          .map((pt) => pt.split(',').map(Number)),
+      );
+  }
+
+  function minVertexDistance(a: number[][], b: number[][]): number {
+    let m = Infinity;
+    for (const [ax, ay] of a)
+      for (const [bx, by] of b) m = Math.min(m, Math.hypot(ax - bx, ay - by));
+    return m;
+  }
+
+  it('never draws strands tangled — strand centres advance and no two strands overlap', () => {
+    const polys = strandVerts(mount(barrelProtein()));
+    // Centres strictly left-to-right (no strand slid back over an earlier one).
+    let prev = -Infinity;
+    for (const v of polys) {
+      const xs = v.map((p) => p[0]);
+      const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+      expect(centre).toBeGreaterThan(prev);
+      prev = centre;
+    }
+    // No two strand polygons come within touching distance of each other.
+    for (let i = 0; i < polys.length; i++)
+      for (let j = i + 1; j < polys.length; j++)
+        expect(minVertexDistance(polys[i], polys[j])).toBeGreaterThan(0.5);
+  });
+
+  it('keeps strands untangled when a floating loop helix sits between them', () => {
+    // OmpF's L-loop helix sits ~28 Å above the membrane, sharing no z-overlap
+    // with the strands. Packing each element against all previously placed ones
+    // (not just the immediately previous) stops it from shoving a strand back
+    // over an earlier strand.
+    const chain = syntheticBarrel({ n: 8, loopHelixAfterStrand: 0, loopHelixZ: 28 });
+    const el = mount({ pdbId: 'barh', chains: [chain] });
+    const polys = strandVerts(el);
+    expect(polys.length).toBe(8);
+    let prev = -Infinity;
+    for (const v of polys) {
+      const xs = v.map((p) => p[0]);
+      const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+      expect(centre).toBeGreaterThan(prev);
+      prev = centre;
+    }
+    for (let i = 0; i < polys.length; i++)
+      for (let j = i + 1; j < polys.length; j++)
+        expect(minVertexDistance(polys[i], polys[j])).toBeGreaterThan(0.5);
+  });
+
+  it('keeps every helix within the strand span (never flung off on a giant loop)', () => {
+    // A helix must not be placed left of the first strand or right of the last:
+    // the ordering rule stops an element binding to a far-back strand and being
+    // flung backwards on a huge loop to it.
+    const chain = syntheticBarrel({ n: 8, loopHelixAfterStrand: 3, loopHelixZ: 18 });
+    const el = mount({ pdbId: 'barhx', chains: [chain] });
+    const strandCentres = strandVerts(el).map((v) => {
+      const xs = v.map((p) => p[0]);
+      return (Math.min(...xs) + Math.max(...xs)) / 2;
+    });
+    const lo = Math.min(...strandCentres);
+    const hi = Math.max(...strandCentres);
+    const helixCentres = Array.from(el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'))
+      .filter((p) => p.getAttribute('fill') === '#6e8db6')
+      .map((p) => {
+        const xs = (p.getAttribute('points') ?? '')
+          .trim()
+          .split(/\s+/)
+          .map((pt) => Number(pt.split(',')[0]));
+        return (Math.min(...xs) + Math.max(...xs)) / 2;
+      });
+    for (const c of helixCentres) {
+      expect(c).toBeGreaterThanOrEqual(lo);
+      expect(c).toBeLessThanOrEqual(hi);
+    }
+  });
+
+  it('lays helices out forwards — lowest residue number on the left', () => {
+    // Every non-barrel element should read N→C left-to-right (only alternate
+    // barrel strands may run backwards).
+    const chain = syntheticBarrel({ n: 8, loopHelixAfterStrand: 3, loopHelixZ: 4 });
+    const helix = chain.segments.find((s) => s.type === 'helix')!;
+    const el = mount({ pdbId: 'barfwd', chains: [chain] });
+    const labelX = new Map<number, number>();
+    for (const t of el.shadowRoot!.querySelectorAll('.svg-scroll svg text')) {
+      labelX.set(Number(t.textContent), Number(t.getAttribute('x')));
+    }
+    const startX = labelX.get(helix.start);
+    const endX = labelX.get(helix.end);
+    expect(startX).toBeDefined();
+    expect(endX).toBeDefined();
+    expect(endX!).toBeGreaterThanOrEqual(startX!);
+  });
+
+  it('renders a multi-chain assembly barrel with the focal protomer highlighted', () => {
+    // Split one 8-strand barrel into 4 two-strand "protomers" (no single chain
+    // is a barrel), like α-hemolysin's heptamer.
+    const full = syntheticBarrel({ n: 8 });
+    const per = Math.ceil(full.residueCount / 4);
+    const chains: ChainData[] = [];
+    for (let p = 0; p < 4; p++) {
+      const lo = p * per + 1;
+      const hi = Math.min((p + 1) * per, full.residueCount);
+      const calphas = full.calphas.filter((c) => c.resSeq >= lo && c.resSeq <= hi);
+      const segments = full.segments
+        .filter((s) => s.start >= lo && s.end <= hi)
+        .map((s) => ({ ...s }));
+      chains.push({
+        chainId: String.fromCharCode(65 + p),
+        residueCount: calphas.length,
+        segments,
+        calphas,
+      });
+    }
+    const el = mount({ pdbId: 'asm', chains });
+
+    expect(el.shadowRoot!.querySelector('.chain-label')!.textContent).toContain('across 4 chains');
+    const strandPolys = Array.from(
+      el.shadowRoot!.querySelectorAll('.svg-scroll svg polygon'),
+    ).filter((p) => p.getAttribute('fill') === '#6ea76d');
+    expect(strandPolys.length).toBe(8); // all 8 strands of the assembly drawn
+    const faded = strandPolys.filter((p) => p.getAttribute('opacity') === '0.32');
+    // Some strands faded (neighbours) and some solid (focal protomer).
+    expect(faded.length).toBeGreaterThan(0);
+    expect(faded.length).toBeLessThan(strandPolys.length);
   });
 });

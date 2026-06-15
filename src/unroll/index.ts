@@ -11,3 +11,5 @@ export type { Vec, SampledCurve, CubicBezier, BezierPath } from './catmull-rom.j
 export { fitBSpline, evaluateBSpline, sampleBSpline } from './bspline.js';
 export type { FittedBSpline } from './bspline.js';
 export { projectHelixAxis } from './helix-axis.js';
+export { unwrapBarrel } from './barrel.js';
+export type { UnwrapBarrelOptions } from './barrel.js';

@@ -8,9 +8,10 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 
 ## Component Status
 
-| Component    | Status | Notes                     |
-| ------------ | ------ | ------------------------- |
-| _(none yet)_ | —      | No domain code exists yet |
+| Component              | Status       | Notes                                                                             |
+| ---------------------- | ------------ | --------------------------------------------------------------------------------- |
+| `src/contacts/`        | AI-generated | β-sheet partner detection and β-barrel geometry (n, shear, tilt). Human-reviewed. |
+| `src/unroll/barrel.ts` | AI-generated | Cylindrical unwrap so barrel strands render parallel (issue #12). Human-reviewed. |
 
 ## Disclosure Guidelines
 
