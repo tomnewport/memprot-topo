@@ -180,6 +180,12 @@ const BARREL = {
    * nudged further only if it would otherwise crowd something.
    */
   transitionGapWidths: 4,
+  /**
+   * Tangent-handle length (screen px) for barrel hairpin loops. Long enough that
+   * the loop leaves each strand parallel to it (following the tilt) before
+   * curving to the next, for a clean leaning hairpin rather than a vertical rise.
+   */
+  loopTangentPx: 14,
 };
 
 /**
@@ -545,6 +551,12 @@ interface LoopRenderOptions {
   extremePoints: boolean;
   /** Fraction of the tangent-points' z-range beyond which extreme points appear. */
   extremeThreshold: number;
+  /**
+   * Tangent-handle length (screen px) for the loop's end control points.
+   * Longer handles make the loop leave parallel to the SS element it exits
+   * (used for barrel hairpins). Defaults to {@link LOOP.tangentMagPx}.
+   */
+  tangentMagPx?: number;
 }
 
 /** One end of a loop: the samples array and the boundary sample index within it. */
@@ -580,7 +592,7 @@ function buildLoopPoints(
   extreme: LoopExtreme | null,
   opts: LoopRenderOptions,
 ): LoopControlPoint[] {
-  const magA = LOOP.tangentMagPx / PLOT.arcPxPerA;
+  const magA = (opts.tangentMagPx ?? LOOP.tangentMagPx) / PLOT.arcPxPerA;
   const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
   const extremeSpacingA = LOOP.extremeSpacingPx / PLOT.arcPxPerA;
 
@@ -1051,6 +1063,13 @@ function renderChainSvg(
     ? barrelLayout(unroll.segments, ssSegments)
     : layoutSegments(unroll.segments, ssSegments);
 
+  // In barrel mode, hairpin loops leave each strand parallel to it (long tangent
+  // handles following the strand tilt) and skip the centred vertical-extreme
+  // points, so they lean over cleanly instead of rising straight up.
+  const loopOpts: LoopRenderOptions = useUnwrap
+    ? { ...opts, extremePoints: false, tangentMagPx: BARREL.loopTangentPx }
+    : opts;
+
   const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
   const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
   const plotHeight = zRange * 2 * PLOT.zPxPerA;
@@ -1139,7 +1158,7 @@ function renderChainSvg(
       layout,
       barrel,
       placedBoxes,
-      opts,
+      loopOpts,
       hasBreakBefore,
       hasBreakAfter,
     );
@@ -1156,8 +1175,8 @@ function renderChainSvg(
       const next: LoopEnd = firstSs
         ? { samples: layout.samples, index: firstSs.startSample }
         : { samples: layout.samples, index: 0 };
-      const points = buildLoopPoints(prev, next, null, opts);
-      renderLoopCurve(plot, markersGroup, points, true, opts.showPoints);
+      const points = buildLoopPoints(prev, next, null, loopOpts);
+      renderLoopCurve(plot, markersGroup, points, true, loopOpts.showPoints);
     }
   }
 
