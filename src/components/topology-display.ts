@@ -1029,9 +1029,14 @@ function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: Segm
   for (const layout of layouts) {
     for (const r of layout.residues) pos.set(r.resSeq, { arc: r.arc, z: r.z });
   }
+  // Only tie pairings between barrel-wall (ring) strands. Strands that fold
+  // inside the barrel render as coil at an unreliable arc near the axis, so a
+  // tie to them would land at an arbitrary position and read oddly.
+  const ring = new Set(analysis.ringOrder);
   const group = document.createElementNS(SVG_NS, 'g');
   group.setAttribute('class', 'contact-ties');
   for (const pairing of analysis.pairings) {
+    if (!ring.has(pairing.a) || !ring.has(pairing.b)) continue;
     for (const c of pairing.contacts) {
       const a = pos.get(c.aResSeq);
       const b = pos.get(c.bResSeq);
@@ -1754,6 +1759,19 @@ export class TopologyDisplay extends HTMLElement {
   private _selectedChainId: string | null = null;
   private _styleEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
+  // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
+  // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
+  private _assemblyCache: { data: ProteinData; analysis: BarrelAnalysis } | null = null;
+
+  /** Assembly-barrel analysis for the current proteinData, memoised. */
+  private assemblyAnalysis(chains: ChainData[]): BarrelAnalysis {
+    if (this._assemblyCache && this._assemblyCache.data === this._data) {
+      return this._assemblyCache.analysis;
+    }
+    const analysis = analyseAssemblyBarrel(chains);
+    if (this._data) this._assemblyCache = { data: this._data, analysis };
+    return analysis;
+  }
 
   constructor() {
     super();
@@ -1950,7 +1968,7 @@ export class TopologyDisplay extends HTMLElement {
     // multi-chain assembly barrel (e.g. α-hemolysin's heptameric stem).
     let assembly: AssemblyContext | undefined;
     if (!analysis.cylindrical && chainsWithCoords.length > 1) {
-      const asmAnalysis = analyseAssemblyBarrel(chainsWithCoords);
+      const asmAnalysis = this.assemblyAnalysis(chainsWithCoords);
       const focalInRing = asmAnalysis.ringOrder.some(
         (i) => asmAnalysis.strands[i].chainId === selectedChain.chainId,
       );
