@@ -483,15 +483,20 @@ function drawSsPolygon(
         screen[baseSegEnd - 1].sx + baseFrac * (screen[baseSegEnd].sx - screen[baseSegEnd - 1].sx);
       baseSy =
         screen[baseSegEnd - 1].sy + baseFrac * (screen[baseSegEnd].sy - screen[baseSegEnd - 1].sy);
-      let btx = (1 - baseFrac) * tx[baseSegEnd - 1] + baseFrac * tx[baseSegEnd];
-      let bty = (1 - baseFrac) * ty[baseSegEnd - 1] + baseFrac * ty[baseSegEnd];
-      const btLen = Math.sqrt(btx * btx + bty * bty);
-      if (btLen > 1e-9) {
-        btx /= btLen;
-        bty /= btLen;
+      // Use base-to-tip direction for the arrowhead perpendicular rather than
+      // the interpolated local tangent.  The B-spline endpoint tangent can flip
+      // sign for real protein data (the unconstrained interior control point can
+      // overshoot the clamped endpoint), which makes basePx point the wrong way
+      // and self-intersects the polygon.  The base-to-tip vector is always in
+      // the correct half-space because the base was found by walking backward
+      // from the tip.
+      const atx = screen[lastIdx].sx - baseSx;
+      const aty = screen[lastIdx].sy - baseSy;
+      const atLen = Math.sqrt(atx * atx + aty * aty);
+      if (atLen > 1e-9) {
+        basePx = -aty / atLen;
+        basePy = atx / atLen;
       }
-      basePx = -bty;
-      basePy = btx;
     }
   }
 
