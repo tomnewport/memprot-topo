@@ -449,6 +449,11 @@ function drawSsPolygon(
   let baseSy = screen[lastIdx].sy;
   let basePx = -ty[lastIdx];
   let basePy = tx[lastIdx];
+  // Arrowhead apex. Defaults to the final sample, but for a normal body+arrow it
+  // is slid onto the body axis (see below) so the head stays aligned with the
+  // strand instead of chasing the noisy terminal Cα.
+  let tipSx = screen[lastIdx].sx;
+  let tipSy = screen[lastIdx].sy;
 
   if (withArrow) {
     let remaining = arrowLen;
@@ -471,31 +476,44 @@ function drawSsPolygon(
 
     if (walkedOff) {
       // Strand shorter than the arrow length — collapse body to a single point
-      // at the start and render as a pure arrowhead from start to tip.
+      // at the start and render as a pure arrowhead from start to tip. With no
+      // body to align to, aim the head straight from the start at the real tip.
       bodyLast = -1;
       baseSx = screen[0].sx;
       baseSy = screen[0].sy;
-      basePx = -ty[0];
-      basePy = tx[0];
+      const ax = tipSx - baseSx;
+      const ay = tipSy - baseSy;
+      const aLen = Math.sqrt(ax * ax + ay * ay);
+      if (aLen > 1e-9) {
+        basePx = -ay / aLen;
+        basePy = ax / aLen;
+      }
     } else {
       bodyLast = baseSegEnd - 1;
       baseSx =
         screen[baseSegEnd - 1].sx + baseFrac * (screen[baseSegEnd].sx - screen[baseSegEnd - 1].sx);
       baseSy =
         screen[baseSegEnd - 1].sy + baseFrac * (screen[baseSegEnd].sy - screen[baseSegEnd - 1].sy);
-      // Use base-to-tip direction for the arrowhead perpendicular rather than
-      // the interpolated local tangent.  The B-spline endpoint tangent can flip
-      // sign for real protein data (the unconstrained interior control point can
-      // overshoot the clamped endpoint), which makes basePx point the wrong way
-      // and self-intersects the polygon.  The base-to-tip vector is always in
-      // the correct half-space because the base was found by walking backward
-      // from the tip.
-      const atx = screen[lastIdx].sx - baseSx;
-      const aty = screen[lastIdx].sy - baseSy;
-      const atLen = Math.sqrt(atx * atx + aty * aty);
-      if (atLen > 1e-9) {
-        basePx = -aty / atLen;
-        basePy = atx / atLen;
+      // Align the arrowhead with the smoothed body axis at the base rather than
+      // aiming it at the final sample. The terminal Cα is projected with a
+      // one-sided window during unrolling, so it often lands a little off the
+      // strand axis; pointing the head at it swings the whole arrowhead away
+      // from the body (a sharp, unnatural "turn" at the tip) and notches the
+      // body↔head join. `tx/ty[bodyLast]` is an interior, two-sided tangent and
+      // is stable. We keep the apex on that axis, at the strand's true axial
+      // reach (the on-axis projection of the real tip), so the head reads as a
+      // clean continuation of the strand.
+      let dx = tx[bodyLast];
+      let dy = ty[bodyLast];
+      const dLen = Math.sqrt(dx * dx + dy * dy);
+      if (dLen > 1e-9) {
+        dx /= dLen;
+        dy /= dLen;
+        const axial = (screen[lastIdx].sx - baseSx) * dx + (screen[lastIdx].sy - baseSy) * dy;
+        tipSx = baseSx + axial * dx;
+        tipSy = baseSy + axial * dy;
+        basePx = -dy;
+        basePy = dx;
       }
     }
   }
@@ -512,7 +530,7 @@ function drawSsPolygon(
   if (withArrow) {
     vertsS.push([baseSx + halfW * basePx, baseSy + halfW * basePy]);
     vertsS.push([baseSx + arrowHalfW * basePx, baseSy + arrowHalfW * basePy]);
-    vertsS.push([screen[lastIdx].sx, screen[lastIdx].sy]);
+    vertsS.push([tipSx, tipSy]);
     vertsS.push([baseSx - arrowHalfW * basePx, baseSy - arrowHalfW * basePy]);
     vertsS.push([baseSx - halfW * basePx, baseSy - halfW * basePy]);
   }

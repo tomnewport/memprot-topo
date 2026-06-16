@@ -1,71 +1,77 @@
-import { describe, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { TopologyDisplay } from '../../src/components/topology-display.js';
 import { syntheticBarrel } from './fixtures/barrel.js';
+import type { ChainData } from '../../src/types.js';
 
-describe('debug polygon', () => {
-  it('prints arrowhead vertices for n=16 barrel (2omf-like)', () => {
+// Add per-atom jitter to a synthetic barrel to simulate the off-axis terminal
+// Cα positions that occur in real proteins (β-pleat projection is only partial).
+function jitter(chain: ChainData, amp: number): ChainData {
+  let seed = 99173;
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed / 0x7fffffff - 0.5) * 2 * amp;
+  };
+  return {
+    ...chain,
+    calphas: chain.calphas.map((c) => ({ ...c, x: c.x + rnd(), y: c.y + rnd(), z: c.z + rnd() })),
+  };
+}
+
+// Measure the angle between the body axis (body-last -> arrowhead base) and the
+// arrowhead axis (base -> apex). A well-formed arrowhead has this close to 0 degrees.
+function maxApexSkewDeg(el: TopologyDisplay): number {
+  const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+  const polys = Array.from(svg!.querySelectorAll('polygon')).filter(
+    (p) => p.getAttribute('fill') === '#6ea76d',
+  );
+  let worst = 0;
+  for (const poly of polys) {
+    const pts = poly
+      .getAttribute('points')!
+      .trim()
+      .split(/\s+/)
+      .map((p) => p.split(',').map(Number));
+    const n = pts.length;
+    const arrowStart = (n - 5) >> 1;
+    if (arrowStart < 1) continue;
+    const bodyLastLeft = pts[arrowStart - 1];
+    const leftShoulder = pts[arrowStart];
+    const tip = pts[arrowStart + 2];
+    const rightShoulder = pts[arrowStart + 4];
+    const bodyLastRight = pts[n - arrowStart];
+    const baseC = [
+      (leftShoulder[0] + rightShoulder[0]) / 2,
+      (leftShoulder[1] + rightShoulder[1]) / 2,
+    ];
+    const bodyC = [
+      (bodyLastLeft[0] + bodyLastRight[0]) / 2,
+      (bodyLastLeft[1] + bodyLastRight[1]) / 2,
+    ];
+    const ax = baseC[0] - bodyC[0];
+    const az = baseC[1] - bodyC[1];
+    const aLen = Math.hypot(ax, az) || 1;
+    const tx = tip[0] - baseC[0];
+    const tz = tip[1] - baseC[1];
+    const tLen = Math.hypot(tx, tz) || 1;
+    const cos = (ax * tx + az * tz) / (aLen * tLen);
+    const deg = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
+    if (deg > worst) worst = deg;
+  }
+  return worst;
+}
+
+describe('arrowhead geometry', () => {
+  it('apex stays aligned with the body axis under realistic Ca jitter', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
-    // 2omf has 16 strands per monomer, tilted ~40 degrees
+    // 11-residue, 40 degree-tilt strands with 0.8 A rms jitter -- matches real
+    // protein backbone deviation from the ideal strand axis after pleat projection.
     el.proteinData = {
       pdbId: 'barl',
-      chains: [syntheticBarrel({ n: 16, tiltDeg: 40, strandLen: 16 })],
+      chains: [jitter(syntheticBarrel({ n: 16, tiltDeg: 40, strandLen: 11 }), 0.8)],
     };
-
-    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
-    const polys = Array.from(svg!.querySelectorAll('polygon')).filter(
-      (p) => p.getAttribute('fill') === '#6ea76d',
-    );
-
-    for (let i = 0; i < Math.min(4, polys.length); i++) {
-      const pts = polys[i]
-        .getAttribute('points')!
-        .trim()
-        .split(/\s+/)
-        .map((p) => p.split(',').map(Number));
-      const n = pts.length;
-      const arrowStart = (n - 5) >> 1; // bodyLast + 1 is arrowStart
-      console.log(`Strand ${i}: ${n} vertices, arrowhead at [${arrowStart}..${arrowStart + 4}]`);
-      // Print last 2 body vertices, all 5 arrowhead cap vertices, first 2 body-right vertices
-      for (let j = arrowStart - 2; j <= arrowStart + 6; j++) {
-        if (j < 0 || j >= n) continue;
-        const v = pts[j];
-        const labels: Record<number, string> = {
-          [arrowStart]: '← left shoulder',
-          [arrowStart + 1]: '← left wing',
-          [arrowStart + 2]: '← TIP',
-          [arrowStart + 3]: '← right wing',
-          [arrowStart + 4]: '← right shoulder',
-          [arrowStart + 5]: '← body right (bodyLast)',
-        };
-        const label = labels[j] ?? '';
-        console.log(`  [${j}] arc=${v[0].toFixed(3)}, z=${v[1].toFixed(3)}${label}`);
-      }
-
-      // Check if arrowhead is self-intersecting by checking wing positions vs body
-      const bodyLastLeft = pts[arrowStart - 1];
-      const leftShoulder = pts[arrowStart];
-      const leftWing = pts[arrowStart + 1];
-      const tip = pts[arrowStart + 2];
-      const bodyLastRight = pts[arrowStart + 5];
-
-      // The TIP should be "further along" the strand direction from the base
-      // Check by seeing if the strand direction from base is consistent with tip
-      const bodyCenter_arc = (bodyLastLeft[0] + bodyLastRight[0]) / 2;
-      const bodyCenter_z = (bodyLastLeft[1] + bodyLastRight[1]) / 2;
-      console.log(
-        `  Body center at bodyLast: arc=${bodyCenter_arc.toFixed(3)}, z=${bodyCenter_z.toFixed(3)}`,
-      );
-      console.log(`  TIP: arc=${tip[0].toFixed(3)}, z=${tip[1].toFixed(3)}`);
-      console.log(
-        `  Left-shoulder to left-wing delta: darc=${(leftWing[0] - leftShoulder[0]).toFixed(3)}, dz=${(leftWing[1] - leftShoulder[1]).toFixed(3)}`,
-      );
-      console.log(
-        `  Left-wing to TIP delta: darc=${(tip[0] - leftWing[0]).toFixed(3)}, dz=${(tip[1] - leftWing[1]).toFixed(3)}`,
-      );
-      console.log();
-    }
-
+    const skew = maxApexSkewDeg(el);
+    expect(skew).toBeLessThan(2);
     el.remove();
   });
 });
