@@ -64,21 +64,14 @@ export class SpikeView {
     this.scene.background = new THREE.Color(0xf4f6f8);
     this.scene.add(this.group);
 
-    this.camera = new THREE.PerspectiveCamera(8, 1, 0.1, 50000);
-    // Default to a gentle 3/4 view (azimuth ~30°, elevation ~14°) so the rolled
-    // structure reads as 3-D; per-frame framing only rescales the distance, so
-    // this orientation (and any the user orbits to) is preserved.
-    const az = THREE.MathUtils.degToRad(30);
-    const el = THREE.MathUtils.degToRad(14);
-    this.camera.position.set(
-      Math.sin(az) * Math.cos(el),
-      Math.sin(el),
-      Math.cos(az) * Math.cos(el),
-    );
+    this.camera = new THREE.PerspectiveCamera(8, 1, 0.1, 200000);
 
+    // OrbitControls is only enabled once fully rolled (t === 1); while morphing,
+    // the camera is driven from t so the 2-D end stays locked dead-on.
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.target.set(0, 0, 0);
+    this.controls.enabled = false;
 
     // Lighting: soft ambient + two directionals for shape readability.
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.65));
@@ -206,16 +199,31 @@ export class SpikeView {
 
   /** Recompute morphed centrelines and rebuild swept geometry positions. */
   private updateMorph(): void {
+    const barrel = this.topo?.kind === 'barrel';
     for (const el of this.elements) {
-      const pts = el.flat.map((f, i) => {
-        const local = THREE.MathUtils.clamp(
-          (this.t * (1 + WAVEFRONT) - el.arcFrac[i]) / WAVEFRONT,
-          0,
-          1,
+      const pts: THREE.Vector3[] = [];
+      const faces: THREE.Vector3[] = [];
+      for (let i = 0; i < el.flat.length; i++) {
+        const local = smooth(
+          THREE.MathUtils.clamp((this.t * (1 + WAVEFRONT) - el.arcFrac[i]) / WAVEFRONT, 0, 1),
         );
-        return new THREE.Vector3().lerpVectors(f, el.solid[i], smooth(local));
-      });
-      this.writeSweep(el, pts);
+        pts.push(new THREE.Vector3().lerpVectors(el.flat[i], el.solid[i], local));
+        // Ribbon wide-face normal: toward the camera (+Z) in the flat 2-D view so
+        // the strand arrow faces us; for barrel strands it rotates to point
+        // radially out of the cylinder as it rolls, laying the ribbon flat on the
+        // barrel wall. Tubes (helix/coil) are circular, so the face only seeds the
+        // frame.
+        const flatFace = new THREE.Vector3(0, 0, 1);
+        let solidFace = flatFace;
+        if (barrel && el.type === 'strand') {
+          const s = el.solid[i];
+          solidFace = new THREE.Vector3(s.x, 0, s.z);
+          if (solidFace.lengthSq() < 1e-6) solidFace = flatFace.clone();
+          else solidFace.normalize();
+        }
+        faces.push(new THREE.Vector3().lerpVectors(flatFace, solidFace, local).normalize());
+      }
+      this.writeSweep(el, pts, faces);
     }
     // Bounding sphere about the origin over all protein elements, for framing.
     let r = this.membraneHalf;
@@ -227,10 +235,9 @@ export class SpikeView {
   }
 
   /** Sweep the cross-section along `pts`, writing into the element's geometry. */
-  private writeSweep(el: ElementRender, pts: THREE.Vector3[]): void {
+  private writeSweep(el: ElementRender, pts: THREE.Vector3[], faces: THREE.Vector3[]): void {
     const pos = el.geometry.getAttribute('position') as THREE.BufferAttribute;
     const arr = pos.array as Float32Array;
-    const up = new THREE.Vector3(0, 1, 0);
     const tangent = new THREE.Vector3();
     const bin = new THREE.Vector3();
     const nor = new THREE.Vector3();
@@ -241,8 +248,10 @@ export class SpikeView {
       else if (i === pts.length - 1) tangent.subVectors(pts[i], pts[i - 1]);
       else tangent.subVectors(pts[i + 1], pts[i - 1]);
       tangent.normalize();
-      // Frame seeded from world up so ribbon width stays roughly horizontal.
-      bin.crossVectors(tangent, up);
+      // Width (bin) ⟂ tangent and the wide-face normal; re-orthogonalise the face
+      // (nor) so the ribbon's flat side points along `faces[i]`.
+      bin.crossVectors(tangent, faces[i]);
+      if (bin.lengthSq() < 1e-6) bin.crossVectors(tangent, new THREE.Vector3(0, 1, 0));
       if (bin.lengthSq() < 1e-6) bin.set(1, 0, 0);
       bin.normalize();
       nor.crossVectors(bin, tangent).normalize();
@@ -282,19 +291,49 @@ export class SpikeView {
 
   private animate = (): void => {
     requestAnimationFrame(this.animate);
-    // Camera ease: near-orthographic (long lens) at the flat end → ~35 mm-equiv
-    // perspective at the 3-D end.
+    // The 2-D end is locked to a dead-on, near-orthographic view looking down the
+    // membrane (azimuth/elevation 0, ~2° lens); as it rolls up the camera eases
+    // to a ~35 mm-equivalent perspective at a 3/4 angle. Once fully 3-D (t === 1)
+    // OrbitControls takes over so the user can explore.
+    if (this.t >= 1) {
+      this.camera.fov = 50;
+      this.camera.updateProjectionMatrix();
+      if (!this.controls.enabled) {
+        // Entering the fully-3-D state (possibly jumped straight to t=1): place
+        // the camera at the framed 3/4 view before handing off to OrbitControls.
+        const fovR = THREE.MathUtils.degToRad(50);
+        const dist = (this.sceneRadius / Math.sin(fovR / 2)) * 1.06;
+        const az = THREE.MathUtils.degToRad(30);
+        const el = THREE.MathUtils.degToRad(14);
+        this.camera.position.set(
+          dist * Math.sin(az) * Math.cos(el),
+          dist * Math.sin(el),
+          dist * Math.cos(az) * Math.cos(el),
+        );
+        this.camera.lookAt(0, 0, 0);
+        this.controls.enabled = true;
+      }
+      this.controls.update();
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    this.controls.enabled = false;
     const e = smooth(this.t);
-    const fov = lerp(8, 50, e);
+    const fov = lerp(2, 50, e);
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
-    // Frame the bounding sphere of the current morph state: the flat layout is a
-    // wide thin strip (large radius, seen edge-on), the rolled structure is
-    // compact. Vertical fov is the tighter dimension (aspect ≥ 1), so it bounds.
+    // Frame the bounding sphere of the current morph state.
     const fovR = THREE.MathUtils.degToRad(fov);
     const dist = (this.sceneRadius / Math.sin(fovR / 2)) * 1.06;
-    this.camera.position.setLength(dist);
-    this.controls.update();
+    // Orbit from dead-on (0,0) toward a 3/4 view (az 30°, el 14°) as it rolls.
+    const az = THREE.MathUtils.degToRad(lerp(0, 30, e));
+    const el = THREE.MathUtils.degToRad(lerp(0, 14, e));
+    this.camera.position.set(
+      dist * Math.sin(az) * Math.cos(el),
+      dist * Math.sin(el),
+      dist * Math.cos(az) * Math.cos(el),
+    );
+    this.camera.lookAt(0, 0, 0);
     this.renderer.render(this.scene, this.camera);
   };
 }
