@@ -25,7 +25,11 @@ for (const line of pdb) {
 // Optionally widen strands to mimic DSSP's more generous E-assignment, pushing
 // the termini into the curved β-turn region (env EXT=2).
 const EXT = parseInt(process.env.EXT || '0');
-if (EXT) for (const s of seg) { s.start -= EXT; s.end += EXT; }
+if (EXT)
+  for (const s of seg) {
+    s.start -= EXT;
+    s.end += EXT;
+  }
 const data = {
   pdbId: '2omf',
   chains: [{ chainId: 'A', residueCount: calphas.length, segments: seg, calphas }],
@@ -102,7 +106,10 @@ const body = [...scene.polys, ...scene.paths]
 // translate(tx,ty) scale(sx,sy).
 const m = scene.ctm.match(/translate\(([-\d.]+),\s*([-\d.]+)\)\s*scale\(([-\d.]+),\s*([-\d.]+)\)/);
 const [tx, ty, sx, sy] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), parseFloat(m[4])];
-let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+let minX = Infinity,
+  minY = Infinity,
+  maxX = -Infinity,
+  maxY = -Infinity;
 for (const p of scene.polys) {
   if (p.fill !== '#6ea76d' || !p.points) continue;
   for (const pair of p.points.trim().split(/\s+/)) {
@@ -116,13 +123,18 @@ for (const p of scene.polys) {
   }
 }
 const pad = 10;
-const vbX = minX - pad, vbY = minY - pad, vbW = maxX - minX + 2 * pad, vbH = maxY - minY + 2 * pad;
+const vbX = minX - pad,
+  vbY = minY - pad,
+  vbW = maxX - minX + 2 * pad,
+  vbH = maxY - minY + 2 * pad;
 const scale = 4;
 const cropSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(vbW * scale)}" height="${Math.round(vbH * scale)}" viewBox="${vbX} ${vbY} ${vbW} ${vbH}"><rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="white"/><g transform="${scene.ctm}">${body}</g></svg>`;
 wf('/tmp/2omf-crop.svg', cropSvg);
 console.log(`viewBox ${vbX.toFixed(0)} ${vbY.toFixed(0)} ${vbW.toFixed(0)} ${vbH.toFixed(0)}`);
 
-const page2 = await browser.newPage({ viewport: { width: Math.round(vbW * scale), height: Math.round(vbH * scale) } });
+const page2 = await browser.newPage({
+  viewport: { width: Math.round(vbW * scale), height: Math.round(vbH * scale) },
+});
 await page2.setContent(`<!DOCTYPE html><html><body style="margin:0">${cropSvg}</body></html>`);
 await page2.waitForTimeout(150);
 await page2.screenshot({ path: '/tmp/2omf-zoom.png' });
