@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parsePdb } from '../src/parser/pdb.js';
 import { parseDsspMmcif } from '../src/parser/dssp-mmcif.js';
@@ -13,7 +13,7 @@ const PROTEINS: { id: string }[] = [
   { id: '5g53' },
 ];
 
-async function fetchText(url: string, retries = 3): Promise<string> {
+async function fetchText(url: string, retries = 4): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < retries; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
@@ -23,30 +23,47 @@ async function fetchText(url: string, retries = 3): Promise<string> {
       return await res.text();
     } catch (err) {
       lastErr = err;
+      console.warn(`  attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : err}`);
     }
   }
   throw lastErr;
 }
 
 async function main(): Promise<void> {
+  const outPath = fileURLToPath(new URL('../src/demo-data.ts', import.meta.url));
   const results: Record<string, ProteinData> = {};
+  let anyFailed = false;
 
   for (const { id } of PROTEINS) {
     process.stdout.write(`Fetching ${id}… `);
     const pdbUrl = `https://opm-assets.storage.googleapis.com/pdb/${id.toLowerCase()}.pdb`;
     const dsspUrl = `https://pdb-redo.eu/dssp/get?pdb-id=${id}&format=mmcif`;
 
-    const [pdbText, dsspText] = await Promise.all([fetchText(pdbUrl), fetchText(dsspUrl)]);
-
-    const chains = parsePdb(pdbText);
-    const ssSegments = parseDsspMmcif(dsspText);
-    results[id] = mergeProteinData(id, chains, ssSegments);
-
-    const summary = results[id].chains.map((c) => `${c.chainId}:${c.residueCount}aa`).join(', ');
-    console.log(`done (${summary})`);
+    try {
+      const [pdbText, dsspText] = await Promise.all([fetchText(pdbUrl), fetchText(dsspUrl)]);
+      const chains = parsePdb(pdbText);
+      const ssSegments = parseDsspMmcif(dsspText);
+      results[id] = mergeProteinData(id, chains, ssSegments);
+      const summary = results[id].chains.map((c) => `${c.chainId}:${c.residueCount}aa`).join(', ');
+      console.log(`done (${summary})`);
+    } catch (err) {
+      console.warn(`skipped (${err instanceof Error ? err.message : err})`);
+      anyFailed = true;
+    }
   }
 
-  const outPath = fileURLToPath(new URL('../src/demo-data.ts', import.meta.url));
+  if (anyFailed && Object.keys(results).length === 0) {
+    if (existsSync(outPath)) {
+      console.warn('All fetches failed — keeping existing demo-data.ts');
+      return;
+    }
+    throw new Error('All fetches failed and no existing demo-data.ts to fall back on');
+  }
+
+  if (anyFailed) {
+    console.warn('Some proteins could not be fetched — writing partial update');
+  }
+
   writeFileSync(
     outPath,
     `import type { ProteinData } from './types.js';
