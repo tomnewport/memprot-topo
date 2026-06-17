@@ -397,6 +397,45 @@ function placeResidueLabel(
  * Widths are specified in screen pixels and back-projected into user space so
  * the polygon stays consistent under the plot group's non-uniform scale.
  */
+
+/**
+ * Walk the C-terminal samples of a strand backward and return the index of the
+ * last sample whose local tangent is still within 25° of the strand's core
+ * axis direction.  Residues that DSSP assigns to the strand but that actually
+ * sit in the adjacent β-turn curl away from the core axis; trimming them lets
+ * the arrowhead sit on the genuinely straight portion of the body.
+ *
+ * Returns `endIdx` unchanged when no trimming is needed (or when the strand is
+ * too short to estimate a reliable axis direction).
+ */
+function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: number): number {
+  const n = endIdx - startIdx + 1;
+  if (n < 6) return endIdx;
+
+  // Core axis from first 2/3 of the strand body, in screen-pixel space so the
+  // test is scale-independent.
+  const coreEnd = startIdx + Math.floor((n * 2) / 3);
+  const coreDx = (samples[coreEnd].arc - samples[startIdx].arc) * PLOT.arcPxPerA;
+  const coreDy = -(samples[coreEnd].z - samples[startIdx].z) * PLOT.zPxPerA;
+  const coreLen = Math.sqrt(coreDx * coreDx + coreDy * coreDy);
+  if (coreLen < 1e-9) return endIdx;
+  const cux = coreDx / coreLen;
+  const cuy = coreDy / coreLen;
+
+  const COS_THR = Math.cos((25 * Math.PI) / 180); // dot-product threshold ≈ 0.906
+  const maxTrim = Math.floor(n * 0.4);
+
+  // Walk from the end backward; the first aligned sample is the new endpoint.
+  for (let i = endIdx; i > endIdx - maxTrim && i > startIdx + 1; i--) {
+    const tdx = (samples[i].arc - samples[i - 1].arc) * PLOT.arcPxPerA;
+    const tdy = -(samples[i].z - samples[i - 1].z) * PLOT.zPxPerA;
+    const tLen = Math.sqrt(tdx * tdx + tdy * tdy);
+    const dot = tLen > 1e-9 ? (tdx * cux + tdy * cuy) / tLen : 1;
+    if (dot >= COS_THR) return i;
+  }
+  return endIdx;
+}
+
 function drawSsPolygon(
   plot: SVGGElement,
   samples: UnrolledPoint[],
@@ -1366,7 +1405,18 @@ function drawSegment(
   hasBreakAfter = false,
   faded = false,
 ): void {
-  const { samples, residues, runs } = layout;
+  const { samples, residues } = layout;
+  // For barrel strand arrows, trim C-terminal samples that curl away from the
+  // strand core axis (DSSP extends boundaries into adjacent turns). The trimmed
+  // endResSampleIdx is used for both the polygon tip and the loop start so that
+  // the arrowhead lands on the straight β-body and the loop Bezier exits cleanly.
+  const runs = isBarrel
+    ? layout.runs.map((run) => {
+        if (run.type !== 'strand') return run;
+        const trimmed = trimStrandEnd(samples, run.startSample, run.endResSampleIdx);
+        return trimmed === run.endResSampleIdx ? run : { ...run, endResSampleIdx: trimmed };
+      })
+    : layout.runs;
   for (let j = 0; j < runs.length; j++) {
     const run = runs[j];
     if (run.type === 'helix' || run.type === 'strand') {
