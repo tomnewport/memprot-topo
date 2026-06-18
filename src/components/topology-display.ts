@@ -24,6 +24,7 @@ import {
   type LoopGeom,
   type LoopRenderOptions,
 } from '../scene/geometry/loop-path.js';
+import { contactLines } from '../scene/geometry/contacts.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -853,33 +854,19 @@ export function barrelLayout(
  * residues hydrogen-bond across the sheet".
  */
 function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: SegmentLayout[]): void {
-  const pos = new Map<number, { arc: number; z: number }>();
-  for (const layout of layouts) {
-    for (const r of layout.residues) pos.set(r.resSeq, { arc: r.arc, z: r.z });
-  }
-  // Only tie pairings between barrel-wall (ring) strands. Strands that fold
-  // inside the barrel render as coil at an unreliable arc near the axis, so a
-  // tie to them would land at an arbitrary position and read oddly.
-  const ring = new Set(analysis.ringOrder);
   const group = document.createElementNS(SVG_NS, 'g');
   group.setAttribute('class', 'contact-ties');
-  for (const pairing of analysis.pairings) {
-    if (!ring.has(pairing.a) || !ring.has(pairing.b)) continue;
-    for (const c of pairing.contacts) {
-      const a = pos.get(c.aResSeq);
-      const b = pos.get(c.bResSeq);
-      if (!a || !b) continue;
-      const line = document.createElementNS(SVG_NS, 'line');
-      line.setAttribute('x1', a.arc.toFixed(3));
-      line.setAttribute('y1', a.z.toFixed(3));
-      line.setAttribute('x2', b.arc.toFixed(3));
-      line.setAttribute('y2', b.z.toFixed(3));
-      line.setAttribute('stroke', COLOURS.contact);
-      line.setAttribute('stroke-width', '1');
-      line.setAttribute('stroke-opacity', '0.5');
-      line.setAttribute('vector-effect', 'non-scaling-stroke');
-      group.appendChild(line);
-    }
+  for (const { a, b } of contactLines(analysis, layouts)) {
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', a.arc.toFixed(3));
+    line.setAttribute('y1', a.z.toFixed(3));
+    line.setAttribute('x2', b.arc.toFixed(3));
+    line.setAttribute('y2', b.z.toFixed(3));
+    line.setAttribute('stroke', COLOURS.contact);
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-opacity', '0.5');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    group.appendChild(line);
   }
   plot.appendChild(group);
 }

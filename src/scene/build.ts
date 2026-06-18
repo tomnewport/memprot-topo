@@ -1,14 +1,14 @@
 /**
- * Build a {@link TopologyScene} from a chain (issue #22, Phase 1 increment 2).
+ * Build a {@link TopologyScene} from a chain (issue #22, Phase 1).
  *
  * This wraps the existing unroll + layout pipeline and emits the renderer-
  * agnostic scene. It is **not yet consumed by the SVG renderer** (that is
  * increment 5), so it cannot change any rendered output.
  *
- * Scope of this increment: the plain (helical / arc-length) path — elements with
- * dual flat+3-D centrelines, residues, style and meta. Still TODO (later
- * increments): β-barrel / assembly layouts (`unwrapBarrel`/`unwrapAssembly`),
- * resolved loop control points (§4.3), and β-sheet contacts (§4.4).
+ * Covers the plain (helical / arc-length) and single-chain β-barrel paths —
+ * elements with dual flat+3-D centrelines, residues, β-sheet contacts, style and
+ * meta. Still TODO (later increments): multi-chain assembly barrels
+ * (`unwrapAssembly`) and resolved loop control points (§4.3).
  *
  * NOTE: the imports from `../components/topology-display.js` are transitional.
  * The plan (`docs/3d-renderer-plan.md` §4.6) inverts this dependency at increment
@@ -18,6 +18,7 @@
 import type { ChainData, SecondaryStructureSegment } from '../types.js';
 import { unrollChain, unwrapBarrel } from '../unroll/index.js';
 import { analyseBarrel } from '../contacts/index.js';
+import { contactLines } from './geometry/contacts.js';
 import {
   effectiveSsSegments,
   layoutSegments,
@@ -31,6 +32,7 @@ import type {
   HelixElement,
   LoopElement,
   RibbonElement,
+  SceneContact,
   SceneElement,
   SceneResidue,
   SceneSample,
@@ -134,8 +136,8 @@ const STYLE: SceneStyle = {
  * Build the topology scene for a single chain.
  *
  * Handles the plain (helical / arc-length) path and the closed single-chain
- * β-barrel path (cylindrical unwrap). Multi-chain assembly barrels, loop control
- * points, and contacts are added in later increments.
+ * β-barrel path (cylindrical unwrap), including β-sheet contacts. Multi-chain
+ * assembly barrels and loop control points are added in later increments.
  */
 export function buildScene(chain: ChainData): TopologyScene {
   const effective = effectiveSsSegments(chain.segments);
@@ -174,8 +176,35 @@ export function buildScene(chain: ChainData): TopologyScene {
     arcSpan: totalArc,
     zRange,
     elements,
-    contacts: [],
+    contacts: analysis.cylindrical ? barrelContacts(analysis, layouts) : [],
     style: STYLE,
     meta,
   };
+}
+
+/** Resolve β-sheet contact ties with 3-D positions from the laid-out residues. */
+function barrelContacts(
+  analysis: ReturnType<typeof analyseBarrel>,
+  layouts: SegmentLayout[],
+): SceneContact[] {
+  // resSeq → real 3-D position, via each residue's display sample.
+  const pos3dByRes = new Map<number, Vec3>();
+  for (const layout of layouts) {
+    for (const r of layout.residues) {
+      const s = layout.samples[r.sampleIndex];
+      if (s) pos3dByRes.set(r.resSeq, { x: s.x3 ?? 0, y: s.y3 ?? 0, z: s.z });
+    }
+  }
+  return contactLines(analysis, layouts).map((ln) => ({
+    a: {
+      arc: ln.a.arc,
+      z: ln.a.z,
+      pos3d: pos3dByRes.get(ln.a.resSeq) ?? { x: 0, y: 0, z: ln.a.z },
+    },
+    b: {
+      arc: ln.b.arc,
+      z: ln.b.z,
+      pos3d: pos3dByRes.get(ln.b.resSeq) ?? { x: 0, y: 0, z: ln.b.z },
+    },
+  }));
 }

@@ -130,4 +130,15 @@ describe('buildScene (β-barrel path)', () => {
       }
     }
   });
+
+  it('resolves β-sheet contact ties with finite flat and 3-D endpoints', () => {
+    expect(scene.contacts.length).toBeGreaterThan(0);
+    for (const c of scene.contacts) {
+      for (const end of [c.a, c.b]) {
+        expect(Number.isFinite(end.arc)).toBe(true);
+        expect(Number.isFinite(end.z)).toBe(true);
+        for (const k of ['x', 'y', 'z'] as const) expect(Number.isFinite(end.pos3d[k])).toBe(true);
+      }
+    }
+  });
 });
