@@ -201,10 +201,12 @@ const BARREL = {
  * element. Shorter assignments (1-2 residues) are folded into the surrounding
  * loop so they don't fragment it into multiple stubs.
  */
-const MIN_SS_RESIDUES = 3;
+export const MIN_SS_RESIDUES = 3;
 
 /** Drop sub-`MIN_SS_RESIDUES` helix/strand assignments so they read as coil. */
-function effectiveSsSegments(segments: SecondaryStructureSegment[]): SecondaryStructureSegment[] {
+export function effectiveSsSegments(
+  segments: SecondaryStructureSegment[],
+): SecondaryStructureSegment[] {
   return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= MIN_SS_RESIDUES);
 }
 
@@ -226,7 +228,7 @@ function ssTypeAt(segments: SecondaryStructureSegment[], resSeq: number): Second
   return 'coil';
 }
 
-interface SsRun {
+export interface SsRun {
   type: SecondaryStructureType;
   /** Sample indices defining the polygon body (may extend to the start of the next run). */
   startSample: number;
@@ -243,7 +245,7 @@ interface SsRun {
 }
 
 /** Group consecutive residue indices that share the same SS type into runs. */
-function runsBySs(
+export function runsBySs(
   residues: { resSeq: number; sampleIndex: number }[],
   segments: SecondaryStructureSegment[],
 ): SsRun[] {
@@ -285,7 +287,7 @@ function runsBySs(
   return runs;
 }
 
-const SS_BODY = {
+export const SS_BODY = {
   /** Body half-width in screen pixels (full SS element width = 8 px). */
   halfWidthPx: 4,
   /** Arrow wing half-width — 1.5× the body so the wings flare visibly. */
@@ -800,7 +802,7 @@ function drawLoop(
 }
 
 /** A chain segment with its samples repositioned into display (fixed-gap) space. */
-interface SegmentLayout {
+export interface SegmentLayout {
   /** Samples with arc shifted into display space; z is unchanged. */
   samples: UnrolledPoint[];
   /** One entry per input Cα (unchanged from the unroll). */
@@ -814,7 +816,7 @@ interface SegmentLayout {
  * SS element keeps its own internal arc geometry; only the offset between
  * elements changes. Loops (and chain breaks) collapse to the fixed gap width.
  */
-function layoutSegments(
+export function layoutSegments(
   segments: UnrolledSegment[],
   ssSegments: SecondaryStructureSegment[],
 ): { layouts: SegmentLayout[]; totalArc: number } {
@@ -830,7 +832,9 @@ function layoutSegments(
     if (runs.length === 0) {
       const base = segment.samples[0]?.arc ?? 0;
       const sh = cursor - base;
-      const display = segment.samples.map((p) => ({ arc: p.arc + sh, z: p.z }));
+      // Spread `...p` so the retained 3-D coords (x3/y3) survive into the
+      // display samples; the layout only shifts `arc`. (issue #22)
+      const display = segment.samples.map((p) => ({ ...p, arc: p.arc + sh }));
       const end = cursor + ((segment.samples[n - 1]?.arc ?? base) - base);
       layouts.push({ samples: display, residues: segment.residues, runs });
       if (end > maxArc) maxArc = end;
@@ -859,7 +863,7 @@ function layoutSegments(
       else shift[i] = last;
     }
 
-    const displaySamples = segment.samples.map((p, i) => ({ arc: p.arc + shift[i], z: p.z }));
+    const displaySamples = segment.samples.map((p, i) => ({ ...p, arc: p.arc + shift[i] }));
     layouts.push({ samples: displaySamples, residues: segment.residues, runs });
     if (cursor > maxArc) maxArc = cursor;
     cursor += gapA;
