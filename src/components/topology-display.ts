@@ -118,7 +118,7 @@ const STYLES = `
   .placeholder { font-style: italic; color: #888; }
 `;
 
-const PLOT = {
+export const PLOT = {
   width: 1200,
   // Top/bottom/right padded enough for residue-number labels that sit just
   // past the membrane-facing tips of helix/strand polygons.

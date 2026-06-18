@@ -89,13 +89,17 @@ export interface SceneContact {
   b: { arc: number; z: number; pos3d: Vec3 };
 }
 
-/** Cross-section dimensions, shared so both renderers agree on element shape. */
+/**
+ * Cross-section dimensions in Ångström, so any renderer (which works in the
+ * scene's Å coordinate space) can size elements without knowing the SVG's
+ * pixel scale. The ribbon values are the SVG body/arrow widths converted to Å.
+ */
 export interface SceneStyle {
-  /** Ribbon (β-strand) body half-width, screen px. */
+  /** Ribbon (β-strand) body half-width, Å. */
   ribbonHalfWidth: number;
-  /** Ribbon arrowhead wing half-width, screen px. */
+  /** Ribbon arrowhead wing half-width, Å. */
   ribbonArrowHalfWidth: number;
-  /** Ribbon arrowhead length from base to tip, screen px. */
+  /** Ribbon arrowhead length from base to tip, Å. */
   ribbonArrowLen: number;
   /** Ribbon thickness in 3-D (the thin dimension), Å. */
   ribbonThickness: number;

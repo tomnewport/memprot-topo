@@ -19,6 +19,7 @@ import { contactLines } from './geometry/contacts.js';
 import {
   effectiveSsSegments,
   planChainLayout,
+  PLOT,
   SS_BODY,
   type AssemblyContext,
   type SegmentLayout,
@@ -125,10 +126,13 @@ function elementsFromLayouts(
   return { elements, helices, strands };
 }
 
+// Ribbon body/arrow dimensions are the SVG's screen-pixel sizes converted to Å
+// (the scene's coordinate space) so a renderer that knows nothing of the SVG
+// pixel scale still draws an element matching the 2-D diagram at the flat end.
 const STYLE: SceneStyle = {
-  ribbonHalfWidth: SS_BODY.halfWidthPx,
-  ribbonArrowHalfWidth: SS_BODY.arrowHalfWidthPx,
-  ribbonArrowLen: SS_BODY.arrowLengthPx,
+  ribbonHalfWidth: SS_BODY.halfWidthPx / PLOT.arcPxPerA,
+  ribbonArrowHalfWidth: SS_BODY.arrowHalfWidthPx / PLOT.arcPxPerA,
+  ribbonArrowLen: SS_BODY.arrowLengthPx / PLOT.arcPxPerA,
   ribbonThickness: SCENE_3D.ribbonThickness,
   helixRadius: SCENE_3D.helixRadius,
   loopRadius: SCENE_3D.loopRadius,
