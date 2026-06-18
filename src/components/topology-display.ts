@@ -1780,7 +1780,7 @@ export class TopologyDisplay extends HTMLElement {
     }
     const start = view.morph;
     const t0 = performance.now();
-    const duration = 1100;
+    const duration = 3300;
     const step = (now: number): void => {
       const k = Math.min(1, (now - t0) / duration);
       const e = k * k * (3 - 2 * k);

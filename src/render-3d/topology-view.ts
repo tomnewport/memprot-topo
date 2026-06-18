@@ -24,7 +24,7 @@ const COLOURS: Record<SceneElement['type'], number> = {
 const CONTACT_COLOUR = 0xc98a3b;
 
 /** 3-D ribbon body half-width (Å) reached at the fully-rolled end. */
-const RIBBON_3D_HALF = 2.6;
+const RIBBON_3D_HALF = 1.3;
 const WAVEFRONT = 0.35;
 /** Tube cross-section segments (helix/coil) — higher is smoother. */
 const TUBE_RING = 16;
