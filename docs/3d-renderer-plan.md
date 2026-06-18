@@ -219,13 +219,12 @@ the control points from the scene. The Catmull-Rom→bézier conversion
 - **Helical:** done — `unrollChain` retains `x3/y3`; `pos3d = {x3, y3, z}`. Thread
   through `layoutSegments` (currently drops extra fields — spread `...p` then
   override `arc`).
-- **Barrel (`unwrapBarrel`):** retain the real Cα-derived 3-D path. Two options,
-  **decision needed (§7):** (a) reconstruct on the cylinder from the _un-shifted_
-  unwrap angle `θ = u/R` → `pos3d = (cx + R cosθ, cy + R sinθ, z)` (idealised,
-  clean roll), or (b) retain the real de-spiralled `proj` coords sampled in
-  lockstep (honest, shows real barrel deformation). Recommend **(b)** for
-  consistency with the project's "geometry from real coordinates" ethos; (a) is
-  the prettier fallback.
+- **Barrel (`unwrapBarrel`):** retain the real Cα-derived 3-D path. **Decision
+  (§9.1): honest.** Retain the real de-spiralled `proj` coords sampled in lockstep
+  with the unwrap samples, so the barrel rolls up into its real (deformed) shape,
+  consistent with the project's "geometry from real coordinates" ethos. (The
+  idealised-cylinder reconstruction `θ = u/R → (cx+R cosθ, cy+R sinθ, z)` is kept
+  documented only as a possible debug/teaching toggle.)
 - **Assembly (`unwrapAssembly`):** same as barrel, per protomer.
 - **Loops:** `pos3d` from the residues' real coordinates (dense via the same
   spline parameterisation). The 2-D schematic bézier and the 3-D real path do not
@@ -278,9 +277,26 @@ Three.js never enters the core bundle.
   `tLocal = smoothstep(clamp((t·(1+w) − arcFrac)/w))` (spike-proven).
 - Camera: locked dead-on near-orthographic at t=0 → eased to ~35 mm perspective
   3/4 view; OrbitControls active only when fully 3-D (spike-proven).
-- `TopologyDisplay`: add a 2-D/3-D toggle + scrub/play, **defaulting to 2-D/SVG**.
-  3-D is opt-in. Honour `prefers-reduced-motion` (jump to endpoints, no auto-run).
-- SVG export path untouched and always available regardless of view.
+
+### Toggle UX (decision §9.3) — no scrubber
+
+A per-diagram **2-D / 3-D** control (two-state toggle, **not** a scrubber).
+
+- **Default / resting 2-D state renders with the SVG renderer** — crisp vector,
+  exportable. The WebGL canvas is not mounted.
+- **Click 3-D:** lazy-load the 3-D backend, mount the WebGL canvas seeded at t=0,
+  **hide the SVG**, and animate the roll-up t: 0→1. Stays in WebGL at t=1.
+- **Click 2-D:** animate the roll-down t: 1→0; when it reaches t=0, **unmount
+  WebGL and show the SVG again**.
+- The t=0 swap (WebGL→SVG and SVG→WebGL) must be visually seamless, so WebGL t=0
+  parity with the SVG (§5, §2-of-DoD) is a hard live requirement, not just a test.
+  A one-frame crossfade can hide any residual AA/rasterisation difference.
+- No exposed scrubber/slider; `t` is driven only by the toggle's transition.
+- Honour `prefers-reduced-motion`: skip the animation, swap straight to the target
+  state (instant 2-D SVG ↔ static 3-D).
+- 3-D is **first-class** (decision §9.2) — shipped enabled, not behind a flag.
+- SVG export path untouched and always available (export uses the SVG renderer,
+  which exists regardless of the current view).
 
 ---
 
@@ -302,19 +318,20 @@ Three.js never enters the core bundle.
 | -------------------------------------------------- | ------------------------------------------------------------------------------ |
 | SVG-refactor visual regressions (Phase 1, biggest) | Incremental PRs; gallery snapshots are the gate; keep all constants identical. |
 | Three.js leaking into core bundle                  | Dynamic `import()`; build-time chunk assertion.                                |
-| Barrel/assembly `pos3d` correctness                | Decide §7 option (a)/(b); unit-test the cylinder/real reconstruction.          |
+| Barrel/assembly `pos3d` correctness                | Honest real-coord retention (§4.4); unit-test the lockstep sampling.           |
+| t=0 WebGL↔SVG swap visible pop                     | Hard t=0 parity requirement (§5); one-frame crossfade on swap (§6).            |
 | Loop 2-D↔3-D non-correspondence                    | Accept schematic-vs-real blend for loops; document it.                         |
 | Performance on large assemblies (α-hemolysin)      | Build meshes once; morph by vertex update; cap sample density.                 |
 | Label placement differs 2-D vs 3-D                 | Keep 2-D collision placement SVG-side; 3-D uses billboards (Phase 3+).         |
 
-## 9. Open questions for Tom
+## 9. Decisions (resolved)
 
-1. **Barrel 3-D target:** idealised cylinder roll (clean) vs real de-spiralled
-   coords (honest, shows deformation)? _Recommend honest (§4.4b)._
-2. **3-D as first-class or feature-flagged** for the first release that includes
-   it?
-3. **Toggle UX:** a per-diagram 2-D/3-D switch with a scrubber + play, defaulting
-   to 2-D — confirm that's the shape you want.
+1. **Barrel 3-D target — honest.** Real de-spiralled coordinates; the barrel rolls
+   into its true deformed shape (§4.4).
+2. **3-D is first-class** — shipped enabled, not behind a feature flag.
+3. **Toggle UX — per-diagram 2-D/3-D, no scrubber.** Clicking a state animates the
+   transition; the resting 2-D state renders as SVG; WebGL handles the animation
+   and the 3-D state (§6).
 
 ---
 
@@ -324,6 +341,7 @@ Three.js never enters the core bundle.
   gallery snapshots unchanged. No user-visible change.
 - **P2:** 3-D backend renders static t=0/t=1 from the scene; t=0 matches SVG
   within tolerance; `three` confirmed out of the core bundle.
-- **P3:** in-component 2-D/3-D toggle with morph + camera ease; 2-D default; SVG
-  export intact; reduced-motion respected.
+- **P3:** in-component 2-D/3-D toggle (no scrubber); clicking animates the morph;
+  resting 2-D renders as SVG and WebGL unmounts at t=0; seamless t=0 swap; 3-D
+  first-class; SVG export intact; reduced-motion respected.
 - **P4:** release-quality 3-D look; docs + tests; `AI.md` updated.
