@@ -116,6 +116,35 @@ const STYLES = `
        to compute height from container width, producing a huge whitespace gap */
   }
   .placeholder { font-style: italic; color: #888; }
+  .view-toggle {
+    display: inline-flex;
+    margin-bottom: 0.4rem;
+    border: 1px solid #ced4da;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .view-toggle button {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.7rem;
+    border: none;
+    background: #fff;
+    color: #495057;
+    cursor: pointer;
+  }
+  .view-toggle button + button { border-left: 1px solid #ced4da; }
+  .view-toggle button.active { background: #1f77b4; color: #fff; }
+  .view-toggle button:focus-visible { outline: 2px solid #1f77b4; outline-offset: -2px; }
+  .topo-stage {
+    display: none;
+    width: 100%;
+    height: 60vh;
+    min-height: 320px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #f4f6f8;
+  }
 `;
 
 export const PLOT = {
@@ -1630,6 +1659,9 @@ export class TopologyDisplay extends HTMLElement {
   // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
   // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
   private _assemblyCache: { data: ProteinData; analysis: BarrelAnalysis } | null = null;
+  // The lazily-loaded 3-D view, alive only while the 3-D toggle is active.
+  private _view3d: { setT(t: number): void; morph: number; dispose(): void } | null = null;
+  private _morphRaf = 0;
 
   /** Assembly-barrel analysis for the current proteinData, memoised. */
   private assemblyAnalysis(chains: ChainData[]): BarrelAnalysis {
@@ -1716,7 +1748,107 @@ export class TopologyDisplay extends HTMLElement {
     this.render();
   }
 
+  disconnectedCallback() {
+    this.teardown3d();
+  }
+
+  /** Dispose the live 3-D view and cancel any morph animation. */
+  private teardown3d(): void {
+    cancelAnimationFrame(this._morphRaf);
+    this._morphRaf = 0;
+    this._view3d?.dispose();
+    this._view3d = null;
+  }
+
+  /** Ease the 3-D morph to `target`; `instant` jumps (reduced motion). */
+  private animateMorph(target: number, instant: boolean, onDone?: () => void): void {
+    cancelAnimationFrame(this._morphRaf);
+    const view = this._view3d;
+    if (!view) {
+      onDone?.();
+      return;
+    }
+    if (instant) {
+      view.setT(target);
+      onDone?.();
+      return;
+    }
+    const start = view.morph;
+    const t0 = performance.now();
+    const duration = 1100;
+    const step = (now: number): void => {
+      const k = Math.min(1, (now - t0) / duration);
+      const e = k * k * (3 - 2 * k);
+      view.setT(start + (target - start) * e);
+      if (k < 1) this._morphRaf = requestAnimationFrame(step);
+      else onDone?.();
+    };
+    this._morphRaf = requestAnimationFrame(step);
+  }
+
+  private prefersReducedMotion(): boolean {
+    return (
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  /**
+   * Switch to the 3-D view: lazy-load the renderer, build the scene at t=0 (which
+   * reads like the SVG), hide the SVG, then roll up to t=1.
+   */
+  private async enter3d(
+    stage: HTMLElement,
+    scroll: HTMLElement,
+    btn2d: HTMLButtonElement,
+    btn3d: HTMLButtonElement,
+    chain: ChainData,
+    analysis: BarrelAnalysis,
+    assembly: AssemblyContext | undefined,
+  ): Promise<void> {
+    btn2d.classList.remove('active');
+    btn3d.classList.add('active');
+    if (!this._view3d) {
+      const [{ buildScene }, { TopologyView3D }] = await Promise.all([
+        import('../scene/build.js'),
+        import('../render-3d/index.js'),
+      ]);
+      // The user may have toggled back before the chunk loaded.
+      if (!btn3d.classList.contains('active')) return;
+      const view = new TopologyView3D(stage);
+      view.setScene(buildScene(chain, { analysis, assembly }));
+      view.setT(0);
+      this._view3d = view;
+    }
+    scroll.style.display = 'none';
+    stage.style.display = 'block';
+    this.animateMorph(1, this.prefersReducedMotion());
+  }
+
+  /** Roll back down to t=0, then unmount the 3-D view and show the SVG. */
+  private exit3d(
+    stage: HTMLElement,
+    scroll: HTMLElement,
+    btn2d: HTMLButtonElement,
+    btn3d: HTMLButtonElement,
+  ): void {
+    btn3d.classList.remove('active');
+    btn2d.classList.add('active');
+    if (!this._view3d) {
+      scroll.style.display = '';
+      stage.style.display = 'none';
+      return;
+    }
+    this.animateMorph(0, this.prefersReducedMotion(), () => {
+      this.teardown3d();
+      stage.style.display = 'none';
+      stage.replaceChildren();
+      scroll.style.display = '';
+    });
+  }
+
   private render() {
+    // Any re-render (chain switch, attribute change) resets to the 2-D view.
+    this.teardown3d();
     this._contentEl.replaceChildren();
 
     if (!this._data) {
@@ -1874,7 +2006,33 @@ export class TopologyDisplay extends HTMLElement {
     scroll.appendChild(
       renderChainSvg(selectedChain, this.loopOptions, analysis, this.showContacts, assembly),
     );
+
+    // 2-D / 3-D view toggle. The resting 2-D view renders as SVG; selecting 3-D
+    // lazy-loads the WebGL renderer and animates the roll-up (and back). The 3-D
+    // stage sits hidden until activated.
+    const stage = document.createElement('div');
+    stage.className = 'topo-stage';
+
+    const toggle = document.createElement('div');
+    toggle.className = 'view-toggle';
+    toggle.setAttribute('role', 'group');
+    toggle.setAttribute('aria-label', '2D / 3D view');
+    const btn2d = document.createElement('button');
+    btn2d.type = 'button';
+    btn2d.textContent = '2D';
+    btn2d.className = 'active';
+    const btn3d = document.createElement('button');
+    btn3d.type = 'button';
+    btn3d.textContent = '3D';
+    btn2d.addEventListener('click', () => this.exit3d(stage, scroll, btn2d, btn3d));
+    btn3d.addEventListener('click', () => {
+      void this.enter3d(stage, scroll, btn2d, btn3d, selectedChain, analysis, assembly);
+    });
+    toggle.append(btn2d, btn3d);
+
+    block.appendChild(toggle);
     block.appendChild(scroll);
+    block.appendChild(stage);
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
