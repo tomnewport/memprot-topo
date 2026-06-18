@@ -1,30 +1,26 @@
 /**
  * Build a {@link TopologyScene} from a chain (issue #22, Phase 1).
  *
- * This wraps the existing unroll + layout pipeline and emits the renderer-
- * agnostic scene. It is **not yet consumed by the SVG renderer** (that is
- * increment 5), so it cannot change any rendered output.
- *
- * Covers the plain (helical / arc-length) and single-chain β-barrel paths —
- * elements with dual flat+3-D centrelines, residues, β-sheet contacts, style and
- * meta. Still TODO (later increments): multi-chain assembly barrels
- * (`unwrapAssembly`) and resolved loop control points (§4.3).
+ * Both renderers now share one placement pipeline: `buildScene` and the SVG
+ * `renderChainSvg` both call {@link planChainLayout}, so the scene reflects
+ * exactly the same element placement the SVG draws. Covers all three paths —
+ * helical (arc-length), single-chain β-barrel, and multi-chain assembly barrel —
+ * with dual flat+3-D centrelines, residues, β-sheet contacts, style and meta.
+ * Still TODO: resolved loop control points (§4.3).
  *
  * NOTE: the imports from `../components/topology-display.js` are transitional.
- * The plan (`docs/3d-renderer-plan.md` §4.6) inverts this dependency at increment
- * 5, when the layout helpers move into `src/scene/` and the component consumes
- * the scene rather than the reverse.
+ * The plan (`docs/3d-renderer-plan.md` §4.6) inverts this dependency in a later
+ * cleanup, when the placement pipeline moves into `src/scene/` and the component
+ * imports it rather than the reverse.
  */
-import type { ChainData, SecondaryStructureSegment } from '../types.js';
-import { unrollChain, unwrapBarrel } from '../unroll/index.js';
-import { analyseBarrel } from '../contacts/index.js';
+import type { ChainData } from '../types.js';
+import { analyseBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import { contactLines } from './geometry/contacts.js';
 import {
   effectiveSsSegments,
-  layoutSegments,
-  barrelLayout,
-  barrelWallSegments,
+  planChainLayout,
   SS_BODY,
+  type AssemblyContext,
   type SegmentLayout,
   type SsRun,
 } from '../components/topology-display.js';
@@ -83,8 +79,14 @@ function runResidues(layout: SegmentLayout, run: SsRun): SceneResidue[] {
   return out;
 }
 
-/** Build scene elements from laid-out segments. Shared by both pipeline paths. */
-function elementsFromLayouts(layouts: SegmentLayout[]): {
+/**
+ * Build scene elements from laid-out segments. `focalFlags` (assembly only)
+ * marks which segments are the focal protomer; the rest render desaturated.
+ */
+function elementsFromLayouts(
+  layouts: SegmentLayout[],
+  focalFlags: boolean[] | null,
+): {
   elements: SceneElement[];
   helices: number;
   strands: number;
@@ -92,27 +94,27 @@ function elementsFromLayouts(layouts: SegmentLayout[]): {
   const elements: SceneElement[] = [];
   let helices = 0;
   let strands = 0;
-  for (const layout of layouts) {
+  for (let s = 0; s < layouts.length; s++) {
+    const layout = layouts[s];
+    const faded = focalFlags ? !focalFlags[s] : false;
     for (const run of layout.runs) {
       const samples = runSamples(layout, run);
       if (samples.length < 2) continue;
       const residues = runResidues(layout, run);
       if (run.type === 'helix') {
         helices++;
-        const el: HelixElement = { type: 'helix', samples, residues, faded: false, arrow: false };
-        elements.push(el);
+        elements.push({ type: 'helix', samples, residues, faded, arrow: false } as HelixElement);
       } else if (run.type === 'strand') {
         strands++;
-        const el: RibbonElement = { type: 'strand', samples, residues, faded: false, arrow: true };
-        elements.push(el);
+        elements.push({ type: 'strand', samples, residues, faded, arrow: true } as RibbonElement);
       } else {
-        // Coil run → loop. Schematic control points are resolved in increment 3;
-        // for now the loop carries its real centreline only.
+        // Coil run → loop. Schematic control points are resolved in a later
+        // increment; for now the loop carries its real centreline only.
         const el: LoopElement = {
           type: 'loop',
           samples,
           residues,
-          faded: false,
+          faded,
           control: [],
           dashed: false,
         };
@@ -132,40 +134,38 @@ const STYLE: SceneStyle = {
   loopRadius: SCENE_3D.loopRadius,
 };
 
+/** Options for {@link buildScene}; both are optional and computed if omitted. */
+export interface BuildSceneOptions {
+  /** β-sheet analysis for the chain (recomputed from Cα if absent). */
+  analysis?: BarrelAnalysis;
+  /** Assembly-barrel context, when this chain is one protomer of a shared ring. */
+  assembly?: AssemblyContext;
+}
+
 /**
- * Build the topology scene for a single chain.
- *
- * Handles the plain (helical / arc-length) path and the closed single-chain
- * β-barrel path (cylindrical unwrap), including β-sheet contacts. Multi-chain
- * assembly barrels and loop control points are added in later increments.
+ * Build the renderer-agnostic {@link TopologyScene} for a chain, via the shared
+ * {@link planChainLayout} pipeline so it reflects exactly the same element
+ * placement the SVG renderer draws. Handles the helical, single-chain β-barrel,
+ * and multi-chain assembly-barrel paths (the last when `assembly` is supplied).
  */
-export function buildScene(chain: ChainData): TopologyScene {
-  const effective = effectiveSsSegments(chain.segments);
-  const analysis = analyseBarrel(chain.calphas, effective);
+export function buildScene(chain: ChainData, options: BuildSceneOptions = {}): TopologyScene {
+  const analysis =
+    options.analysis ?? analyseBarrel(chain.calphas, effectiveSsSegments(chain.segments));
+  const plan = planChainLayout(chain, analysis, options.assembly);
+  const { layouts, totalArc, focalFlags, zMin, zMax, asm, cylindrical } = plan;
 
-  let layouts: SegmentLayout[];
-  let totalArc: number;
-  let zRange: { min: number; max: number };
-  let kind: TopologyScene['kind'];
+  const kind: TopologyScene['kind'] = asm ? 'assembly' : cylindrical ? 'barrel' : 'helical';
   const meta: TopologyScene['meta'] = { helices: 0, strands: 0 };
-
-  if (analysis.cylindrical) {
-    const ssSegments: SecondaryStructureSegment[] = barrelWallSegments(analysis, effective);
-    const unroll = unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre });
-    ({ layouts, totalArc } = barrelLayout(unroll.segments, ssSegments));
-    zRange = { min: unroll.zMin, max: unroll.zMax };
-    kind = 'barrel';
+  if (asm && options.assembly) {
+    meta.strandCount = options.assembly.analysis.strandCount;
+    meta.tiltDeg = options.assembly.analysis.tiltDeg;
+  } else if (cylindrical) {
     meta.strandCount = analysis.strandCount;
     meta.tiltDeg = analysis.tiltDeg;
     meta.shear = analysis.shear;
-  } else {
-    const unroll = unrollChain(chain.calphas, { ssSegments: effective });
-    ({ layouts, totalArc } = layoutSegments(unroll.segments, effective));
-    zRange = { min: unroll.zMin, max: unroll.zMax };
-    kind = 'helical';
   }
 
-  const { elements, helices, strands } = elementsFromLayouts(layouts);
+  const { elements, helices, strands } = elementsFromLayouts(layouts, focalFlags);
   meta.helices = helices;
   meta.strands = strands;
 
@@ -174,9 +174,10 @@ export function buildScene(chain: ChainData): TopologyScene {
     kind,
     membrane: { half: MEMBRANE_HALF },
     arcSpan: totalArc,
-    zRange,
+    zRange: { min: zMin, max: zMax },
     elements,
-    contacts: analysis.cylindrical ? barrelContacts(analysis, layouts) : [],
+    // Single-chain barrel contacts only (matches the SVG's `useUnwrap && !asm`).
+    contacts: cylindrical && !asm ? barrelContacts(analysis, layouts) : [],
     style: STYLE,
     meta,
   };

@@ -947,19 +947,39 @@ function unwrapAssembly(
   return { segments, focal, wallSegments: [...wallSet.values()], zMin, zMax };
 }
 
-interface AssemblyContext {
+export interface AssemblyContext {
   chains: ChainData[];
   analysis: BarrelAnalysis;
   focalChainId: string;
 }
 
-function renderChainSvg(
+/**
+ * The single topology-placement pipeline shared by both renderers (issue #22).
+ *
+ * Selects the path (multi-chain assembly unwrap / single closed-barrel unwrap /
+ * arc-length unroll), runs the unroll and the fixed-gap layout, and returns the
+ * laid-out segments plus the context the renderers need. `renderChainSvg` draws
+ * from this; `buildScene` maps it into the renderer-agnostic `TopologyScene`, so
+ * both reflect the same "which elements go where" decisions.
+ */
+export interface ChainLayoutPlan {
+  asm: ReturnType<typeof unwrapAssembly> | null;
+  /** True for any barrel (cylindrical or assembly) unwrap. */
+  useUnwrap: boolean;
+  cylindrical: boolean;
+  layouts: SegmentLayout[];
+  totalArc: number;
+  /** Per-segment focal flag (assembly only); null otherwise. */
+  focalFlags: boolean[] | null;
+  zMin: number;
+  zMax: number;
+}
+
+export function planChainLayout(
   chain: ChainData,
-  opts: LoopRenderOptions,
   analysis: BarrelAnalysis,
-  showContacts: boolean,
   assembly?: AssemblyContext,
-): SVGSVGElement {
+): ChainLayoutPlan {
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
   // unwraps by angle; everything else uses the arc-length unroll.
@@ -986,8 +1006,30 @@ function renderChainSvg(
     : analysis.cylindrical
       ? barrelLayout(unroll.segments, ssSegments)
       : layoutSegments(unroll.segments, ssSegments);
-  // Per-segment focal flag (assembly only): neighbour protomers render faded.
-  const focalFlags = asm ? asm.focal : null;
+  return {
+    asm,
+    useUnwrap,
+    cylindrical: analysis.cylindrical,
+    layouts,
+    totalArc,
+    focalFlags: asm ? asm.focal : null,
+    zMin: unroll.zMin,
+    zMax: unroll.zMax,
+  };
+}
+
+function renderChainSvg(
+  chain: ChainData,
+  opts: LoopRenderOptions,
+  analysis: BarrelAnalysis,
+  showContacts: boolean,
+  assembly?: AssemblyContext,
+): SVGSVGElement {
+  const { asm, useUnwrap, layouts, totalArc, focalFlags, zMin, zMax } = planChainLayout(
+    chain,
+    analysis,
+    assembly,
+  );
 
   // In barrel mode, hairpin loops leave each strand parallel to it (long tangent
   // handles following the strand tilt) and skip the centred vertical-extreme
@@ -996,7 +1038,7 @@ function renderChainSvg(
     ? { ...opts, extremePoints: false, tangentMagPx: BARREL.loopTangentPx }
     : opts;
 
-  const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
+  const zRange = Math.max(PLOT.zRangeMin, Math.abs(zMin), Math.abs(zMax));
   const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
   const plotHeight = zRange * 2 * PLOT.zPxPerA;
   const svgWidth = PLOT.margin.left + plotWidth + PLOT.margin.right;
