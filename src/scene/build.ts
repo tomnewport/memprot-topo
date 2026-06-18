@@ -5,8 +5,8 @@
  * `renderChainSvg` both call {@link planChainLayout}, so the scene reflects
  * exactly the same element placement the SVG draws. Covers all three paths —
  * helical (arc-length), single-chain β-barrel, and multi-chain assembly barrel —
- * with dual flat+3-D centrelines, residues, β-sheet contacts, style and meta.
- * Still TODO: resolved loop control points (§4.3).
+ * with dual flat+3-D centrelines, residues, β-sheet contacts, schematic loop
+ * béziers (so the 3-D view overlays the 2-D diagram at t=0), style and meta.
  *
  * NOTE: the imports from `../components/topology-display.js` are transitional.
  * The plan (`docs/3d-renderer-plan.md` §4.6) inverts this dependency in a later
