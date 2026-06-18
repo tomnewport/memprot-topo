@@ -41,10 +41,10 @@ import type {
 /** Membrane bilayer half-thickness (Å) — matches the SVG renderer's `PLOT`. */
 const MEMBRANE_HALF = 15;
 
-/** 3-D cross-section dimensions (Å). Strand ribbon ~1 nm × 0.25 nm. */
+/** 3-D cross-section dimensions (Å). */
 const SCENE_3D = {
-  ribbonThickness: 2.5,
-  helixRadius: 2.6,
+  ribbonThickness: 1.4,
+  helixRadius: 2.4,
   loopRadius: 0.7,
 };
 

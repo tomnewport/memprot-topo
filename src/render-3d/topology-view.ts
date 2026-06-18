@@ -23,9 +23,17 @@ const COLOURS: Record<SceneElement['type'], number> = {
 };
 const CONTACT_COLOUR = 0xc98a3b;
 
-/** 3-D ribbon body half-width (Å) reached at the fully-rolled end (~1 nm wide). */
-const RIBBON_3D_HALF = 5;
+/** 3-D ribbon body half-width (Å) reached at the fully-rolled end. */
+const RIBBON_3D_HALF = 2.6;
 const WAVEFRONT = 0.35;
+/** Tube cross-section segments (helix/coil) — higher is smoother. */
+const TUBE_RING = 16;
+/** Default 3-D camera framing angles. */
+const VIEW_AZ = Math.PI / 6; // 30°
+const VIEW_EL = (14 * Math.PI) / 180;
+/** Camera field of view at the flat (≈orthographic) and rolled ends. */
+const FOV_FLAT = 2;
+const FOV_3D = 50;
 
 interface ElementRender {
   type: SceneElement['type'];
@@ -69,6 +77,17 @@ export class TopologyView3D {
   private t = 0;
   private membraneHalf = 15;
   private sceneRadius = 60;
+  // Extents (Å) for the morphing membrane slab: flat arc half-width, and the
+  // rolled structure's half-extent across (X) and in depth (Z).
+  private flatHalfWidth = 60;
+  private solidHalfX = 20;
+  private solidHalfDepth = 20;
+  // Camera anchor: the angle/zoom the 3-D end eases to/from. Defaults to the 3/4
+  // framing; captured from the user's orbit when rolling back down so the return
+  // to the flat orthographic view is smooth from whatever angle they left it.
+  private anchorAz = VIEW_AZ;
+  private anchorEl = VIEW_EL;
+  private anchorDist: number | null = null;
   private raf = 0;
   private disposed = false;
 
@@ -183,7 +202,26 @@ export class TopologyView3D {
       this.contacts = null;
     }
 
-    this.buildMembrane(topo, arcMid);
+    // Extents for the membrane slab and framing.
+    let fhw = 0;
+    let shx = 0;
+    let shd = 0;
+    for (const el of this.elements) {
+      for (const v of el.flat) fhw = Math.max(fhw, Math.abs(v.x));
+      for (const v of el.solid) {
+        shx = Math.max(shx, Math.abs(v.x));
+        shd = Math.max(shd, Math.abs(v.z));
+      }
+    }
+    this.flatHalfWidth = fhw;
+    this.solidHalfX = shx;
+    this.solidHalfDepth = shd;
+    // Fresh scene → reset the camera anchor to the default 3/4 framing.
+    this.anchorAz = VIEW_AZ;
+    this.anchorEl = VIEW_EL;
+    this.anchorDist = null;
+
+    this.buildMembrane();
     this.updateMorph();
   }
 
@@ -209,7 +247,7 @@ export class TopologyView3D {
       });
     }
 
-    const ring = el.type === 'strand' ? 4 : 10;
+    const ring = el.type === 'strand' ? 4 : TUBE_RING;
     const thickness =
       el.type === 'strand'
         ? topo.style.ribbonThickness / 2
@@ -262,30 +300,63 @@ export class TopologyView3D {
     };
   }
 
-  private buildMembrane(topo: TopologyScene, arcMid: number): void {
-    const halfArc = Math.max(topo.arcSpan / 2, 20);
-    const w = halfArc * 2.2;
-    const depth = Math.max(topo.style.helixRadius * 8, 40);
-    const geo = new THREE.BoxGeometry(w, topo.membrane.half * 2, depth);
-    geo.translate(topo.arcSpan / 2 - arcMid, 0, 0); // flat extent is centred on arcMid
+  private buildMembrane(): void {
+    // A unit slab; {@link updateMembrane} scales/positions it each frame so it
+    // morphs with the structure and is cut away to reveal the protein inside.
     const mat = new THREE.MeshStandardMaterial({
       color: 0xcfd6dd,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.18,
       roughness: 1,
       side: THREE.DoubleSide,
+      depthWrite: false, // don't occlude / z-fight with the protein in front
     });
-    this.membrane = new THREE.Mesh(geo, mat);
+    this.membrane = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+    this.membrane.renderOrder = -1;
     this.group.add(this.membrane);
   }
 
+  /**
+   * Size and place the membrane slab for morph fraction `e`. The slab fills only
+   * the far half of the depth (view +Z is toward the camera), its cut face at the
+   * protein's mid-plane (z = 0), so the near half of the structure is revealed.
+   * Its width eases from the full flat arc (2-D) to the compact 3-D footprint.
+   */
+  private updateMembrane(e: number): void {
+    const m = this.membrane;
+    if (!m) return;
+    const margin = 8;
+    const halfW = lerp(this.flatHalfWidth + margin, this.solidHalfX + margin, e);
+    const depth = this.solidHalfDepth + margin;
+    m.scale.set(halfW * 2, this.membraneHalf * 2, depth);
+    m.position.set(0, 0, -depth / 2);
+  }
+
   setT(t: number): void {
+    const prev = this.t;
     this.t = Math.max(0, Math.min(1, t));
+    // Leaving the orbit-controlled 3-D state: anchor to the user's current view
+    // so the roll-down eases from there back to the flat dead-on view.
+    if (prev >= 1 && this.t < 1) this.captureAnchor();
     this.updateMorph();
   }
 
   get morph(): number {
     return this.t;
+  }
+
+  /** Capture the current camera orbit angle and distance as the 3-D anchor. */
+  private captureAnchor(): void {
+    const p = this.camera.position;
+    const r = p.length() || 1;
+    this.anchorAz = Math.atan2(p.x, p.z);
+    this.anchorEl = Math.asin(THREE.MathUtils.clamp(p.y / r, -1, 1));
+    this.anchorDist = r;
+  }
+
+  /** Distance that frames the structure at the 3-D field of view. */
+  private framedDist(): number {
+    return (this.sceneRadius / Math.sin(THREE.MathUtils.degToRad(FOV_3D) / 2)) * 1.06;
   }
 
   /** Recompute morphed centrelines + per-sample faces and rebuild geometry. */
@@ -310,6 +381,7 @@ export class TopologyView3D {
       this.writeSweep(el, pts, faces, halfW);
     }
     this.updateContacts();
+    this.updateMembrane(e);
 
     let r = this.membraneHalf;
     for (const el of this.elements) {
@@ -406,19 +478,11 @@ export class TopologyView3D {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.animate);
     if (this.t >= 1) {
-      this.camera.fov = 50;
+      this.camera.fov = FOV_3D;
       this.camera.updateProjectionMatrix();
       if (!this.controls.enabled) {
-        const fovR = THREE.MathUtils.degToRad(50);
-        const dist = (this.sceneRadius / Math.sin(fovR / 2)) * 1.06;
-        const az = THREE.MathUtils.degToRad(30);
-        const el = THREE.MathUtils.degToRad(14);
-        this.camera.position.set(
-          dist * Math.sin(az) * Math.cos(el),
-          dist * Math.sin(el),
-          dist * Math.cos(az) * Math.cos(el),
-        );
-        this.camera.lookAt(0, 0, 0);
+        // Place at the anchor (default 3/4 on entry) then hand off to the user.
+        this.placeCamera(this.anchorAz, this.anchorEl, this.anchorDist ?? this.framedDist());
         this.controls.enabled = true;
       }
       this.controls.update();
@@ -426,22 +490,28 @@ export class TopologyView3D {
       return;
     }
     this.controls.enabled = false;
+    // Ease from the flat dead-on near-orthographic view (e=0) to the 3-D anchor
+    // (e=1). Because the anchor is the user's captured orbit on a roll-down, the
+    // structure rotates smoothly back to face-on from whatever angle it was at.
     const e = smooth(this.t);
-    const fov = lerp(2, 50, e);
+    const fov = lerp(FOV_FLAT, FOV_3D, e);
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
-    const fovR = THREE.MathUtils.degToRad(fov);
-    const dist = (this.sceneRadius / Math.sin(fovR / 2)) * 1.06;
-    const az = THREE.MathUtils.degToRad(lerp(0, 30, e));
-    const el = THREE.MathUtils.degToRad(lerp(0, 14, e));
+    const orthoDist = (this.sceneRadius / Math.sin(THREE.MathUtils.degToRad(fov) / 2)) * 1.06;
+    const dist = lerp(orthoDist, this.anchorDist ?? this.framedDist(), e);
+    this.placeCamera(lerp(0, this.anchorAz, e), lerp(0, this.anchorEl, e), dist);
+    this.renderer.render(this.scene, this.camera);
+  };
+
+  /** Position the camera on a sphere about the origin at (azimuth, elevation). */
+  private placeCamera(az: number, el: number, dist: number): void {
     this.camera.position.set(
       dist * Math.sin(az) * Math.cos(el),
       dist * Math.sin(el),
       dist * Math.cos(az) * Math.cos(el),
     );
     this.camera.lookAt(0, 0, 0);
-    this.renderer.render(this.scene, this.camera);
-  };
+  }
 
   dispose(): void {
     this.disposed = true;
