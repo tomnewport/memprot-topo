@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildScene } from '../../../src/scene/build.js';
+import { syntheticBarrel } from '../fixtures/barrel.js';
 import type { Calpha, ChainData, SecondaryStructureSegment } from '../../../src/types.js';
 
 /**
@@ -93,5 +94,40 @@ describe('buildScene (plain/helical path)', () => {
     expect(scene.style.ribbonHalfWidth).toBeGreaterThan(0);
     expect(scene.style.helixRadius).toBeGreaterThan(0);
     expect(scene.style.ribbonArrowLen).toBeGreaterThan(0);
+  });
+});
+
+describe('buildScene (β-barrel path)', () => {
+  const n = 8;
+  const interStrand = 4.8;
+  const scene = buildScene(syntheticBarrel({ n, strandLen: 10, interStrand }));
+
+  it('classifies the chain as a barrel with ring metadata', () => {
+    expect(scene.kind).toBe('barrel');
+    expect(scene.meta.strandCount).toBe(n);
+    expect(Number.isFinite(scene.meta.tiltDeg!)).toBe(true);
+  });
+
+  it('emits the wall strands as strand elements', () => {
+    const strands = scene.elements.filter((e) => e.type === 'strand');
+    expect(strands.length).toBe(n);
+  });
+
+  it('rolls up honestly: strand 3-D positions lie on the barrel radius', () => {
+    const R = (n * interStrand) / (2 * Math.PI);
+    const strand = scene.elements.find((e) => e.type === 'strand')!;
+    // De-spiralled strand Cα sit ~on the cylinder of radius R about the axis.
+    const radii = strand.samples.map((s) => Math.hypot(s.pos3d.x, s.pos3d.y));
+    const mean = radii.reduce((a, b) => a + b, 0) / radii.length;
+    expect(mean).toBeGreaterThan(R * 0.6);
+    expect(mean).toBeLessThan(R * 1.4);
+  });
+
+  it('every barrel sample carries a finite 3-D position', () => {
+    for (const el of scene.elements) {
+      for (const s of el.samples) {
+        for (const k of ['x', 'y', 'z'] as const) expect(Number.isFinite(s.pos3d[k])).toBe(true);
+      }
+    }
   });
 });

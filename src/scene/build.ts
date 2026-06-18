@@ -15,15 +15,18 @@
  * 5, when the layout helpers move into `src/scene/` and the component consumes
  * the scene rather than the reverse.
  */
-import type { ChainData } from '../types.js';
-import { unrollChain } from '../unroll/index.js';
+import type { ChainData, SecondaryStructureSegment } from '../types.js';
+import { unrollChain, unwrapBarrel } from '../unroll/index.js';
+import { analyseBarrel } from '../contacts/index.js';
 import {
   effectiveSsSegments,
   layoutSegments,
+  barrelLayout,
+  barrelWallSegments,
+  SS_BODY,
   type SegmentLayout,
   type SsRun,
 } from '../components/topology-display.js';
-import { SS_BODY } from '../components/topology-display.js';
 import type {
   HelixElement,
   LoopElement,
@@ -78,18 +81,15 @@ function runResidues(layout: SegmentLayout, run: SsRun): SceneResidue[] {
   return out;
 }
 
-/**
- * Build the topology scene for a chain. Plain (non-barrel) path only for now.
- */
-export function buildScene(chain: ChainData): TopologyScene {
-  const ss = effectiveSsSegments(chain.segments);
-  const unroll = unrollChain(chain.calphas, { ssSegments: ss });
-  const { layouts, totalArc } = layoutSegments(unroll.segments, ss);
-
+/** Build scene elements from laid-out segments. Shared by both pipeline paths. */
+function elementsFromLayouts(layouts: SegmentLayout[]): {
+  elements: SceneElement[];
+  helices: number;
+  strands: number;
+} {
   const elements: SceneElement[] = [];
   let helices = 0;
   let strands = 0;
-
   for (const layout of layouts) {
     for (const run of layout.runs) {
       const samples = runSamples(layout, run);
@@ -118,25 +118,64 @@ export function buildScene(chain: ChainData): TopologyScene {
       }
     }
   }
+  return { elements, helices, strands };
+}
 
-  const style: SceneStyle = {
-    ribbonHalfWidth: SS_BODY.halfWidthPx,
-    ribbonArrowHalfWidth: SS_BODY.arrowHalfWidthPx,
-    ribbonArrowLen: SS_BODY.arrowLengthPx,
-    ribbonThickness: SCENE_3D.ribbonThickness,
-    helixRadius: SCENE_3D.helixRadius,
-    loopRadius: SCENE_3D.loopRadius,
-  };
+const STYLE: SceneStyle = {
+  ribbonHalfWidth: SS_BODY.halfWidthPx,
+  ribbonArrowHalfWidth: SS_BODY.arrowHalfWidthPx,
+  ribbonArrowLen: SS_BODY.arrowLengthPx,
+  ribbonThickness: SCENE_3D.ribbonThickness,
+  helixRadius: SCENE_3D.helixRadius,
+  loopRadius: SCENE_3D.loopRadius,
+};
+
+/**
+ * Build the topology scene for a single chain.
+ *
+ * Handles the plain (helical / arc-length) path and the closed single-chain
+ * β-barrel path (cylindrical unwrap). Multi-chain assembly barrels, loop control
+ * points, and contacts are added in later increments.
+ */
+export function buildScene(chain: ChainData): TopologyScene {
+  const effective = effectiveSsSegments(chain.segments);
+  const analysis = analyseBarrel(chain.calphas, effective);
+
+  let layouts: SegmentLayout[];
+  let totalArc: number;
+  let zRange: { min: number; max: number };
+  let kind: TopologyScene['kind'];
+  const meta: TopologyScene['meta'] = { helices: 0, strands: 0 };
+
+  if (analysis.cylindrical) {
+    const ssSegments: SecondaryStructureSegment[] = barrelWallSegments(analysis, effective);
+    const unroll = unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre });
+    ({ layouts, totalArc } = barrelLayout(unroll.segments, ssSegments));
+    zRange = { min: unroll.zMin, max: unroll.zMax };
+    kind = 'barrel';
+    meta.strandCount = analysis.strandCount;
+    meta.tiltDeg = analysis.tiltDeg;
+    meta.shear = analysis.shear;
+  } else {
+    const unroll = unrollChain(chain.calphas, { ssSegments: effective });
+    ({ layouts, totalArc } = layoutSegments(unroll.segments, effective));
+    zRange = { min: unroll.zMin, max: unroll.zMax };
+    kind = 'helical';
+  }
+
+  const { elements, helices, strands } = elementsFromLayouts(layouts);
+  meta.helices = helices;
+  meta.strands = strands;
 
   return {
     chainId: chain.chainId,
-    kind: 'helical',
+    kind,
     membrane: { half: MEMBRANE_HALF },
     arcSpan: totalArc,
-    zRange: { min: unroll.zMin, max: unroll.zMax },
+    zRange,
     elements,
     contacts: [],
-    style,
-    meta: { helices, strands },
+    style: STYLE,
+    meta,
   };
 }

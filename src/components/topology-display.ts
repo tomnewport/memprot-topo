@@ -210,7 +210,7 @@ export function effectiveSsSegments(
   return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= MIN_SS_RESIDUES);
 }
 
-function isBetaBarrel(chain: ChainData): boolean {
+export function isBetaBarrel(chain: ChainData): boolean {
   let helixRes = 0,
     strandRes = 0;
   for (const seg of chain.segments) {
@@ -895,7 +895,7 @@ export function layoutSegments(
  * forward (lowest residue on the left). Coils ride the loop ramp between
  * elements. Membrane depth (z) is never touched.
  */
-function barrelLayout(
+export function barrelLayout(
   segments: UnrolledSegment[],
   wallSegments: SecondaryStructureSegment[],
   continuous = false,
@@ -1056,7 +1056,8 @@ function barrelLayout(
   const shift = Number.isFinite(minArc) ? -minArc : 0;
 
   const layouts = built.map(({ segment, runs, newArc }) => ({
-    samples: segment.samples.map((p, i) => ({ arc: newArc[i] + shift, z: p.z })),
+    // Spread `...p` so retained 3-D coords (x3/y3) survive; layout only sets arc.
+    samples: segment.samples.map((p, i) => ({ ...p, arc: newArc[i] + shift })),
     residues: segment.residues.map((rr) => ({ ...rr, arc: newArc[rr.sampleIndex] + shift })),
     runs,
   }));
@@ -1108,7 +1109,7 @@ function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: Segm
  * inside the barrel are omitted, so they fall through to coil and render as
  * part of the connecting loop rather than as spurious bars near the axis.
  */
-function barrelWallSegments(
+export function barrelWallSegments(
   analysis: BarrelAnalysis,
   effective: SecondaryStructureSegment[],
 ): SecondaryStructureSegment[] {
