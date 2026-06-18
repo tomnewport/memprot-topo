@@ -891,9 +891,12 @@ function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: Segm
     line.setAttribute('y1', a.z.toFixed(3));
     line.setAttribute('x2', b.arc.toFixed(3));
     line.setAttribute('y2', b.z.toFixed(3));
-    line.setAttribute('stroke', COLOURS.contact);
-    line.setAttribute('stroke-width', '1');
-    line.setAttribute('stroke-opacity', '0.5');
+    // Grey dashed ties indicate β-sheet (3-D) proximity between paired strands —
+    // information the flat diagram can't otherwise convey.
+    line.setAttribute('stroke', '#9aa0a6');
+    line.setAttribute('stroke-width', '0.8');
+    line.setAttribute('stroke-dasharray', '2 2');
+    line.setAttribute('stroke-opacity', '0.7');
     line.setAttribute('vector-effect', 'non-scaling-stroke');
     group.appendChild(line);
   }
@@ -1731,12 +1734,13 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Whether β-sheet residue contacts are overlaid as ties between paired
-   * strands. Off by default; set `show-contacts` to "on"/"true"/"show"/"1".
+   * Whether β-sheet residue contacts are overlaid as grey dashed ties between
+   * paired strands. On by default; set `show-contacts` to "off"/"false"/"0" to
+   * hide them.
    */
   private get showContacts(): boolean {
     const v = this.getAttribute('show-contacts');
-    return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
+    return v === null || !['off', 'false', 'hide', '0'].includes(v.toLowerCase());
   }
 
   /** Assemble the loop rendering options from the component's attributes. */

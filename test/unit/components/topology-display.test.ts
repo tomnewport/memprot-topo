@@ -803,12 +803,12 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
     expect(new Set(slantSigns).size).toBe(1);
   });
 
-  it('overlays β-sheet contact ties only when show-contacts is enabled', () => {
-    const off = mount(barrelProtein());
-    expect(off.shadowRoot!.querySelectorAll('.contact-ties line').length).toBe(0);
-
-    const on = mount(barrelProtein(), { 'show-contacts': 'on' });
+  it('overlays β-sheet contact ties by default, hidden when show-contacts is off', () => {
+    const on = mount(barrelProtein());
     expect(on.shadowRoot!.querySelectorAll('.contact-ties line').length).toBeGreaterThan(0);
+
+    const off = mount(barrelProtein(), { 'show-contacts': 'off' });
+    expect(off.shadowRoot!.querySelectorAll('.contact-ties line').length).toBe(0);
   });
 
   /** Strand polygons' vertex lists (x,y user-space coords) in document order. */

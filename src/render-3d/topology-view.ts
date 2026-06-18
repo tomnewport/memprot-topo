@@ -21,8 +21,9 @@ const COLOURS: Record<SceneElement['type'], number> = {
   strand: 0x6ea76d,
   loop: 0x888888,
 };
-const CONTACT_COLOUR = 0xc98a3b;
 
+/** SVG loop stroke half-width in Å (stroke 1.8 px ÷ arcPxPerA 2.5 ÷ 2). */
+const LOOP_FLAT_HALF = 0.36;
 /** 3-D ribbon body half-width (Å) reached at the fully-rolled end. */
 const RIBBON_3D_HALF = 1.3;
 const WAVEFRONT = 0.35;
@@ -44,10 +45,13 @@ interface ElementRender {
   /** Solid-frame radial face direction per sample (barrels), else null. */
   solidFace: THREE.Vector3[] | null;
   arcFrac: number[];
-  /** SVG-matching ribbon half-width at the flat end (Å). */
-  flatHalfW: number;
+  /** Cross-section half-width/radius at the flat (2-D) and rolled (3-D) ends (Å). */
+  flatHalf: number;
+  radius3d: number;
+  /** Cross-section thickness at the flat and rolled ends (Å). */
+  thickFlat: number;
+  thick3d: number;
   ring: number;
-  thickness: number;
   geometry: THREE.BufferGeometry;
   mesh: THREE.Mesh;
 }
@@ -66,12 +70,6 @@ export class TopologyView3D {
   private readonly controls: OrbitControls;
   private readonly group = new THREE.Group();
   private membrane: THREE.Mesh | null = null;
-  private contacts: THREE.LineSegments | null = null;
-  private contactPairs: {
-    flat: [THREE.Vector3, THREE.Vector3];
-    solid: [THREE.Vector3, THREE.Vector3];
-    arcFrac: number;
-  }[] = [];
   private elements: ElementRender[] = [];
   private topo: TopologyScene | null = null;
   private t = 0;
@@ -143,10 +141,6 @@ export class TopologyView3D {
       this.group.remove(this.membrane);
       this.membrane.geometry.dispose();
     }
-    if (this.contacts) {
-      this.group.remove(this.contacts);
-      this.contacts.geometry.dispose();
-    }
 
     this.topo = topo;
     this.membraneHalf = topo.membrane.half;
@@ -179,27 +173,6 @@ export class TopologyView3D {
 
     for (const el of topo.elements) {
       this.elements.push(this.buildElement(el, topo, flatOf, solidOf, arcMid, barrel));
-    }
-
-    // Contacts as morphing line segments.
-    this.contactPairs = topo.contacts.map((c) => ({
-      flat: [flatOf(c.a.arc, c.a.z), flatOf(c.b.arc, c.b.z)],
-      solid: [solidOf(c.a.pos3d), solidOf(c.b.pos3d)],
-      arcFrac: (0.5 * (c.a.arc + c.b.arc)) / (topo.arcSpan || 1),
-    }));
-    if (this.contactPairs.length) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute(
-        'position',
-        new THREE.BufferAttribute(new Float32Array(this.contactPairs.length * 6), 3),
-      );
-      this.contacts = new THREE.LineSegments(
-        geo,
-        new THREE.LineBasicMaterial({ color: CONTACT_COLOUR, transparent: true, opacity: 0.6 }),
-      );
-      this.group.add(this.contacts);
-    } else {
-      this.contacts = null;
     }
 
     // Extents for the membrane slab and framing.
@@ -248,12 +221,29 @@ export class TopologyView3D {
     }
 
     const ring = el.type === 'strand' ? 4 : TUBE_RING;
-    const thickness =
-      el.type === 'strand'
-        ? topo.style.ribbonThickness / 2
-        : el.type === 'helix'
-          ? topo.style.helixRadius
-          : topo.style.loopRadius;
+    // Cross-section eases from the SVG-matching flat size (so the 3-D view
+    // overlays the 2-D diagram at t=0) to the rounded 3-D size at t=1.
+    const svgHalf = topo.style.ribbonHalfWidth;
+    let flatHalf: number;
+    let radius3d: number;
+    let thickFlat: number;
+    let thick3d: number;
+    if (el.type === 'strand') {
+      flatHalf = svgHalf;
+      radius3d = RIBBON_3D_HALF;
+      thickFlat = 0.12; // ~flat at the 2-D end
+      thick3d = topo.style.ribbonThickness / 2;
+    } else if (el.type === 'helix') {
+      flatHalf = svgHalf;
+      radius3d = topo.style.helixRadius;
+      thickFlat = svgHalf; // circular tube: thickness tracks the radius
+      thick3d = topo.style.helixRadius;
+    } else {
+      flatHalf = LOOP_FLAT_HALF;
+      radius3d = topo.style.loopRadius;
+      thickFlat = LOOP_FLAT_HALF;
+      thick3d = topo.style.loopRadius;
+    }
 
     const geometry = new THREE.BufferGeometry();
     const segs = el.samples.length - 1;
@@ -292,9 +282,11 @@ export class TopologyView3D {
       solid,
       solidFace,
       arcFrac,
-      flatHalfW: topo.style.ribbonHalfWidth,
+      flatHalf,
+      radius3d,
+      thickFlat,
+      thick3d,
       ring,
-      thickness,
       geometry,
       mesh,
     };
@@ -304,9 +296,9 @@ export class TopologyView3D {
     // A unit slab; {@link updateMembrane} scales/positions it each frame so it
     // morphs with the structure and is cut away to reveal the protein inside.
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xcfd6dd,
+      color: 0xeaeaea, // matches the SVG membrane fill
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.5,
       roughness: 1,
       side: THREE.DoubleSide,
       depthWrite: false, // don't occlude / z-fight with the protein in front
@@ -330,6 +322,8 @@ export class TopologyView3D {
     const depth = this.solidHalfDepth + margin;
     m.scale.set(halfW * 2, this.membraneHalf * 2, depth);
     m.position.set(0, 0, -depth / 2);
+    // Match the SVG slab opacity at the flat end; fade to a subtle 3-D slab.
+    (m.material as THREE.MeshStandardMaterial).opacity = lerp(0.5, 0.16, e);
   }
 
   setT(t: number): void {
@@ -377,10 +371,10 @@ export class TopologyView3D {
         faces.push(new THREE.Vector3().lerpVectors(flatFace, solidFace, local).normalize());
       }
       // Ribbon width grows from the SVG width (flat) to ~1 nm (3-D).
-      const halfW = el.type === 'strand' ? lerp(el.flatHalfW, RIBBON_3D_HALF, e) : el.thickness;
-      this.writeSweep(el, pts, faces, halfW);
+      const halfW = lerp(el.flatHalf, el.radius3d, e);
+      const thickness = el.type === 'strand' ? lerp(el.thickFlat, el.thick3d, e) : halfW;
+      this.writeSweep(el, pts, faces, halfW, thickness);
     }
-    this.updateContacts();
     this.updateMembrane(e);
 
     let r = this.membraneHalf;
@@ -391,32 +385,13 @@ export class TopologyView3D {
     this.sceneRadius = r;
   }
 
-  private updateContacts(): void {
-    if (!this.contacts) return;
-    const pos = this.contacts.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const arr = pos.array as Float32Array;
-    const tmp = new THREE.Vector3();
-    for (let i = 0; i < this.contactPairs.length; i++) {
-      const c = this.contactPairs[i];
-      const local = smooth(
-        THREE.MathUtils.clamp((this.t * (1 + WAVEFRONT) - c.arcFrac) / WAVEFRONT, 0, 1),
-      );
-      for (let e = 0; e < 2; e++) {
-        tmp.lerpVectors(c.flat[e], c.solid[e], local);
-        arr[i * 6 + e * 3] = tmp.x;
-        arr[i * 6 + e * 3 + 1] = tmp.y;
-        arr[i * 6 + e * 3 + 2] = tmp.z;
-      }
-    }
-    pos.needsUpdate = true;
-  }
-
   /** Sweep the element's cross-section along the morphed centreline. */
   private writeSweep(
     el: ElementRender,
     pts: THREE.Vector3[],
     faces: THREE.Vector3[],
     halfW: number,
+    thickness: number,
   ): void {
     const pos = el.geometry.getAttribute('position') as THREE.BufferAttribute;
     const arr = pos.array as Float32Array;
@@ -447,10 +422,10 @@ export class TopologyView3D {
       const base = i * el.ring * 3;
       if (el.ring === 4) {
         const corners: [number, number][] = [
-          [w, el.thickness],
-          [w, -el.thickness],
-          [-w, -el.thickness],
-          [-w, el.thickness],
+          [w, thickness],
+          [w, -thickness],
+          [-w, -thickness],
+          [-w, thickness],
         ];
         for (let k = 0; k < 4; k++) {
           const [cw, cd] = corners[k];
