@@ -16,6 +16,14 @@ import {
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import { ribbonOutline } from '../scene/geometry/ribbon-outline.js';
+import {
+  buildLoopPoints,
+  type LoopControlPoint,
+  type LoopEnd,
+  type LoopExtreme,
+  type LoopGeom,
+  type LoopRenderOptions,
+} from '../scene/geometry/loop-path.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -163,6 +171,14 @@ const LOOP = {
   extremeThreshold: 0.2,
   /** Horizontal spacing (screen px) between the two vertical-extreme points. */
   extremeSpacingPx: 5,
+};
+
+/** Pixel/scale config handed to the pure {@link buildLoopPoints} geometry. */
+const LOOP_GEOM: LoopGeom = {
+  defaultTangentMagPx: LOOP.tangentMagPx,
+  elementGapPx: LOOP.elementGapPx,
+  extremeSpacingPx: LOOP.extremeSpacingPx,
+  arcPxPerA: PLOT.arcPxPerA,
 };
 
 const BARREL = {
@@ -473,141 +489,11 @@ function drawSsPolygon(
 }
 
 /** A loop control point in plot (arc, z) Ångström coordinates, tagged for debug colouring. */
-interface LoopControlPoint {
-  arc: number;
-  z: number;
-  kind: 'endpoint' | 'tangent' | 'extreme';
-}
-
 const LOOP_DEBUG_FILL: Record<LoopControlPoint['kind'], string> = {
   endpoint: '#1f77b4',
   tangent: '#2ca02c',
   extreme: '#d62728',
 };
-
-/** Unit (arc, z) tangent between two display samples; falls back to +arc. */
-function unitTangent(samples: UnrolledPoint[], from: number, to: number): { a: number; z: number } {
-  const da = samples[to].arc - samples[from].arc;
-  const dz = samples[to].z - samples[from].z;
-  const len = Math.sqrt(da * da + dz * dz);
-  if (len < 1e-9) return { a: 1, z: 0 };
-  return { a: da / len, z: dz / len };
-}
-
-/** Runtime-tunable loop rendering options, sourced from component attributes. */
-interface LoopRenderOptions {
-  /** Draw debug circles at each control point. */
-  showPoints: boolean;
-  /** Whether to add vertical-extreme control points when a loop overshoots. */
-  extremePoints: boolean;
-  /** Fraction of the tangent-points' z-range beyond which extreme points appear. */
-  extremeThreshold: number;
-  /**
-   * Tangent-handle length (screen px) for the loop's end control points.
-   * Longer handles make the loop leave parallel to the SS element it exits
-   * (used for barrel hairpins). Defaults to {@link LOOP.tangentMagPx}.
-   */
-  tangentMagPx?: number;
-}
-
-/** One end of a loop: the samples array and the boundary sample index within it. */
-interface LoopEnd {
-  samples: UnrolledPoint[];
-  index: number;
-}
-
-/** The path whose vertical extreme may pull extra control points out of range. */
-interface LoopExtreme {
-  samples: UnrolledPoint[];
-  startSample: number;
-  endSample: number;
-}
-
-/**
- * Build the explicit control-point sequence for a loop / connector curve:
- *   1. previous element end (centre of path)            — if a previous end exists
- *   2. point 1 + previous element end-tangent × tangentMag
- *   3-4. two points at the loop's vertical extreme      — only when `extremePoints`
- *        is set and the loop reaches more than `extremeThreshold` of the
- *        tangent-points' z-range beyond it
- *   5. next element start − next element start-tangent × tangentMag
- *   6. next element start (centre of path)              — if a next end exists
- *
- * `prev`/`next` may carry samples from different chain segments (used for the
- * dashed connector across chain breaks). Distances in pixels assume a 1:1
- * arc/z aspect ratio.
- */
-function buildLoopPoints(
-  prev: LoopEnd | null,
-  next: LoopEnd | null,
-  extreme: LoopExtreme | null,
-  opts: LoopRenderOptions,
-): LoopControlPoint[] {
-  const magA = (opts.tangentMagPx ?? LOOP.tangentMagPx) / PLOT.arcPxPerA;
-  const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
-  const extremeSpacingA = LOOP.extremeSpacingPx / PLOT.arcPxPerA;
-
-  const points: LoopControlPoint[] = [];
-
-  // Points 1 & 2: previous element end and its outward tangent.
-  let prevEnd: { arc: number; z: number } | null = null;
-  if (prev) {
-    const i = prev.index;
-    prevEnd = { arc: prev.samples[i].arc, z: prev.samples[i].z };
-    const t = unitTangent(prev.samples, Math.max(0, i - 1), i);
-    points.push({ ...prevEnd, kind: 'endpoint' });
-    points.push({ arc: prevEnd.arc + magA * t.a, z: prevEnd.z + magA * t.z, kind: 'tangent' });
-  }
-
-  // Points 5 & 6: next element start and its inward tangent (added after extremes).
-  let nextStart: { arc: number; z: number } | null = null;
-  let nextTangent: LoopControlPoint | null = null;
-  if (next) {
-    const i = next.index;
-    nextStart = { arc: next.samples[i].arc, z: next.samples[i].z };
-    const t = unitTangent(next.samples, i, Math.min(next.samples.length - 1, i + 1));
-    nextTangent = { arc: nextStart.arc - magA * t.a, z: nextStart.z - magA * t.z, kind: 'tangent' };
-  }
-
-  if (opts.extremePoints && extreme) {
-    // Vertical extreme of the loop's real path (z is unaffected by the layout shift).
-    let loopMaxZ = -Infinity;
-    let loopMinZ = Infinity;
-    for (let i = extreme.startSample; i <= extreme.endSample; i++) {
-      if (extreme.samples[i].z > loopMaxZ) loopMaxZ = extreme.samples[i].z;
-      if (extreme.samples[i].z < loopMinZ) loopMinZ = extreme.samples[i].z;
-    }
-
-    // z-range spanned by the tangent control points placed so far.
-    const tangentZs = [...points.map((p) => p.z)];
-    if (nextStart) tangentZs.push(nextStart.z);
-    if (nextTangent) tangentZs.push(nextTangent.z);
-    const rangeMin = Math.min(...tangentZs);
-    const rangeMax = Math.max(...tangentZs);
-    const span = rangeMax - rangeMin;
-    const margin = opts.extremeThreshold * span;
-
-    // Decide whether the loop escapes the tangent-points' z-range, and on which side.
-    let extremeZ: number | null = null;
-    const aboveBy = loopMaxZ - rangeMax;
-    const belowBy = rangeMin - loopMinZ;
-    if (aboveBy > margin && aboveBy >= belowBy) extremeZ = loopMaxZ;
-    else if (belowBy > margin) extremeZ = loopMinZ;
-
-    if (extremeZ !== null) {
-      // Two points at the extreme z give the interpolating curve a flat plateau
-      // there; centre the pair horizontally between the two elements.
-      const centreArc = prevEnd ? prevEnd.arc + gapA / 2 : nextStart ? nextStart.arc - gapA / 2 : 0;
-      points.push({ arc: centreArc - extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
-      points.push({ arc: centreArc + extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
-    }
-  }
-
-  if (nextTangent) points.push(nextTangent);
-  if (nextStart) points.push({ ...nextStart, kind: 'endpoint' });
-
-  return points;
-}
 
 /**
  * Rasterise a loop control-polygon as a centripetal Catmull-Rom spline and
@@ -682,7 +568,7 @@ function drawLoop(
     startSample: loopRun.startSample,
     endSample: loopRun.endSample,
   };
-  const points = buildLoopPoints(prev, next, extreme, opts);
+  const points = buildLoopPoints(prev, next, extreme, opts, LOOP_GEOM);
 
   // Detect sequence gaps within the loop (missing residues).
   let discontinuous = false;
@@ -1240,7 +1126,7 @@ function renderChainSvg(
       const next: LoopEnd = firstSs
         ? { samples: layout.samples, index: firstSs.startSample }
         : { samples: layout.samples, index: 0 };
-      const points = buildLoopPoints(prev, next, null, loopOpts);
+      const points = buildLoopPoints(prev, next, null, loopOpts, LOOP_GEOM);
       renderLoopCurve(plot, markersGroup, points, true, loopOpts.showPoints);
     }
   }
