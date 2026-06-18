@@ -98,9 +98,15 @@ export class TopologyView3D {
     this.animate();
   }
 
-  private resize = (): void => {
+  /**
+   * Fit the renderer/camera to the container's current size. Public so the host
+   * can call it after revealing a previously-hidden stage (a renderer built while
+   * the container was `display:none` would otherwise be sized 0×0).
+   */
+  resize = (): void => {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight || Math.round(w * 0.6);
+    if (w === 0) return; // container not laid out yet; caller re-fits when shown
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h || 1;
     this.camera.updateProjectionMatrix();

@@ -1660,7 +1660,12 @@ export class TopologyDisplay extends HTMLElement {
   // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
   private _assemblyCache: { data: ProteinData; analysis: BarrelAnalysis } | null = null;
   // The lazily-loaded 3-D view, alive only while the 3-D toggle is active.
-  private _view3d: { setT(t: number): void; morph: number; dispose(): void } | null = null;
+  private _view3d: {
+    setT(t: number): void;
+    morph: number;
+    resize(): void;
+    dispose(): void;
+  } | null = null;
   private _morphRaf = 0;
 
   /** Assembly-barrel analysis for the current proteinData, memoised. */
@@ -1821,6 +1826,9 @@ export class TopologyDisplay extends HTMLElement {
     }
     scroll.style.display = 'none';
     stage.style.display = 'block';
+    // The renderer may have been built while the stage was hidden (0×0); now
+    // that it's laid out, fit it to the container.
+    this._view3d?.resize();
     this.animateMorph(1, this.prefersReducedMotion());
   }
 
