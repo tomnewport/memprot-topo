@@ -61,8 +61,9 @@ describe('buildScene (plain/helical path)', () => {
         expect(Number.isFinite(s.arc)).toBe(true);
         expect(Number.isFinite(s.z)).toBe(true);
         for (const k of ['x', 'y', 'z'] as const) expect(Number.isFinite(s.pos3d[k])).toBe(true);
-        // pos3d.z is the real membrane depth, i.e. equals the flat z.
-        expect(s.pos3d.z).toBeCloseTo(s.z, 6);
+        // For SS elements the flat z is the real membrane depth; loop elements
+        // decouple the flat schematic bézier from the real 3-D backbone.
+        if (el.type !== 'loop') expect(s.pos3d.z).toBeCloseTo(s.z, 6);
       }
     }
   });
@@ -73,8 +74,10 @@ describe('buildScene (plain/helical path)', () => {
     expect(spread).toBe(true);
   });
 
-  it('arc is non-decreasing within each element', () => {
+  it('arc is non-decreasing within each SS element', () => {
+    // SS elements advance monotonically along the arc; loop béziers may dip.
     for (const el of scene.elements) {
+      if (el.type === 'loop') continue;
       for (let i = 1; i < el.samples.length; i++) {
         expect(el.samples[i].arc).toBeGreaterThanOrEqual(el.samples[i - 1].arc - 1e-6);
       }

@@ -180,7 +180,7 @@ const COLOURS = {
   contact: '#c98a3b',
 };
 
-const LOOP = {
+export const LOOP = {
   /**
    * Fixed horizontal distance (screen px) between adjacent SS elements, measured
    * centre-of-path to centre-of-path (end of the previous element to the start
@@ -204,14 +204,14 @@ const LOOP = {
 };
 
 /** Pixel/scale config handed to the pure {@link buildLoopPoints} geometry. */
-const LOOP_GEOM: LoopGeom = {
+export const LOOP_GEOM: LoopGeom = {
   defaultTangentMagPx: LOOP.tangentMagPx,
   elementGapPx: LOOP.elementGapPx,
   extremeSpacingPx: LOOP.extremeSpacingPx,
   arcPxPerA: PLOT.arcPxPerA,
 };
 
-const BARREL = {
+export const BARREL = {
   /**
    * Target closest distance between two adjacent SS elements, expressed in
    * strand widths. Each element keeps its true tilt; the next element is slid in
@@ -457,7 +457,7 @@ function placeResidueLabel(
  * Returns `endIdx` unchanged when no trimming is needed (or when the strand is
  * too short to estimate a reliable axis direction).
  */
-function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: number): number {
+export function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: number): number {
   const n = endIdx - startIdx + 1;
   if (n < 6) return endIdx;
 
