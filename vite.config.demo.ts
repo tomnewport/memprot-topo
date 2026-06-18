@@ -10,6 +10,14 @@ export default defineConfig({
     outDir: 'dist-demo',
     rollupOptions: {
       input: 'index.html',
+      // Emit a single JS bundle for the demo. The 3-D renderer (and three.js)
+      // are dynamically imported by the component for lazy-loading in the
+      // published library, but the gallery screenshot tool inlines one bundle,
+      // so the demo build must not code-split. The library build
+      // (vite.config.ts, lib mode) is unaffected and keeps the lazy chunks.
+      output: {
+        inlineDynamicImports: true,
+      },
     },
   },
   define: {
