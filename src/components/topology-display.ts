@@ -1735,12 +1735,13 @@ export class TopologyDisplay extends HTMLElement {
 
   /**
    * Whether β-sheet residue contacts are overlaid as grey dashed ties between
-   * paired strands. On by default; set `show-contacts` to "off"/"false"/"0" to
-   * hide them.
+   * paired strands. Off by default (the current ties don't read correctly — see
+   * issue #22 follow-up); set `show-contacts` to "on"/"true"/"show"/"1" to
+   * re-enable the experimental overlay.
    */
   private get showContacts(): boolean {
     const v = this.getAttribute('show-contacts');
-    return v === null || !['off', 'false', 'hide', '0'].includes(v.toLowerCase());
+    return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
   }
 
   /** Assemble the loop rendering options from the component's attributes. */
@@ -1824,9 +1825,23 @@ export class TopologyDisplay extends HTMLElement {
       // The user may have toggled back before the chunk loaded.
       if (!btn3d.classList.contains('active')) return;
       const view = new TopologyView3D(stage);
+      // Draw the flat (t=0) frame at the SVG's own scale so the two overlay.
+      view.setFlatPixelScale(PLOT.arcPxPerA);
       view.setScene(buildScene(chain, { analysis, assembly }));
       view.setT(0);
       this._view3d = view;
+    }
+    // Size the 3-D stage to the SVG diagram's box so flipping between them lines
+    // up (no jump in scale or position). Falls back to the CSS box if unmeasured.
+    const svgEl = scroll.querySelector('svg');
+    if (svgEl) {
+      const rect = svgEl.getBoundingClientRect();
+      const maxW = scroll.clientWidth || rect.width;
+      if (rect.width > 0 && rect.height > 0) {
+        stage.style.width = `${Math.round(Math.min(rect.width, maxW))}px`;
+        stage.style.height = `${Math.round(rect.height)}px`;
+        stage.style.minHeight = '0';
+      }
     }
     scroll.style.display = 'none';
     stage.style.display = 'block';

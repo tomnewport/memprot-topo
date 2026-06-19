@@ -97,6 +97,14 @@ reads like the 2D diagram, looking down the membrane) to a **~35 mm-equivalent
 perspective** at a gentle 3/4 angle when fully rolled. Field of view interpolates
 from ~2° to ~50°; `OrbitControls` only take over once fully 3D (`t = 1`).
 
+At the flat end the camera distance is chosen so that **1 Å maps to exactly the
+SVG's pixel scale** (`PLOT.arcPxPerA`, passed in via `setFlatPixelScale`), and the
+component sizes the WebGL stage to the SVG diagram's own box. Together these make
+the flat 3-D frame the same size and in the same place as the 2-D diagram, so the
+toggle reads as one continuous object rather than a jump to a smaller, off-centre
+view. (Earlier the camera fit the bounding _sphere_ to the viewport height, which
+rendered wide-but-short β-barrels tiny.)
+
 When rolling **back down** to 2D, the camera eases to orthographic from whatever
 angle the user orbited to: the current orbit azimuth/elevation/zoom are captured
 as an anchor and interpolated to dead-on as `t → 0`, so there is never a snap.
@@ -141,10 +149,11 @@ to overlay the 2D diagram closely:
 - **Membrane** matches the SVG slab colour and opacity at the flat end.
 
 The match is close but not pixel-perfect (vector SVG vs rasterised WebGL, stroked
-curves vs swept tubes). A few 2D-only annotations are intentionally not drawn in
-3D: residue-number labels, and the grey dashed β-sheet **contact ties** (these
-indicate 3D proximity, which is directly visible once in 3D, so they live only in
-the flat diagram).
+curves vs swept tubes). A couple of 2D-only annotations are intentionally not
+drawn in 3D: residue-number labels, and the β-sheet **contact ties**. The contact
+ties are currently an opt-in experiment (`show-contacts`, off by default) because
+the flat tie placement doesn't yet read correctly — revisiting them is tracked as
+issue #22 follow-up work.
 
 ---
 

@@ -86,6 +86,10 @@ export class TopologyView3D {
   private anchorAz = VIEW_AZ;
   private anchorEl = VIEW_EL;
   private anchorDist: number | null = null;
+  // Pixels-per-Ångström the SVG diagram draws at. When set, the flat (t=0) camera
+  // reproduces that exact scale so the 3-D view overlays the 2-D one on the flip,
+  // rather than fitting the bounding sphere (which renders wide barrels tiny).
+  private flatPxPerA = 0;
   private raf = 0;
   private disposed = false;
 
@@ -339,6 +343,15 @@ export class TopologyView3D {
     return this.t;
   }
 
+  /**
+   * Tell the renderer the SVG diagram's pixel-per-Ångström scale so the flat
+   * (t=0) view is drawn at the *same* scale and centring as the 2-D diagram —
+   * the two then overlay when the user flips between them.
+   */
+  setFlatPixelScale(pxPerA: number): void {
+    this.flatPxPerA = pxPerA > 0 ? pxPerA : 0;
+  }
+
   /** Capture the current camera orbit angle and distance as the 3-D anchor. */
   private captureAnchor(): void {
     const p = this.camera.position;
@@ -351,6 +364,22 @@ export class TopologyView3D {
   /** Distance that frames the structure at the 3-D field of view. */
   private framedDist(): number {
     return (this.sceneRadius / Math.sin(THREE.MathUtils.degToRad(FOV_3D) / 2)) * 1.06;
+  }
+
+  /**
+   * Camera distance for the flat end at field of view `fov`. When the SVG scale
+   * is known, choose the distance that makes 1 Å map to exactly `flatPxPerA`
+   * device-independent pixels (so the flat 3-D view matches the SVG diagram);
+   * otherwise fall back to fitting the bounding sphere.
+   */
+  private flatDist(fov: number): number {
+    const half = Math.tan(THREE.MathUtils.degToRad(fov) / 2);
+    if (this.flatPxPerA > 0) {
+      const h = this.container.clientHeight || this.renderer.domElement.clientHeight || 1;
+      const worldHalfHeight = h / 2 / this.flatPxPerA;
+      return worldHalfHeight / half;
+    }
+    return (this.sceneRadius / Math.sin(THREE.MathUtils.degToRad(fov) / 2)) * 1.06;
   }
 
   /** Recompute morphed centrelines + per-sample faces and rebuild geometry. */
@@ -472,8 +501,7 @@ export class TopologyView3D {
     const fov = lerp(FOV_FLAT, FOV_3D, e);
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
-    const orthoDist = (this.sceneRadius / Math.sin(THREE.MathUtils.degToRad(fov) / 2)) * 1.06;
-    const dist = lerp(orthoDist, this.anchorDist ?? this.framedDist(), e);
+    const dist = lerp(this.flatDist(fov), this.anchorDist ?? this.framedDist(), e);
     this.placeCamera(lerp(0, this.anchorAz, e), lerp(0, this.anchorEl, e), dist);
     this.renderer.render(this.scene, this.camera);
   };
