@@ -1,8 +1,13 @@
 # 3D renderer & 2D⇄3D morph — implementation plan (issue #22)
 
-Status: **approved, ready to implement.** Supersedes the Phase 0 spike under
-[`src/spike/`](../src/spike/README.md), which validated the concept and is
-throwaway. This document is the build plan for the production feature.
+Status: **implemented** (Phases 1–4 landed in PR #51). The shared
+`TopologyScene`, the SVG refactor onto it, the lazy-loaded Three.js renderer, the
+2-D/3-D toggle + morph, and the polish all shipped. See
+[`rendering-3d.md`](./rendering-3d.md) for the as-built design. This document is
+retained as the original build plan and rationale.
+
+Supersedes the Phase 0 spike under [`src/spike/`](../src/spike/README.md), which
+validated the concept and is throwaway.
 
 ---
 
