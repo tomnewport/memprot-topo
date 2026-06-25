@@ -71,6 +71,11 @@ interface BreakGroup {
   calphas: Calpha[];
   /** Pre-computed unwrapped (u, z) point per Cα, aligned with `calphas`. */
   pts: Vec[];
+  /**
+   * Real de-spiralled 3-D coordinate per Cα (honest barrel roll-up target,
+   * issue #22), aligned with `calphas`.
+   */
+  pts3d: Vec[];
 }
 
 /**
@@ -135,15 +140,18 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
 
   // Split on 3-D chain breaks, carrying the unwrapped points alongside.
   const groups: BreakGroup[] = [];
-  let current: BreakGroup = { calphas: [], pts: [] };
+  let current: BreakGroup = { calphas: [], pts: [], pts3d: [] };
   const thr2 = breakDistance * breakDistance;
   for (let i = 0; i < calphas.length; i++) {
     const c = calphas[i];
     // De-spiralled z for the drawn path; real z is kept for residue depth below.
     const pt: Vec = { x: u[i], y: proj[i].z - membraneCentre, z: 0 };
+    // Real de-spiralled 3-D coord (the honest roll-up target).
+    const pt3d: Vec = { x: proj[i].x, y: proj[i].y, z: proj[i].z - membraneCentre };
     if (current.calphas.length === 0) {
       current.calphas.push(c);
       current.pts.push(pt);
+      current.pts3d.push(pt3d);
       continue;
     }
     const prev = current.calphas[current.calphas.length - 1];
@@ -152,10 +160,11 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     const dz = c.z - prev.z;
     if (dx * dx + dy * dy + dz * dz > thr2) {
       groups.push(current);
-      current = { calphas: [c], pts: [pt] };
+      current = { calphas: [c], pts: [pt], pts3d: [pt3d] };
     } else {
       current.calphas.push(c);
       current.pts.push(pt);
+      current.pts3d.push(pt3d);
     }
   }
   if (current.calphas.length) groups.push(current);
@@ -166,7 +175,7 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
   let globalMaxArc = -Infinity;
 
   for (const group of groups) {
-    const { calphas: groupCa, pts } = group;
+    const { calphas: groupCa, pts, pts3d } = group;
     const allSamples: UnrolledPoint[] = [];
     const allResidues: UnrolledResidue[] = [];
     let sampleOffset = 0;
@@ -176,11 +185,16 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     let runType = ssTypeAt(ssSegments, groupCa[0].resSeq);
     const flushRun = (start: number, end: number, type: 'helix' | 'strand' | 'coil'): void => {
       const subPts = pts.slice(start, end + 1);
+      const subPts3d = pts3d.slice(start, end + 1);
       const subN = subPts.length;
       const k = Math.max(4, Math.ceil(subN / aminosPerDof));
 
       let splineSamples: Vec[];
       let controlIndex: number[];
+      // The real 3-D centreline is sampled in lockstep with the (u,z) path —
+      // same method, same control-point budget, so the parameterisation (hence
+      // controlIndex) matches and every sample gets a real position.
+      let samples3d: Vec[];
       if (type === 'helix' && subN >= 2) {
         // A helix is drawn as a straight bar between its (de-spiralled) endpoints.
         // This makes an arc reversal — a helix doubling back on itself in the
@@ -191,6 +205,16 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
         splineSamples = Array.from({ length: total }, (_, j) => {
           const t = j / (total - 1);
           return { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t, z: 0 };
+        });
+        const q0 = subPts3d[0];
+        const q1 = subPts3d[subN - 1];
+        samples3d = Array.from({ length: total }, (_, j) => {
+          const t = j / (total - 1);
+          return {
+            x: q0.x + (q1.x - q0.x) * t,
+            y: q0.y + (q1.y - q0.y) * t,
+            z: q0.z + (q1.z - q0.z) * t,
+          };
         });
         let prev = -1;
         controlIndex = subPts.map((_, i) => {
@@ -203,6 +227,7 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
         const cr = sampleCurve(subPts, sampleDensity);
         splineSamples = cr.samples;
         controlIndex = cr.controlIndex;
+        samples3d = sampleCurve(subPts3d, sampleDensity).samples;
       } else {
         // A few control points de-pleat the strand (the small circumferential
         // zigzag) and leave a clean straight or gently curved bar.
@@ -210,10 +235,14 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
         const sampled = sampleBSpline(spline, (subN - 1) * sampleDensity + 1);
         splineSamples = sampled.samples;
         controlIndex = sampled.controlIndex;
+        const spline3d = fitBSpline(subPts3d, k);
+        samples3d = sampleBSpline(spline3d, (subN - 1) * sampleDensity + 1).samples;
       }
 
-      for (const s of splineSamples) {
-        allSamples.push({ arc: s.x, z: s.y });
+      for (let j = 0; j < splineSamples.length; j++) {
+        const s = splineSamples[j];
+        const s3 = samples3d[j];
+        allSamples.push({ arc: s.x, z: s.y, x3: s3.x, y3: s3.y });
         if (s.x > globalMaxArc) globalMaxArc = s.x;
       }
       for (let i = 0; i < subN; i++) {

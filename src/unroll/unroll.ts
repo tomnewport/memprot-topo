@@ -11,6 +11,15 @@ import { projectLocalAxis } from './helix-axis.js';
 export interface UnrolledPoint {
   arc: number;
   z: number;
+  /**
+   * Real in-plane membrane-frame coordinates of the (de-spiralled) smooth
+   * backbone axis at this sample. Together with {@link z} these give the full
+   * 3-D centreline used to "roll up" the flat 2-D trace into the real structure
+   * (issue #22). Undefined on traces that do not retain 3-D (e.g. the barrel
+   * unwrap, whose 3-D target is reconstructed analytically from the cylinder).
+   */
+  x3?: number;
+  y3?: number;
 }
 
 /**
@@ -300,7 +309,10 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
           arc += Math.sqrt(dx * dx + dy * dy);
         }
         prevPt = s;
-        subUnrolled.push({ arc, z: s.z });
+        // Retain the real (de-spiralled) in-plane coords so the flat trace can be
+        // rolled back up into the true 3-D structure (issue #22). The layout
+        // stage only shifts `arc`, leaving these untouched.
+        subUnrolled.push({ arc, z: s.z, x3: s.x, y3: s.y });
       }
 
       // Each residue's arc from the spline; z from actual Cα (physically

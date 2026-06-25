@@ -16,3 +16,6 @@ preview-*.png
 # Local preview/screenshot artifacts (never committed)
 /*.svg
 /*.png
+
+# Spike: generated demo data (regenerate with `npm run prebuild:spike`)
+src/spike/spike-data.ts

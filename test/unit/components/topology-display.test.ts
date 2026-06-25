@@ -803,7 +803,7 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
     expect(new Set(slantSigns).size).toBe(1);
   });
 
-  it('overlays β-sheet contact ties only when show-contacts is enabled', () => {
+  it('hides β-sheet contact ties by default, overlaid when show-contacts is on', () => {
     const off = mount(barrelProtein());
     expect(off.shadowRoot!.querySelectorAll('.contact-ties line').length).toBe(0);
 

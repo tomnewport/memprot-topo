@@ -25,6 +25,7 @@
     "test:e2e": "playwright test --pass-with-no-tests",
     "prebuild:gallery": "node scripts/prebuild-gallery.mjs",
     "prebuild:demo": "tsx scripts/prebuild-demo.ts",
+    "prebuild:spike": "tsx scripts/prebuild-spike.ts",
     "build:demo": "vite build --config vite.config.demo.ts",
     "prepare": "husky"
   },
@@ -39,6 +40,7 @@
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^10.1.3",
     "@semantic-release/npm": "^12.0.1",
+    "@types/three": "^0.184.1",
     "@typescript-eslint/eslint-plugin": "^7.10.0",
     "@typescript-eslint/parser": "^7.10.0",
     "@vitest/coverage-v8": "^1.6.0",
@@ -50,6 +52,7 @@
     "lint-staged": "^15.2.5",
     "prettier": "^3.3.0",
     "semantic-release": "^24.0.0",
+    "three": "^0.184.0",
     "tsx": "^4.19.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11",

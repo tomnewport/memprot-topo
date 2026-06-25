@@ -15,6 +15,16 @@ import {
 } from '../unroll/index.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
+import { ribbonOutline } from '../scene/geometry/ribbon-outline.js';
+import {
+  buildLoopPoints,
+  type LoopControlPoint,
+  type LoopEnd,
+  type LoopExtreme,
+  type LoopGeom,
+  type LoopRenderOptions,
+} from '../scene/geometry/loop-path.js';
+import { contactLines } from '../scene/geometry/contacts.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -106,9 +116,38 @@ const STYLES = `
        to compute height from container width, producing a huge whitespace gap */
   }
   .placeholder { font-style: italic; color: #888; }
+  .view-toggle {
+    display: inline-flex;
+    margin-bottom: 0.4rem;
+    border: 1px solid #ced4da;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .view-toggle button {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.7rem;
+    border: none;
+    background: #fff;
+    color: #495057;
+    cursor: pointer;
+  }
+  .view-toggle button + button { border-left: 1px solid #ced4da; }
+  .view-toggle button.active { background: #1f77b4; color: #fff; }
+  .view-toggle button:focus-visible { outline: 2px solid #1f77b4; outline-offset: -2px; }
+  .topo-stage {
+    display: none;
+    width: 100%;
+    height: 60vh;
+    min-height: 320px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #f4f6f8;
+  }
 `;
 
-const PLOT = {
+export const PLOT = {
   width: 1200,
   // Top/bottom/right padded enough for residue-number labels that sit just
   // past the membrane-facing tips of helix/strand polygons.
@@ -141,7 +180,7 @@ const COLOURS = {
   contact: '#c98a3b',
 };
 
-const LOOP = {
+export const LOOP = {
   /**
    * Fixed horizontal distance (screen px) between adjacent SS elements, measured
    * centre-of-path to centre-of-path (end of the previous element to the start
@@ -164,7 +203,15 @@ const LOOP = {
   extremeSpacingPx: 5,
 };
 
-const BARREL = {
+/** Pixel/scale config handed to the pure {@link buildLoopPoints} geometry. */
+export const LOOP_GEOM: LoopGeom = {
+  defaultTangentMagPx: LOOP.tangentMagPx,
+  elementGapPx: LOOP.elementGapPx,
+  extremeSpacingPx: LOOP.extremeSpacingPx,
+  arcPxPerA: PLOT.arcPxPerA,
+};
+
+export const BARREL = {
   /**
    * Target closest distance between two adjacent SS elements, expressed in
    * strand widths. Each element keeps its true tilt; the next element is slid in
@@ -201,14 +248,16 @@ const BARREL = {
  * element. Shorter assignments (1-2 residues) are folded into the surrounding
  * loop so they don't fragment it into multiple stubs.
  */
-const MIN_SS_RESIDUES = 3;
+export const MIN_SS_RESIDUES = 3;
 
 /** Drop sub-`MIN_SS_RESIDUES` helix/strand assignments so they read as coil. */
-function effectiveSsSegments(segments: SecondaryStructureSegment[]): SecondaryStructureSegment[] {
+export function effectiveSsSegments(
+  segments: SecondaryStructureSegment[],
+): SecondaryStructureSegment[] {
   return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= MIN_SS_RESIDUES);
 }
 
-function isBetaBarrel(chain: ChainData): boolean {
+export function isBetaBarrel(chain: ChainData): boolean {
   let helixRes = 0,
     strandRes = 0;
   for (const seg of chain.segments) {
@@ -226,7 +275,7 @@ function ssTypeAt(segments: SecondaryStructureSegment[], resSeq: number): Second
   return 'coil';
 }
 
-interface SsRun {
+export interface SsRun {
   type: SecondaryStructureType;
   /** Sample indices defining the polygon body (may extend to the start of the next run). */
   startSample: number;
@@ -243,7 +292,7 @@ interface SsRun {
 }
 
 /** Group consecutive residue indices that share the same SS type into runs. */
-function runsBySs(
+export function runsBySs(
   residues: { resSeq: number; sampleIndex: number }[],
   segments: SecondaryStructureSegment[],
 ): SsRun[] {
@@ -285,7 +334,7 @@ function runsBySs(
   return runs;
 }
 
-const SS_BODY = {
+export const SS_BODY = {
   /** Body half-width in screen pixels (full SS element width = 8 px). */
   halfWidthPx: 4,
   /** Arrow wing half-width — 1.5× the body so the wings flare visibly. */
@@ -408,7 +457,7 @@ function placeResidueLabel(
  * Returns `endIdx` unchanged when no trimming is needed (or when the strand is
  * too short to estimate a reliable axis direction).
  */
-function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: number): number {
+export function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: number): number {
   const n = endIdx - startIdx + 1;
   if (n < 6) return endIdx;
 
@@ -445,122 +494,16 @@ function drawSsPolygon(
   withArrow: boolean,
   faded = false,
 ): void {
-  if (endIdx <= startIdx) return;
+  const verts = ribbonOutline(samples, startIdx, endIdx, withArrow, {
+    halfWidthPx: SS_BODY.halfWidthPx,
+    arrowHalfWidthPx: SS_BODY.arrowHalfWidthPx,
+    arrowLengthPx: SS_BODY.arrowLengthPx,
+    arcPxPerA: PLOT.arcPxPerA,
+    zPxPerA: PLOT.zPxPerA,
+  });
+  if (verts.length === 0) return;
 
-  const screen: { sx: number; sy: number }[] = [];
-  for (let i = startIdx; i <= endIdx; i++) {
-    screen.push({ sx: samples[i].arc * PLOT.arcPxPerA, sy: -samples[i].z * PLOT.zPxPerA });
-  }
-  if (screen.length < 2) return;
-
-  // Unit tangent in screen space at each sample (averaged across adjacent
-  // segments at interior points so the perpendicular offsets transition smoothly).
-  const tx = new Array<number>(screen.length).fill(0);
-  const ty = new Array<number>(screen.length).fill(0);
-  for (let i = 0; i < screen.length; i++) {
-    let dx = 0,
-      dy = 0;
-    if (i > 0) {
-      dx += screen[i].sx - screen[i - 1].sx;
-      dy += screen[i].sy - screen[i - 1].sy;
-    }
-    if (i < screen.length - 1) {
-      dx += screen[i + 1].sx - screen[i].sx;
-      dy += screen[i + 1].sy - screen[i].sy;
-    }
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len > 1e-9) {
-      tx[i] = dx / len;
-      ty[i] = dy / len;
-    }
-  }
-
-  const halfW = SS_BODY.halfWidthPx;
-  const arrowHalfW = SS_BODY.arrowHalfWidthPx;
-  const arrowLen = SS_BODY.arrowLengthPx;
-  const lastIdx = screen.length - 1;
-
-  // Arrow base = a point `arrowLen` screen pixels back from the tip along the
-  // polyline. `bodyLast` is the last sample fully part of the body before the
-  // arrow base; sample indices > bodyLast sit inside the arrowhead.
-  let bodyLast = lastIdx;
-  let baseSx = screen[lastIdx].sx;
-  let baseSy = screen[lastIdx].sy;
-  let basePx = -ty[lastIdx];
-  let basePy = tx[lastIdx];
-
-  if (withArrow) {
-    let remaining = arrowLen;
-    let baseSegEnd = lastIdx;
-    let baseFrac = 0;
-    let walkedOff = true;
-    for (let i = lastIdx; i > 0; i--) {
-      const dx = screen[i].sx - screen[i - 1].sx;
-      const dy = screen[i].sy - screen[i - 1].sy;
-      const segLen = Math.sqrt(dx * dx + dy * dy);
-      if (segLen <= 0) continue;
-      if (remaining <= segLen) {
-        baseSegEnd = i;
-        baseFrac = 1 - remaining / segLen;
-        walkedOff = false;
-        break;
-      }
-      remaining -= segLen;
-    }
-
-    if (walkedOff) {
-      // Strand shorter than the arrow length — collapse body to a single point
-      // at the start and render as a pure arrowhead from start to tip.
-      bodyLast = -1;
-      baseSx = screen[0].sx;
-      baseSy = screen[0].sy;
-      basePx = -ty[0];
-      basePy = tx[0];
-    } else {
-      bodyLast = baseSegEnd - 1;
-      baseSx =
-        screen[baseSegEnd - 1].sx + baseFrac * (screen[baseSegEnd].sx - screen[baseSegEnd - 1].sx);
-      baseSy =
-        screen[baseSegEnd - 1].sy + baseFrac * (screen[baseSegEnd].sy - screen[baseSegEnd - 1].sy);
-      // Derive the arrowhead perpendicular from the smoothed body-axis tangent at
-      // bodyLast rather than from the interpolated local tangent at the base.
-      // The terminal Cα is projected with a one-sided window during unrolling and
-      // can land off-axis, which rotates the interpolated tangent and produces a
-      // visible kink where the body meets the head.  tx/ty[bodyLast] is a
-      // two-sided interior tangent and stays reliably axis-aligned. The tip vertex
-      // is kept at screen[lastIdx] so loop connections are not displaced.
-      const bLen = Math.sqrt(tx[bodyLast] * tx[bodyLast] + ty[bodyLast] * ty[bodyLast]);
-      if (bLen > 1e-9) {
-        basePx = -ty[bodyLast] / bLen;
-        basePy = tx[bodyLast] / bLen;
-      }
-    }
-  }
-
-  // Walk the left edge forward, traverse the end cap (arrowhead or butt), then
-  // the right edge backward. When `!withArrow`, the natural transition between
-  // the last left-edge vertex and the first right-edge vertex at `lastIdx`
-  // forms the perpendicular butt end.
-  const vertsS: [number, number][] = [];
-  for (let i = 0; i <= bodyLast; i++) {
-    vertsS.push([screen[i].sx + halfW * -ty[i], screen[i].sy + halfW * tx[i]]);
-  }
-
-  if (withArrow) {
-    vertsS.push([baseSx + halfW * basePx, baseSy + halfW * basePy]);
-    vertsS.push([baseSx + arrowHalfW * basePx, baseSy + arrowHalfW * basePy]);
-    vertsS.push([screen[lastIdx].sx, screen[lastIdx].sy]);
-    vertsS.push([baseSx - arrowHalfW * basePx, baseSy - arrowHalfW * basePy]);
-    vertsS.push([baseSx - halfW * basePx, baseSy - halfW * basePy]);
-  }
-
-  for (let i = bodyLast; i >= 0; i--) {
-    vertsS.push([screen[i].sx - halfW * -ty[i], screen[i].sy - halfW * tx[i]]);
-  }
-
-  const points = vertsS
-    .map(([sx, sy]) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
-    .join(' ');
+  const points = verts.map(([a, z]) => `${a.toFixed(3)},${z.toFixed(3)}`).join(' ');
 
   const poly = document.createElementNS(SVG_NS, 'polygon');
   poly.setAttribute('points', points);
@@ -576,141 +519,11 @@ function drawSsPolygon(
 }
 
 /** A loop control point in plot (arc, z) Ångström coordinates, tagged for debug colouring. */
-interface LoopControlPoint {
-  arc: number;
-  z: number;
-  kind: 'endpoint' | 'tangent' | 'extreme';
-}
-
 const LOOP_DEBUG_FILL: Record<LoopControlPoint['kind'], string> = {
   endpoint: '#1f77b4',
   tangent: '#2ca02c',
   extreme: '#d62728',
 };
-
-/** Unit (arc, z) tangent between two display samples; falls back to +arc. */
-function unitTangent(samples: UnrolledPoint[], from: number, to: number): { a: number; z: number } {
-  const da = samples[to].arc - samples[from].arc;
-  const dz = samples[to].z - samples[from].z;
-  const len = Math.sqrt(da * da + dz * dz);
-  if (len < 1e-9) return { a: 1, z: 0 };
-  return { a: da / len, z: dz / len };
-}
-
-/** Runtime-tunable loop rendering options, sourced from component attributes. */
-interface LoopRenderOptions {
-  /** Draw debug circles at each control point. */
-  showPoints: boolean;
-  /** Whether to add vertical-extreme control points when a loop overshoots. */
-  extremePoints: boolean;
-  /** Fraction of the tangent-points' z-range beyond which extreme points appear. */
-  extremeThreshold: number;
-  /**
-   * Tangent-handle length (screen px) for the loop's end control points.
-   * Longer handles make the loop leave parallel to the SS element it exits
-   * (used for barrel hairpins). Defaults to {@link LOOP.tangentMagPx}.
-   */
-  tangentMagPx?: number;
-}
-
-/** One end of a loop: the samples array and the boundary sample index within it. */
-interface LoopEnd {
-  samples: UnrolledPoint[];
-  index: number;
-}
-
-/** The path whose vertical extreme may pull extra control points out of range. */
-interface LoopExtreme {
-  samples: UnrolledPoint[];
-  startSample: number;
-  endSample: number;
-}
-
-/**
- * Build the explicit control-point sequence for a loop / connector curve:
- *   1. previous element end (centre of path)            — if a previous end exists
- *   2. point 1 + previous element end-tangent × tangentMag
- *   3-4. two points at the loop's vertical extreme      — only when `extremePoints`
- *        is set and the loop reaches more than `extremeThreshold` of the
- *        tangent-points' z-range beyond it
- *   5. next element start − next element start-tangent × tangentMag
- *   6. next element start (centre of path)              — if a next end exists
- *
- * `prev`/`next` may carry samples from different chain segments (used for the
- * dashed connector across chain breaks). Distances in pixels assume a 1:1
- * arc/z aspect ratio.
- */
-function buildLoopPoints(
-  prev: LoopEnd | null,
-  next: LoopEnd | null,
-  extreme: LoopExtreme | null,
-  opts: LoopRenderOptions,
-): LoopControlPoint[] {
-  const magA = (opts.tangentMagPx ?? LOOP.tangentMagPx) / PLOT.arcPxPerA;
-  const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
-  const extremeSpacingA = LOOP.extremeSpacingPx / PLOT.arcPxPerA;
-
-  const points: LoopControlPoint[] = [];
-
-  // Points 1 & 2: previous element end and its outward tangent.
-  let prevEnd: { arc: number; z: number } | null = null;
-  if (prev) {
-    const i = prev.index;
-    prevEnd = { arc: prev.samples[i].arc, z: prev.samples[i].z };
-    const t = unitTangent(prev.samples, Math.max(0, i - 1), i);
-    points.push({ ...prevEnd, kind: 'endpoint' });
-    points.push({ arc: prevEnd.arc + magA * t.a, z: prevEnd.z + magA * t.z, kind: 'tangent' });
-  }
-
-  // Points 5 & 6: next element start and its inward tangent (added after extremes).
-  let nextStart: { arc: number; z: number } | null = null;
-  let nextTangent: LoopControlPoint | null = null;
-  if (next) {
-    const i = next.index;
-    nextStart = { arc: next.samples[i].arc, z: next.samples[i].z };
-    const t = unitTangent(next.samples, i, Math.min(next.samples.length - 1, i + 1));
-    nextTangent = { arc: nextStart.arc - magA * t.a, z: nextStart.z - magA * t.z, kind: 'tangent' };
-  }
-
-  if (opts.extremePoints && extreme) {
-    // Vertical extreme of the loop's real path (z is unaffected by the layout shift).
-    let loopMaxZ = -Infinity;
-    let loopMinZ = Infinity;
-    for (let i = extreme.startSample; i <= extreme.endSample; i++) {
-      if (extreme.samples[i].z > loopMaxZ) loopMaxZ = extreme.samples[i].z;
-      if (extreme.samples[i].z < loopMinZ) loopMinZ = extreme.samples[i].z;
-    }
-
-    // z-range spanned by the tangent control points placed so far.
-    const tangentZs = [...points.map((p) => p.z)];
-    if (nextStart) tangentZs.push(nextStart.z);
-    if (nextTangent) tangentZs.push(nextTangent.z);
-    const rangeMin = Math.min(...tangentZs);
-    const rangeMax = Math.max(...tangentZs);
-    const span = rangeMax - rangeMin;
-    const margin = opts.extremeThreshold * span;
-
-    // Decide whether the loop escapes the tangent-points' z-range, and on which side.
-    let extremeZ: number | null = null;
-    const aboveBy = loopMaxZ - rangeMax;
-    const belowBy = rangeMin - loopMinZ;
-    if (aboveBy > margin && aboveBy >= belowBy) extremeZ = loopMaxZ;
-    else if (belowBy > margin) extremeZ = loopMinZ;
-
-    if (extremeZ !== null) {
-      // Two points at the extreme z give the interpolating curve a flat plateau
-      // there; centre the pair horizontally between the two elements.
-      const centreArc = prevEnd ? prevEnd.arc + gapA / 2 : nextStart ? nextStart.arc - gapA / 2 : 0;
-      points.push({ arc: centreArc - extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
-      points.push({ arc: centreArc + extremeSpacingA / 2, z: extremeZ, kind: 'extreme' });
-    }
-  }
-
-  if (nextTangent) points.push(nextTangent);
-  if (nextStart) points.push({ ...nextStart, kind: 'endpoint' });
-
-  return points;
-}
 
 /**
  * Rasterise a loop control-polygon as a centripetal Catmull-Rom spline and
@@ -785,7 +598,7 @@ function drawLoop(
     startSample: loopRun.startSample,
     endSample: loopRun.endSample,
   };
-  const points = buildLoopPoints(prev, next, extreme, opts);
+  const points = buildLoopPoints(prev, next, extreme, opts, LOOP_GEOM);
 
   // Detect sequence gaps within the loop (missing residues).
   let discontinuous = false;
@@ -800,7 +613,7 @@ function drawLoop(
 }
 
 /** A chain segment with its samples repositioned into display (fixed-gap) space. */
-interface SegmentLayout {
+export interface SegmentLayout {
   /** Samples with arc shifted into display space; z is unchanged. */
   samples: UnrolledPoint[];
   /** One entry per input Cα (unchanged from the unroll). */
@@ -814,7 +627,7 @@ interface SegmentLayout {
  * SS element keeps its own internal arc geometry; only the offset between
  * elements changes. Loops (and chain breaks) collapse to the fixed gap width.
  */
-function layoutSegments(
+export function layoutSegments(
   segments: UnrolledSegment[],
   ssSegments: SecondaryStructureSegment[],
 ): { layouts: SegmentLayout[]; totalArc: number } {
@@ -830,7 +643,9 @@ function layoutSegments(
     if (runs.length === 0) {
       const base = segment.samples[0]?.arc ?? 0;
       const sh = cursor - base;
-      const display = segment.samples.map((p) => ({ arc: p.arc + sh, z: p.z }));
+      // Spread `...p` so the retained 3-D coords (x3/y3) survive into the
+      // display samples; the layout only shifts `arc`. (issue #22)
+      const display = segment.samples.map((p) => ({ ...p, arc: p.arc + sh }));
       const end = cursor + ((segment.samples[n - 1]?.arc ?? base) - base);
       layouts.push({ samples: display, residues: segment.residues, runs });
       if (end > maxArc) maxArc = end;
@@ -859,7 +674,7 @@ function layoutSegments(
       else shift[i] = last;
     }
 
-    const displaySamples = segment.samples.map((p, i) => ({ arc: p.arc + shift[i], z: p.z }));
+    const displaySamples = segment.samples.map((p, i) => ({ ...p, arc: p.arc + shift[i] }));
     layouts.push({ samples: displaySamples, residues: segment.residues, runs });
     if (cursor > maxArc) maxArc = cursor;
     cursor += gapA;
@@ -891,7 +706,7 @@ function layoutSegments(
  * forward (lowest residue on the left). Coils ride the loop ramp between
  * elements. Membrane depth (z) is never touched.
  */
-function barrelLayout(
+export function barrelLayout(
   segments: UnrolledSegment[],
   wallSegments: SecondaryStructureSegment[],
   continuous = false,
@@ -1052,7 +867,8 @@ function barrelLayout(
   const shift = Number.isFinite(minArc) ? -minArc : 0;
 
   const layouts = built.map(({ segment, runs, newArc }) => ({
-    samples: segment.samples.map((p, i) => ({ arc: newArc[i] + shift, z: p.z })),
+    // Spread `...p` so retained 3-D coords (x3/y3) survive; layout only sets arc.
+    samples: segment.samples.map((p, i) => ({ ...p, arc: newArc[i] + shift })),
     residues: segment.residues.map((rr) => ({ ...rr, arc: newArc[rr.sampleIndex] + shift })),
     runs,
   }));
@@ -1067,33 +883,22 @@ function barrelLayout(
  * residues hydrogen-bond across the sheet".
  */
 function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: SegmentLayout[]): void {
-  const pos = new Map<number, { arc: number; z: number }>();
-  for (const layout of layouts) {
-    for (const r of layout.residues) pos.set(r.resSeq, { arc: r.arc, z: r.z });
-  }
-  // Only tie pairings between barrel-wall (ring) strands. Strands that fold
-  // inside the barrel render as coil at an unreliable arc near the axis, so a
-  // tie to them would land at an arbitrary position and read oddly.
-  const ring = new Set(analysis.ringOrder);
   const group = document.createElementNS(SVG_NS, 'g');
   group.setAttribute('class', 'contact-ties');
-  for (const pairing of analysis.pairings) {
-    if (!ring.has(pairing.a) || !ring.has(pairing.b)) continue;
-    for (const c of pairing.contacts) {
-      const a = pos.get(c.aResSeq);
-      const b = pos.get(c.bResSeq);
-      if (!a || !b) continue;
-      const line = document.createElementNS(SVG_NS, 'line');
-      line.setAttribute('x1', a.arc.toFixed(3));
-      line.setAttribute('y1', a.z.toFixed(3));
-      line.setAttribute('x2', b.arc.toFixed(3));
-      line.setAttribute('y2', b.z.toFixed(3));
-      line.setAttribute('stroke', COLOURS.contact);
-      line.setAttribute('stroke-width', '1');
-      line.setAttribute('stroke-opacity', '0.5');
-      line.setAttribute('vector-effect', 'non-scaling-stroke');
-      group.appendChild(line);
-    }
+  for (const { a, b } of contactLines(analysis, layouts)) {
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', a.arc.toFixed(3));
+    line.setAttribute('y1', a.z.toFixed(3));
+    line.setAttribute('x2', b.arc.toFixed(3));
+    line.setAttribute('y2', b.z.toFixed(3));
+    // Grey dashed ties indicate β-sheet (3-D) proximity between paired strands —
+    // information the flat diagram can't otherwise convey.
+    line.setAttribute('stroke', '#9aa0a6');
+    line.setAttribute('stroke-width', '0.8');
+    line.setAttribute('stroke-dasharray', '2 2');
+    line.setAttribute('stroke-opacity', '0.7');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    group.appendChild(line);
   }
   plot.appendChild(group);
 }
@@ -1104,7 +909,7 @@ function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: Segm
  * inside the barrel are omitted, so they fall through to coil and render as
  * part of the connecting loop rather than as spurious bars near the axis.
  */
-function barrelWallSegments(
+export function barrelWallSegments(
   analysis: BarrelAnalysis,
   effective: SecondaryStructureSegment[],
 ): SecondaryStructureSegment[] {
@@ -1174,19 +979,39 @@ function unwrapAssembly(
   return { segments, focal, wallSegments: [...wallSet.values()], zMin, zMax };
 }
 
-interface AssemblyContext {
+export interface AssemblyContext {
   chains: ChainData[];
   analysis: BarrelAnalysis;
   focalChainId: string;
 }
 
-function renderChainSvg(
+/**
+ * The single topology-placement pipeline shared by both renderers (issue #22).
+ *
+ * Selects the path (multi-chain assembly unwrap / single closed-barrel unwrap /
+ * arc-length unroll), runs the unroll and the fixed-gap layout, and returns the
+ * laid-out segments plus the context the renderers need. `renderChainSvg` draws
+ * from this; `buildScene` maps it into the renderer-agnostic `TopologyScene`, so
+ * both reflect the same "which elements go where" decisions.
+ */
+export interface ChainLayoutPlan {
+  asm: ReturnType<typeof unwrapAssembly> | null;
+  /** True for any barrel (cylindrical or assembly) unwrap. */
+  useUnwrap: boolean;
+  cylindrical: boolean;
+  layouts: SegmentLayout[];
+  totalArc: number;
+  /** Per-segment focal flag (assembly only); null otherwise. */
+  focalFlags: boolean[] | null;
+  zMin: number;
+  zMax: number;
+}
+
+export function planChainLayout(
   chain: ChainData,
-  opts: LoopRenderOptions,
   analysis: BarrelAnalysis,
-  showContacts: boolean,
   assembly?: AssemblyContext,
-): SVGSVGElement {
+): ChainLayoutPlan {
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
   // unwraps by angle; everything else uses the arc-length unroll.
@@ -1213,8 +1038,30 @@ function renderChainSvg(
     : analysis.cylindrical
       ? barrelLayout(unroll.segments, ssSegments)
       : layoutSegments(unroll.segments, ssSegments);
-  // Per-segment focal flag (assembly only): neighbour protomers render faded.
-  const focalFlags = asm ? asm.focal : null;
+  return {
+    asm,
+    useUnwrap,
+    cylindrical: analysis.cylindrical,
+    layouts,
+    totalArc,
+    focalFlags: asm ? asm.focal : null,
+    zMin: unroll.zMin,
+    zMax: unroll.zMax,
+  };
+}
+
+function renderChainSvg(
+  chain: ChainData,
+  opts: LoopRenderOptions,
+  analysis: BarrelAnalysis,
+  showContacts: boolean,
+  assembly?: AssemblyContext,
+): SVGSVGElement {
+  const { asm, useUnwrap, layouts, totalArc, focalFlags, zMin, zMax } = planChainLayout(
+    chain,
+    analysis,
+    assembly,
+  );
 
   // In barrel mode, hairpin loops leave each strand parallel to it (long tangent
   // handles following the strand tilt) and skip the centred vertical-extreme
@@ -1223,7 +1070,7 @@ function renderChainSvg(
     ? { ...opts, extremePoints: false, tangentMagPx: BARREL.loopTangentPx }
     : opts;
 
-  const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
+  const zRange = Math.max(PLOT.zRangeMin, Math.abs(zMin), Math.abs(zMax));
   const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
   const plotHeight = zRange * 2 * PLOT.zPxPerA;
   const svgWidth = PLOT.margin.left + plotWidth + PLOT.margin.right;
@@ -1340,7 +1187,7 @@ function renderChainSvg(
       const next: LoopEnd = firstSs
         ? { samples: layout.samples, index: firstSs.startSample }
         : { samples: layout.samples, index: 0 };
-      const points = buildLoopPoints(prev, next, null, loopOpts);
+      const points = buildLoopPoints(prev, next, null, loopOpts, LOOP_GEOM);
       renderLoopCurve(plot, markersGroup, points, true, loopOpts.showPoints);
     }
   }
@@ -1815,6 +1662,15 @@ export class TopologyDisplay extends HTMLElement {
   // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
   // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
   private _assemblyCache: { data: ProteinData; analysis: BarrelAnalysis } | null = null;
+  // The lazily-loaded 3-D view, alive only while the 3-D toggle is active.
+  private _view3d: {
+    setT(t: number): void;
+    morph: number;
+    resize(): void;
+    renderOnce(): void;
+    dispose(): void;
+  } | null = null;
+  private _morphRaf = 0;
 
   /** Assembly-barrel analysis for the current proteinData, memoised. */
   private assemblyAnalysis(chains: ChainData[]): BarrelAnalysis {
@@ -1879,8 +1735,10 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Whether β-sheet residue contacts are overlaid as ties between paired
-   * strands. Off by default; set `show-contacts` to "on"/"true"/"show"/"1".
+   * Whether β-sheet residue contacts are overlaid as grey dashed ties between
+   * paired strands. Off by default (the current ties don't read correctly — see
+   * issue #22 follow-up); set `show-contacts` to "on"/"true"/"show"/"1" to
+   * re-enable the experimental overlay.
    */
   private get showContacts(): boolean {
     const v = this.getAttribute('show-contacts');
@@ -1901,7 +1759,126 @@ export class TopologyDisplay extends HTMLElement {
     this.render();
   }
 
+  disconnectedCallback() {
+    this.teardown3d();
+  }
+
+  /** Dispose the live 3-D view and cancel any morph animation. */
+  private teardown3d(): void {
+    cancelAnimationFrame(this._morphRaf);
+    this._morphRaf = 0;
+    this._view3d?.dispose();
+    this._view3d = null;
+  }
+
+  /** Ease the 3-D morph to `target`; `instant` jumps (reduced motion). */
+  private animateMorph(target: number, instant: boolean, onDone?: () => void): void {
+    cancelAnimationFrame(this._morphRaf);
+    const view = this._view3d;
+    if (!view) {
+      onDone?.();
+      return;
+    }
+    if (instant) {
+      view.setT(target);
+      onDone?.();
+      return;
+    }
+    const start = view.morph;
+    const t0 = performance.now();
+    const duration = 3300;
+    const step = (now: number): void => {
+      const k = Math.min(1, (now - t0) / duration);
+      const e = k * k * (3 - 2 * k);
+      view.setT(start + (target - start) * e);
+      if (k < 1) this._morphRaf = requestAnimationFrame(step);
+      else onDone?.();
+    };
+    this._morphRaf = requestAnimationFrame(step);
+  }
+
+  private prefersReducedMotion(): boolean {
+    return (
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  /**
+   * Switch to the 3-D view: lazy-load the renderer, build the scene at t=0 (which
+   * reads like the SVG), hide the SVG, then roll up to t=1.
+   */
+  private async enter3d(
+    stage: HTMLElement,
+    scroll: HTMLElement,
+    btn2d: HTMLButtonElement,
+    btn3d: HTMLButtonElement,
+    chain: ChainData,
+    analysis: BarrelAnalysis,
+    assembly: AssemblyContext | undefined,
+  ): Promise<void> {
+    btn2d.classList.remove('active');
+    btn3d.classList.add('active');
+    if (!this._view3d) {
+      const [{ buildScene }, { TopologyView3D }] = await Promise.all([
+        import('../scene/build.js'),
+        import('../render-3d/index.js'),
+      ]);
+      // The user may have toggled back before the chunk loaded.
+      if (!btn3d.classList.contains('active')) return;
+      const view = new TopologyView3D(stage);
+      // Draw the flat (t=0) frame at the SVG's own scale so the two overlay.
+      view.setFlatPixelScale(PLOT.arcPxPerA);
+      view.setScene(buildScene(chain, { analysis, assembly }));
+      view.setT(0);
+      this._view3d = view;
+    }
+    // Size the 3-D stage to the SVG diagram's box so flipping between them lines
+    // up (no jump in scale or position). Falls back to the CSS box if unmeasured.
+    const svgEl = scroll.querySelector('svg');
+    if (svgEl) {
+      const rect = svgEl.getBoundingClientRect();
+      const maxW = scroll.clientWidth || rect.width;
+      if (rect.width > 0 && rect.height > 0) {
+        stage.style.width = `${Math.round(Math.min(rect.width, maxW))}px`;
+        stage.style.height = `${Math.round(rect.height)}px`;
+        stage.style.minHeight = '0';
+      }
+    }
+    scroll.style.display = 'none';
+    stage.style.display = 'block';
+    // The renderer may have been built while the stage was hidden (0×0); now
+    // that it's laid out, fit it and draw the first (flat) frame synchronously so
+    // the stage never shows blank while WebGL warms up — then roll up.
+    this._view3d?.resize();
+    this._view3d?.renderOnce();
+    this.animateMorph(1, this.prefersReducedMotion());
+  }
+
+  /** Roll back down to t=0, then unmount the 3-D view and show the SVG. */
+  private exit3d(
+    stage: HTMLElement,
+    scroll: HTMLElement,
+    btn2d: HTMLButtonElement,
+    btn3d: HTMLButtonElement,
+  ): void {
+    btn3d.classList.remove('active');
+    btn2d.classList.add('active');
+    if (!this._view3d) {
+      scroll.style.display = '';
+      stage.style.display = 'none';
+      return;
+    }
+    this.animateMorph(0, this.prefersReducedMotion(), () => {
+      this.teardown3d();
+      stage.style.display = 'none';
+      stage.replaceChildren();
+      scroll.style.display = '';
+    });
+  }
+
   private render() {
+    // Any re-render (chain switch, attribute change) resets to the 2-D view.
+    this.teardown3d();
     this._contentEl.replaceChildren();
 
     if (!this._data) {
@@ -2059,7 +2036,33 @@ export class TopologyDisplay extends HTMLElement {
     scroll.appendChild(
       renderChainSvg(selectedChain, this.loopOptions, analysis, this.showContacts, assembly),
     );
+
+    // 2-D / 3-D view toggle. The resting 2-D view renders as SVG; selecting 3-D
+    // lazy-loads the WebGL renderer and animates the roll-up (and back). The 3-D
+    // stage sits hidden until activated.
+    const stage = document.createElement('div');
+    stage.className = 'topo-stage';
+
+    const toggle = document.createElement('div');
+    toggle.className = 'view-toggle';
+    toggle.setAttribute('role', 'group');
+    toggle.setAttribute('aria-label', '2D / 3D view');
+    const btn2d = document.createElement('button');
+    btn2d.type = 'button';
+    btn2d.textContent = '2D';
+    btn2d.className = 'active';
+    const btn3d = document.createElement('button');
+    btn3d.type = 'button';
+    btn3d.textContent = '3D';
+    btn2d.addEventListener('click', () => this.exit3d(stage, scroll, btn2d, btn3d));
+    btn3d.addEventListener('click', () => {
+      void this.enter3d(stage, scroll, btn2d, btn3d, selectedChain, analysis, assembly);
+    });
+    toggle.append(btn2d, btn3d);
+
+    block.appendChild(toggle);
     block.appendChild(scroll);
+    block.appendChild(stage);
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
