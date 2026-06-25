@@ -14,19 +14,20 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
-import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
-import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { SceneElement, TopologyScene } from '../scene/types.js';
 import { curlXZ, ringRadius } from './unroll-map.js';
 
+/** Body fill colours — matched to the SVG renderer's element fills. */
 const COLOURS: Record<SceneElement['type'], number> = {
   helix: 0x6e8db6,
   strand: 0x6ea76d,
-  loop: 0x888888,
+  loop: 0x666666,
+};
+/** Outline colours — matched to the SVG renderer's darker element edge strokes. */
+const EDGE_COLOURS: Record<SceneElement['type'], number> = {
+  helix: 0x3e587a,
+  strand: 0x3d6d3d,
+  loop: 0x444444,
 };
 
 /** SVG loop stroke half-width in Å (stroke 1.8 px ÷ arcPxPerA 2.5 ÷ 2). */
@@ -35,10 +36,8 @@ const LOOP_FLAT_HALF = 0.36;
 const RIBBON_3D_HALF = 1.3;
 /** Width of the N→C travelling roll front (smaller = sharper rolling edge). */
 const WAVEFRONT = 0.3;
-/** Outline colour for the post-processing silhouette pass. */
-const OUTLINE_COLOUR = 0x1a1f24;
-/** Layer the membrane renders on (excluded from the AO camera). */
-const MEMBRANE_LAYER = 1;
+/** Inverted-hull outline thickness, Å. */
+const OUTLINE_WIDTH = 0.5;
 /** Tube cross-section segments (helix/coil) — higher is smoother. */
 const TUBE_RING = 16;
 /** Default 3-D camera framing angles. */
@@ -66,6 +65,8 @@ interface ElementRender {
   ring: number;
   geometry: THREE.BufferGeometry;
   mesh: THREE.Mesh;
+  /** Inverted-hull outline mesh, sharing `geometry`, drawn BackSide + expanded. */
+  outline: THREE.Mesh;
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -89,13 +90,6 @@ export class TopologyView3D {
   private readonly clipNear = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
   private readonly clipGapL = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
   private readonly clipGapR = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
-  // Post-processing: outlines + ambient occlusion. `aoCamera` shadows the main
-  // camera but only sees the protein layer, so the membrane never pollutes the
-  // AO G-buffer (GTAO's override material ignores clipping planes).
-  private composer: EffectComposer | null = null;
-  private gtaoPass: GTAOPass | null = null;
-  private outlinePass: OutlinePass | null = null;
-  private readonly aoCamera: THREE.PerspectiveCamera;
   private elements: ElementRender[] = [];
   private topo: TopologyScene | null = null;
   private t = 0;
@@ -129,26 +123,20 @@ export class TopologyView3D {
     this.scene.add(this.group);
 
     this.camera = new THREE.PerspectiveCamera(8, 1, 0.1, 200000);
-    this.camera.layers.enable(MEMBRANE_LAYER); // beauty pass sees protein + membrane
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.target.set(0, 0, 0);
     this.controls.enabled = false;
-    // AO camera shadows the main camera but only sees the protein layer (0), so
-    // the (clip-ignoring) GTAO G-buffer never includes the membrane.
-    this.aoCamera = new THREE.PerspectiveCamera(8, 1, 0.1, 200000);
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const key = new THREE.DirectionalLight(0xffffff, 0.7);
-    key.position.set(1, 1.4, 1);
+    // Soft, even lighting so the flat-coloured bodies read like the 2-D diagram
+    // (a hemisphere fill + a gentle key) rather than a glossy 3-D object.
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb8c0c8, 1.05));
+    const key = new THREE.DirectionalLight(0xffffff, 0.55);
+    key.position.set(0.4, 1, 0.9);
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.3);
-    fill.position.set(-1, -0.5, -0.8);
-    this.scene.add(fill);
 
     container.appendChild(this.renderer.domElement);
     this.resize();
-    this.buildComposer();
     window.addEventListener('resize', this.resize);
     this.animate();
   }
@@ -165,23 +153,20 @@ export class TopologyView3D {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h || 1;
     this.camera.updateProjectionMatrix();
-    if (this.composer) {
-      const dpr = this.renderer.getPixelRatio();
-      this.composer.setPixelRatio(dpr);
-      this.composer.setSize(w, h);
-      const pxW = Math.max(1, Math.round(w * dpr));
-      const pxH = Math.max(1, Math.round(h * dpr));
-      this.gtaoPass?.setSize(pxW, pxH);
-      this.outlinePass?.setSize(pxW, pxH);
-    }
   };
+
+  /** Render one frame immediately (lets the host show the first frame on demand). */
+  renderOnce(): void {
+    this.renderFrame();
+  }
 
   /** Load a scene (replacing any previous). Centres the structure at the origin. */
   setScene(topo: TopologyScene): void {
     for (const el of this.elements) {
-      this.group.remove(el.mesh);
+      this.group.remove(el.mesh, el.outline);
       el.geometry.dispose();
       (el.mesh.material as THREE.Material).dispose();
+      (el.outline.material as THREE.Material).dispose();
     }
     this.elements = [];
     for (const m of [this.membraneL, this.membraneR]) {
@@ -250,7 +235,6 @@ export class TopologyView3D {
     this.anchorDist = null;
 
     this.buildMembrane();
-    this.refreshOutlineSelection();
     this.updateMorph();
   }
 
@@ -323,7 +307,7 @@ export class TopologyView3D {
 
     const material = new THREE.MeshStandardMaterial({
       color: COLOURS[el.type],
-      roughness: 0.55,
+      roughness: 0.95, // matte, flat-coloured — reads like the 2-D fills
       metalness: 0,
       side: THREE.DoubleSide,
       transparent: el.faded,
@@ -331,6 +315,26 @@ export class TopologyView3D {
     });
     const mesh = new THREE.Mesh(geometry, material);
     this.group.add(mesh);
+
+    // Inverted-hull outline: the same geometry drawn BackSide and pushed out
+    // along its normals in a dark edge colour, so every element gets a crisp
+    // silhouette matching the SVG's stroked shapes. Shares `geometry`, so it
+    // follows the morph for free.
+    const outlineMat = new THREE.MeshBasicMaterial({
+      color: EDGE_COLOURS[el.type],
+      side: THREE.BackSide,
+      transparent: el.faded,
+      opacity: el.faded ? 0.32 : 1,
+    });
+    outlineMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>\n\ttransformed += normalize(objectNormal) * ${OUTLINE_WIDTH.toFixed(3)};`,
+      );
+    };
+    const outline = new THREE.Mesh(geometry, outlineMat);
+    outline.renderOrder = -1; // draw the hull before the body fills over it
+    this.group.add(outline);
 
     return {
       type: el.type,
@@ -347,6 +351,7 @@ export class TopologyView3D {
       ring,
       geometry,
       mesh,
+      outline,
     };
   }
 
@@ -367,7 +372,6 @@ export class TopologyView3D {
         clipIntersection: false, // keep only the region inside ALL planes
       });
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
-      mesh.layers.set(MEMBRANE_LAYER); // excluded from the AO camera
       mesh.renderOrder = -1;
       this.group.add(mesh);
       return mesh;
@@ -379,16 +383,17 @@ export class TopologyView3D {
   /**
    * Size the membrane panels for morph fraction `e`. Each panel spans the full
    * bilayer band; the world-space clip planes (updateMembraneClip) carve away the
-   * camera-facing half and the protein keep-out. Width eases from the full flat
-   * arc (2-D) to the compact 3-D footprint.
+   * camera-facing half and the protein keep-out. The slab extends generously
+   * beyond the protein (a membrane runs off to the edges) so the flanking wings
+   * stay large and never shrink away as the camera orbits.
    */
   private updateMembrane(e: number): void {
     if (!this.membraneL || !this.membraneR) return;
-    const margin = 8;
-    const halfW = lerp(this.flatHalfWidth + margin, this.solidHalfX + margin, e);
-    const depth = (this.solidHalfDepth + margin) * 2;
+    const extend = 45; // Å of membrane beyond the protein footprint at the 3-D end
+    const halfW = lerp(this.flatHalfWidth + 8, Math.max(this.solidHalfX, this.ringR) + extend, e);
+    const halfDepth = lerp(this.solidHalfDepth + 8, this.solidHalfDepth + extend, e);
     for (const m of [this.membraneL, this.membraneR]) {
-      m.scale.set(halfW * 2, this.membraneHalf * 2, depth);
+      m.scale.set(halfW * 2, this.membraneHalf * 2, halfDepth * 2);
       m.position.set(0, 0, 0);
     }
   }
@@ -611,79 +616,10 @@ export class TopologyView3D {
     this.renderFrame();
   };
 
-  /**
-   * Render one frame: refresh the camera-tracking membrane clip, then draw
-   * through the post-processing composer (outlines + AO). Ambient occlusion is
-   * gated to the resting state so it never has to run on the per-frame-rebuilt
-   * geometry mid-roll.
-   */
+  /** Refresh the camera-tracking membrane clip, then draw the scene. */
   private renderFrame(): void {
     this.updateMembraneClip();
-    if (this.composer) {
-      if (this.gtaoPass) this.gtaoPass.enabled = this.t >= 1;
-      // Keep the AO camera in lock-step with the beauty camera (protein layer only).
-      this.aoCamera.copy(this.camera);
-      this.aoCamera.layers.set(0);
-      this.composer.render();
-    } else {
-      this.renderer.render(this.scene, this.camera);
-    }
-  }
-
-  /** Build the post-processing chain: render → AO → outline → AA → output. */
-  private buildComposer(): void {
-    const dpr = this.renderer.getPixelRatio();
-    const size = this.renderer.getSize(new THREE.Vector2());
-    const w = Math.max(1, size.width);
-    const h = Math.max(1, size.height);
-    const pxW = Math.max(1, Math.round(w * dpr));
-    const pxH = Math.max(1, Math.round(h * dpr));
-
-    const composer = new EffectComposer(this.renderer);
-    // RenderPass uses the real materials, so the membrane's clipping planes are
-    // honoured here (the beauty image shows the cut slab).
-    composer.addPass(new RenderPass(this.scene, this.camera));
-
-    // Ambient occlusion from a protein-only camera so the (clip-ignoring) AO
-    // G-buffer never includes the full uncut membrane slab.
-    const gtao = new GTAOPass(this.scene, this.aoCamera, pxW, pxH);
-    gtao.output = GTAOPass.OUTPUT.Default;
-    gtao.updateGtaoMaterial({ radius: 4, distanceExponent: 1, thickness: 1, scale: 1, samples: 8 });
-    gtao.updatePdMaterial({
-      lumaPhi: 10,
-      depthPhi: 2,
-      normalPhi: 3,
-      radius: 4,
-      radiusExponent: 1,
-      rings: 2,
-      samples: 8,
-    });
-    composer.addPass(gtao);
-    this.gtaoPass = gtao;
-
-    // Silhouette/crease outline on the protein elements (membrane excluded).
-    const outline = new OutlinePass(new THREE.Vector2(pxW, pxH), this.scene, this.camera);
-    outline.edgeStrength = 3;
-    outline.edgeThickness = 1;
-    outline.edgeGlow = 0;
-    outline.pulsePeriod = 0;
-    outline.visibleEdgeColor.set(OUTLINE_COLOUR);
-    outline.hiddenEdgeColor.set(OUTLINE_COLOUR);
-    composer.addPass(outline);
-    this.outlinePass = outline;
-
-    composer.addPass(new SMAAPass());
-    composer.addPass(new OutputPass());
-
-    composer.setPixelRatio(dpr);
-    composer.setSize(w, h);
-    this.composer = composer;
-    this.refreshOutlineSelection();
-  }
-
-  /** (Re)bind the outline pass to the current element meshes (rebuilt per scene). */
-  private refreshOutlineSelection(): void {
-    if (this.outlinePass) this.outlinePass.selectedObjects = this.elements.map((el) => el.mesh);
+    this.renderer.render(this.scene, this.camera);
   }
 
   /** Position the camera on a sphere about the origin at (azimuth, elevation). */
@@ -701,12 +637,6 @@ export class TopologyView3D {
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.resize);
     this.controls.dispose();
-    this.gtaoPass?.dispose();
-    this.outlinePass?.dispose();
-    this.composer?.dispose();
-    this.composer = null;
-    this.gtaoPass = null;
-    this.outlinePass = null;
     this.renderer.dispose();
     if (this.renderer.domElement.parentNode === this.container) {
       this.container.removeChild(this.renderer.domElement);

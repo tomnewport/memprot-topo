@@ -1667,6 +1667,7 @@ export class TopologyDisplay extends HTMLElement {
     setT(t: number): void;
     morph: number;
     resize(): void;
+    renderOnce(): void;
     dispose(): void;
   } | null = null;
   private _morphRaf = 0;
@@ -1846,8 +1847,10 @@ export class TopologyDisplay extends HTMLElement {
     scroll.style.display = 'none';
     stage.style.display = 'block';
     // The renderer may have been built while the stage was hidden (0×0); now
-    // that it's laid out, fit it to the container.
+    // that it's laid out, fit it and draw the first (flat) frame synchronously so
+    // the stage never shows blank while WebGL warms up — then roll up.
     this._view3d?.resize();
+    this._view3d?.renderOnce();
     this.animateMorph(1, this.prefersReducedMotion());
   }
 

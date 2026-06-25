@@ -51,7 +51,14 @@ Every centreline sample in the scene carries **two** positions:
 - `(arc, z)` — its flat 2D position in the membrane side-view, and
 - `pos3d` — its real 3D coordinate in the membrane frame.
 
-The morph is then nothing more than a per-sample interpolation between the two.
+The morph is a per-sample interpolation between the two. Rather than a straight
+chord (which makes the structure look like it collapses inward through the axis),
+each cross-section point follows an **outward-bowing curl**
+([`unroll-map.ts`](../src/render-3d/unroll-map.ts)): the path bends _around_ the
+membrane axis so the flat sheet visibly rolls up onto the cylinder, while the
+vertical (membrane-depth) axis rides its own track. The map is exact at both ends
+(flat at `t=0`, real at `t=1`) and validated on real β-barrel and helical scenes.
+
 The 3D target is the **real, honest structure** (`pos3d` comes from the
 de-spiralled backbone the unroller already computes), not an idealised shape — a
 deliberate choice so the roll-up validates the unrolling rather than papering
@@ -90,6 +97,13 @@ Helical **spirals are deliberately not drawn** (the 2D projection removes them o
 purpose — see [`rendering.md`](./rendering.md) §1 — and the noodle/cylinder
 representation is the agreed scope). Adding spirals is possible future work.
 
+To read like the 2D diagram, each element is drawn with a **flat matte fill** in
+the SVG's body colour plus a dark **inverted-hull outline** in the SVG's edge
+colour (a second BackSide copy of the geometry, pushed out along its normals).
+Lighting is a soft hemisphere fill so the colours stay flat rather than glossy.
+This replaced an `EffectComposer` (SSAO + screen-space outline) chain that was
+slow to compile on first use and never produced a clean outline.
+
 ### Camera
 
 The camera eases from **dead-on and near-orthographic** at the flat end (so it
@@ -111,11 +125,13 @@ as an anchor and interpolated to dead-on as `t → 0`, so there is never a snap.
 
 ### Membrane cutaway
 
-The bilayer slab is rendered as a **cutaway**: it fills only the far half of the
-view depth, with its cut face at the protein's mid-plane, revealing the structure
-inside. It draws with `depthWrite` off so it neither z-fights with nor occludes
-the protein in front. Its width eases from the full flat arc (2D) to the compact
-3D footprint, and its colour/opacity match the SVG membrane band at `t = 0`.
+The bilayer is two opaque slab panels carved by **world-space clip planes that
+track the camera** (updated every frame from `camera.getWorldDirection`). One
+plane keeps only the half _behind_ the protein, so the slab can never be brought
+in front of the structure however you orbit; two more leave a protein-width slot
+down the middle so the slab never clips through the body. The panels extend
+generously beyond the protein so the flanking membrane stays visible rather than
+shrinking away, and match the SVG band width at `t = 0`.
 
 ---
 
