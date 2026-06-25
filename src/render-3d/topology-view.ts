@@ -36,8 +36,8 @@ const LOOP_FLAT_HALF = 0.36;
 const RIBBON_3D_HALF = 1.3;
 /** Width of the N→C travelling roll front (smaller = sharper rolling edge). */
 const WAVEFRONT = 0.3;
-/** Inverted-hull outline thickness, Å. */
-const OUTLINE_WIDTH = 0.5;
+/** Outline shell thickness, Å — the outline sweep is fattened by this amount. */
+const OUTLINE_WIDTH = 0.9;
 /** Tube cross-section segments (helix/coil) — higher is smoother. */
 const TUBE_RING = 16;
 /** Default 3-D camera framing angles. */
@@ -65,7 +65,9 @@ interface ElementRender {
   ring: number;
   geometry: THREE.BufferGeometry;
   mesh: THREE.Mesh;
-  /** Inverted-hull outline mesh, sharing `geometry`, drawn BackSide + expanded. */
+  /** Outline shell: its own geometry, swept with a cross-section fattened by
+   * OUTLINE_WIDTH and drawn BackSide so a dark rim shows around the body. */
+  outlineGeometry: THREE.BufferGeometry;
   outline: THREE.Mesh;
 }
 
@@ -165,6 +167,7 @@ export class TopologyView3D {
     for (const el of this.elements) {
       this.group.remove(el.mesh, el.outline);
       el.geometry.dispose();
+      el.outlineGeometry.dispose();
       (el.mesh.material as THREE.Material).dispose();
       (el.outline.material as THREE.Material).dispose();
     }
@@ -287,7 +290,6 @@ export class TopologyView3D {
       thick3d = topo.style.loopRadius;
     }
 
-    const geometry = new THREE.BufferGeometry();
     const segs = el.samples.length - 1;
     const idx: number[] = [];
     for (let i = 0; i < segs; i++) {
@@ -299,11 +301,17 @@ export class TopologyView3D {
         idx.push(a, c, b, b, c, d);
       }
     }
-    geometry.setIndex(idx);
-    geometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array(el.samples.length * ring * 3), 3),
-    );
+    const makeGeom = (): THREE.BufferGeometry => {
+      const g = new THREE.BufferGeometry();
+      g.setIndex(idx.slice());
+      g.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array(el.samples.length * ring * 3), 3),
+      );
+      return g;
+    };
+    const geometry = makeGeom();
+    const outlineGeometry = makeGeom();
 
     const material = new THREE.MeshStandardMaterial({
       color: COLOURS[el.type],
@@ -316,24 +324,19 @@ export class TopologyView3D {
     const mesh = new THREE.Mesh(geometry, material);
     this.group.add(mesh);
 
-    // Inverted-hull outline: the same geometry drawn BackSide and pushed out
-    // along its normals in a dark edge colour, so every element gets a crisp
-    // silhouette matching the SVG's stroked shapes. Shares `geometry`, so it
-    // follows the morph for free.
+    // Outline shell: the SAME sweep with a cross-section fattened by
+    // OUTLINE_WIDTH (so it is guaranteed larger than the body — no reliance on
+    // normal winding), drawn BackSide in the SVG edge colour. Only the rim where
+    // it extends past the body silhouette shows, giving a crisp dark outline on
+    // every element like the 2-D strokes.
     const outlineMat = new THREE.MeshBasicMaterial({
       color: EDGE_COLOURS[el.type],
       side: THREE.BackSide,
       transparent: el.faded,
-      opacity: el.faded ? 0.32 : 1,
+      opacity: el.faded ? 0.5 : 1,
     });
-    outlineMat.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>\n\ttransformed += normalize(objectNormal) * ${OUTLINE_WIDTH.toFixed(3)};`,
-      );
-    };
-    const outline = new THREE.Mesh(geometry, outlineMat);
-    outline.renderOrder = -1; // draw the hull before the body fills over it
+    const outline = new THREE.Mesh(outlineGeometry, outlineMat);
+    outline.renderOrder = -1; // draw the shell before the body fills over it
     this.group.add(outline);
 
     return {
@@ -351,6 +354,7 @@ export class TopologyView3D {
       ring,
       geometry,
       mesh,
+      outlineGeometry,
       outline,
     };
   }
@@ -538,6 +542,8 @@ export class TopologyView3D {
   ): void {
     const pos = el.geometry.getAttribute('position') as THREE.BufferAttribute;
     const arr = pos.array as Float32Array;
+    const opos = el.outlineGeometry.getAttribute('position') as THREE.BufferAttribute;
+    const oarr = opos.array as Float32Array;
     const n = pts.length;
     // Arrowhead taper (ribbon): widen then collapse over the last stretch.
     const totalLen = polylineLength(pts);
@@ -548,6 +554,27 @@ export class TopologyView3D {
     // propagating the frame by the minimal rotation between successive tangents
     // is stable, so the cross-section no longer twists frame-to-frame.
     const { bins, nors } = sweepFrame(pts, faces[0]);
+    const ow = OUTLINE_WIDTH;
+    // Write one cross-section vertex into both the body (cw,cd) and the outline
+    // shell (ocw,ocd, fattened by OUTLINE_WIDTH so it always exceeds the body).
+    const put = (
+      base: number,
+      k: number,
+      p: THREE.Vector3,
+      bin: THREE.Vector3,
+      nor: THREE.Vector3,
+      cw: number,
+      cd: number,
+      ocw: number,
+      ocd: number,
+    ): void => {
+      arr[base + k * 3] = p.x + bin.x * cw + nor.x * cd;
+      arr[base + k * 3 + 1] = p.y + bin.y * cw + nor.y * cd;
+      arr[base + k * 3 + 2] = p.z + bin.z * cw + nor.z * cd;
+      oarr[base + k * 3] = p.x + bin.x * ocw + nor.x * ocd;
+      oarr[base + k * 3 + 1] = p.y + bin.y * ocw + nor.y * ocd;
+      oarr[base + k * 3 + 2] = p.z + bin.z * ocw + nor.z * ocd;
+    };
 
     for (let i = 0; i < n; i++) {
       const bin = bins[i];
@@ -560,32 +587,42 @@ export class TopologyView3D {
       }
       const base = i * el.ring * 3;
       if (el.ring === 4) {
-        const corners: [number, number][] = [
-          [w, thickness],
-          [w, -thickness],
-          [-w, -thickness],
-          [-w, thickness],
+        // Ribbon box: fatten each half-dimension by `ow`.
+        const sgn: [number, number][] = [
+          [1, 1],
+          [1, -1],
+          [-1, -1],
+          [-1, 1],
         ];
         for (let k = 0; k < 4; k++) {
-          const [cw, cd] = corners[k];
-          arr[base + k * 3] = pts[i].x + bin.x * cw + nor.x * cd;
-          arr[base + k * 3 + 1] = pts[i].y + bin.y * cw + nor.y * cd;
-          arr[base + k * 3 + 2] = pts[i].z + bin.z * cw + nor.z * cd;
+          const [sw, sd] = sgn[k];
+          put(
+            base,
+            k,
+            pts[i],
+            bin,
+            nor,
+            sw * w,
+            sd * thickness,
+            sw * (w + ow),
+            sd * (thickness + ow),
+          );
         }
       } else {
+        // Tube: fatten the radius by `ow`.
         for (let k = 0; k < el.ring; k++) {
           const a = (k / el.ring) * Math.PI * 2;
-          const cw = Math.cos(a) * w;
-          const cd = Math.sin(a) * w;
-          arr[base + k * 3] = pts[i].x + bin.x * cw + nor.x * cd;
-          arr[base + k * 3 + 1] = pts[i].y + bin.y * cw + nor.y * cd;
-          arr[base + k * 3 + 2] = pts[i].z + bin.z * cw + nor.z * cd;
+          const c = Math.cos(a);
+          const s = Math.sin(a);
+          put(base, k, pts[i], bin, nor, c * w, s * w, c * (w + ow), s * (w + ow));
         }
       }
     }
     pos.needsUpdate = true;
+    opos.needsUpdate = true;
     el.geometry.computeVertexNormals();
     el.geometry.computeBoundingSphere();
+    el.outlineGeometry.computeBoundingSphere();
   }
 
   private animate = (): void => {

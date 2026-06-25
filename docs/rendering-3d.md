@@ -98,11 +98,15 @@ purpose — see [`rendering.md`](./rendering.md) §1 — and the noodle/cylinder
 representation is the agreed scope). Adding spirals is possible future work.
 
 To read like the 2D diagram, each element is drawn with a **flat matte fill** in
-the SVG's body colour plus a dark **inverted-hull outline** in the SVG's edge
-colour (a second BackSide copy of the geometry, pushed out along its normals).
+the SVG's body colour plus a dark **outline shell** in the SVG's edge colour: a
+second copy of the element swept with its cross-section fattened by a fixed amount
+and drawn `BackSide`, so a crisp dark rim shows wherever the shell extends past the
+body silhouette. (Fattening the cross-section directly — rather than pushing a
+shared hull along vertex normals — makes the rim independent of face winding, the
+reason an earlier hull and a screen-space `OutlinePass` both showed nothing.)
 Lighting is a soft hemisphere fill so the colours stay flat rather than glossy.
 This replaced an `EffectComposer` (SSAO + screen-space outline) chain that was
-slow to compile on first use and never produced a clean outline.
+also slow to compile on first use.
 
 ### Camera
 
