@@ -53,13 +53,16 @@ sat in the 2-D strip, not a chosen "best" view (drag to orbit).
 
 ## Camera
 
-The camera is a dolly-zoom: as the field of view opens from 0 (orthographic —
-the 2-D view) to a 35 mm-equivalent perspective, the camera backs off to keep
-the scale at the target constant. It also tilts to look slightly down onto the
-membrane, re-centres on the protein, and the picture grows from the 2-D strip
-to a 3-D-friendly aspect ratio. A precomputed zoom track backs the camera off
-where a half-rolled frame would otherwise run out of the picture. Drag to orbit
-once in 3-D.
+The finished view is isometric by default: a parallel projection looking down
+on the membrane at atan(1/√2) ≈ 35.3°, so sizes don't change with depth. The
+camera tilts down into that view as the strip rolls up, re-centres on the
+protein, and the picture grows from the 2-D strip to a 3-D-friendly aspect
+ratio. A precomputed zoom track backs the camera off where a half-rolled frame
+would otherwise run out of the picture. Drag to orbit once in 3-D.
+
+`morph-projection="perspective"` switches to a dolly-zoom instead: the field of
+view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent
+perspective while the camera backs off to keep the scale at the target constant.
 
 ## Drawing: SVG all the way
 
@@ -76,9 +79,18 @@ finished 3-D view stays vector (and exportable).
   nothing drawn in between overlaps them on screen (convex-footprint test).
   This keeps the DOM small and avoids anti-aliasing seams; contiguous sections
   are emitted as a single outline polygon for the same reason.
-- Shading is Lambert lighting from the upper left with depth fog: cylinders
-  use nested bands, ribbons a gradient along the run. Shading, fog, outlines on
-  loops and the membrane surfaces all fade in from the flat 2-D style.
+- Shading is Lambert lighting from the upper left with depth fog. Cylinders get
+  a smooth gradient across their width; because an SVG gradient is straight, a
+  curved helix is split into stretches that turn by at most 2.5° on screen,
+  each with its own. Strand faces get a gradient along each straight stretch,
+  and loops become tubes with edge lines and a highlight. Shading, fog,
+  outlines and the membrane surfaces all fade in from the flat 2-D style.
+- Anything that should look the same from frame to frame is computed per
+  element, not per depth-sorted run: colours averaged over whichever sections
+  happen to share a run, round line ends at run joins, dash patterns restarted
+  per path and depth snapping all made the picture shimmer while orbiting.
+  Dashes are cut as separate pieces pinned to the curve, and the depth snap
+  that preserves the 2-D drawing order near t = 0 fades out by t = 0.3.
 
 ## Limitations
 

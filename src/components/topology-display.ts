@@ -19,6 +19,7 @@ import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../co
 import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
 import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
 import { MorphController } from '../morph/controller.js';
+import { PROJECTIONS } from '../morph/renderer.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -1848,6 +1849,7 @@ export class TopologyDisplay extends HTMLElement {
     'loop-extreme-threshold',
     'show-contacts',
     'morph-sweep',
+    'morph-projection',
   ];
 
   private readonly _instanceId = ++_instanceCounter;
@@ -1895,7 +1897,8 @@ export class TopologyDisplay extends HTMLElement {
       name === 'loop-extreme-points' ||
       name === 'loop-extreme-threshold' ||
       name === 'show-contacts' ||
-      name === 'morph-sweep'
+      name === 'morph-sweep' ||
+      name === 'morph-projection'
     ) {
       this.render();
       return;
@@ -1940,6 +1943,14 @@ export class TopologyDisplay extends HTMLElement {
   private get morphSweep(): number {
     const v = Number.parseFloat(this.getAttribute('morph-sweep') ?? '');
     return Number.isFinite(v) && v >= 0 ? v : DEFAULT_MORPH_SWEEP;
+  }
+
+  /**
+   * Projection of the finished 3-D view (`morph-projection`): `isometric`
+   * (default, parallel) or `perspective` (35 mm-equivalent).
+   */
+  private get morphProjection(): keyof typeof PROJECTIONS {
+    return this.getAttribute('morph-projection') === 'perspective' ? 'perspective' : 'isometric';
   }
 
   /** Assemble the loop rendering options from the component's attributes. */
@@ -2138,6 +2149,7 @@ export class TopologyDisplay extends HTMLElement {
     scroll.appendChild(svg);
     const morph = new MorphController(scroll, svg, scene, `mp${this._instanceId}`, {
       sweep: this.morphSweep,
+      ...PROJECTIONS[this.morphProjection],
     });
     this._morph = morph;
     block.appendChild(this.renderMorphBar(morph));

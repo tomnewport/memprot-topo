@@ -74,6 +74,8 @@ export interface ModelLoop {
   order: number;
   /** Approximate length (Å) of the longer of the two paths. */
   length: number;
+  /** Length (Å) of the 2-D loop curve — sets the dash spacing. */
+  synLength: number;
 }
 
 export interface ModelLabel {
@@ -487,6 +489,7 @@ export function buildMorphModel(scene: MorphScene, options: MorphModelOptions = 
       faded: l.faded,
       order: l.order,
       length: Math.max(realLen, synLen),
+      synLength: synLen,
     });
   }
 

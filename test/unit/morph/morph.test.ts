@@ -287,6 +287,10 @@ describe('<topology-display> 3-D morph', () => {
     expect(morph).not.toBe(svg2d);
     expect(morph?.classList.contains('morph-svg')).toBe(true);
     expect(root.querySelector('.morph-toggle')?.getAttribute('aria-pressed')).toBe('true');
+    // Loops are drawn as tubes in 3-D; every coordinate stays finite.
+    el.setMorphProgress(1);
+    const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
+    expect(ds.join('')).not.toMatch(/NaN|Infinity/);
     el.setMorphProgress(0);
     expect(root.querySelector('.svg-scroll svg')).toBe(svg2d);
     expect(root.querySelector('.morph-toggle')?.getAttribute('aria-pressed')).toBe('false');

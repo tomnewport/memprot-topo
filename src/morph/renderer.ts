@@ -21,7 +21,10 @@ export interface MorphOptions {
   coilRadius: number;
   /** Camera elevation of the finished 3-D view (positive = looking down). */
   elevation: number;
-  /** Diagonal field of view of the finished 3-D view (35 mm ≈ 63.4°). */
+  /**
+   * Diagonal field of view of the finished 3-D view; 0 keeps the projection
+   * parallel (isometric) throughout, 63.4° is a 35 mm-equivalent perspective.
+   */
   fov: number;
   /**
    * Width of the rolling wave as a fraction of the chain: 0 rolls the whole
@@ -37,10 +40,17 @@ export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
   arrowLength: 5,
   strandThickness: 1.0,
   coilRadius: 0.42,
-  elevation: (16 * Math.PI) / 180,
-  fov: 2 * Math.atan(Math.hypot(36, 24) / 2 / 35),
+  // Isometric: parallel projection, looking down at atan(1/√2) ≈ 35.26°.
+  elevation: Math.atan(1 / Math.SQRT2),
+  fov: 0,
   sweep: 0.35,
 };
+
+/** Projection presets for the finished 3-D view. */
+export const PROJECTIONS = {
+  isometric: { fov: 0, elevation: Math.atan(1 / Math.SQRT2) },
+  perspective: { fov: 2 * Math.atan(Math.hypot(36, 24) / 2 / 35), elevation: (16 * Math.PI) / 180 },
+} as const;
 
 /** User orbit applied on top of the scripted camera (radians). */
 export interface Orbit {
@@ -57,9 +67,15 @@ export interface FrameLayout {
 
 type RGB = [number, number, number];
 
-/** Compact coordinate formatting (0.01 px) — much cheaper than toFixed. */
+/**
+ * Coordinate precision (steps per px): 0.01 px while the picture is still the
+ * 2-D figure, 0.1 px once it is 3-D (shorter path strings, faster frames).
+ */
+let coordScale = 100;
+
+/** Compact coordinate formatting — much cheaper than toFixed. */
 function f2(v: number): string {
-  return String(Math.round(v * 100) / 100);
+  return String(Math.round(v * coordScale) / coordScale);
 }
 
 function hexRgb(hex: string): RGB {
@@ -110,14 +126,6 @@ const AMBIENT = 0.58;
 const DIFFUSE = 0.55;
 /** Maximum fog (mix towards white) at the far end of the scene. */
 const FOG = 0.38;
-
-/**
- * Cylinder shading bands: angular half-widths about the brightest line. Each
- * band is drawn over the previous one so there are no seams between them.
- */
-const BAND_HALF = [10, 1.2, 0.9, 0.62, 0.36, 0.15];
-const BAND_LEVEL = [0.05, 0.5, 0.72, 0.87, 0.96, 1.0];
-const BAND_SPEC = [0, 0, 0, 0.04, 0.14, 0.32];
 
 /** A drawable piece of the scene, depth-sorted as a unit. */
 interface Prim {
@@ -227,9 +235,22 @@ interface OpSpec {
   strokeWidth?: number;
 }
 
+/** An explicit screen-space linear gradient (stops at offsets 0 … 1). */
+interface GradientDef {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  stops: { o: number; c: RGB }[];
+  /** Representative colour, used when the gradient collapses to flat. */
+  mean: RGB;
+}
+
 interface Op {
   spec: OpSpec;
   seq: number;
+  /** Explicit gradient (cylinders); ribbons build theirs from `stops`. */
+  grad?: GradientDef;
   d: string[];
   /** Open polyline (stroke ops) awaiting continuation. */
   line: number[] | null;
@@ -242,7 +263,6 @@ interface Op {
   rgb: [number, number, number, number];
   width: [number, number];
   opacity: [number, number];
-  stops: { x: number; y: number; c: RGB }[];
 }
 
 class Run {
@@ -266,7 +286,6 @@ class Run {
         rgb: [0, 0, 0, 0],
         width: [0, 0],
         opacity: [0, 0],
-        stops: [],
       };
       this.ops.set(k, op);
     }
@@ -333,8 +352,9 @@ class Run {
     op.strip = null;
   }
 
-  gradientStop(spec: OpSpec, x: number, y: number, c: RGB): void {
-    this.op(spec).stops.push({ x, y, c });
+  setGradient(spec: OpSpec, g: GradientDef): void {
+    const op = this.op(spec);
+    if (!op.grad) op.grad = g;
   }
 
   stroke(spec: OpSpec, pts: number[], c: RGB, width: number, opacity = 1): void {
@@ -377,6 +397,79 @@ class Run {
     }
     return [...this.ops.values()].sort((a, b) => a.spec.layer - b.spec.layer || a.seq - b.seq);
   }
+}
+
+/**
+ * A gradient along a run of colour samples placed on screen: from the first
+ * sample to the last, each placed by its projection onto that line.
+ */
+function gradientAlong(samples: { x: number; y: number; c: RGB }[]): GradientDef {
+  const n = samples.length;
+  const mean: RGB = [0, 0, 0];
+  for (const s of samples) {
+    mean[0] += s.c[0] / Math.max(1, n);
+    mean[1] += s.c[1] / Math.max(1, n);
+    mean[2] += s.c[2] / Math.max(1, n);
+  }
+  if (n < 2) {
+    const s = samples[0] ?? { x: 0, y: 0, c: mean };
+    return { x1: s.x, y1: s.y, x2: s.x, y2: s.y, stops: [{ o: 0, c: s.c }], mean };
+  }
+  const a = samples[0];
+  const b = samples[n - 1];
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const vl2 = vx * vx + vy * vy || 1;
+  const stops = samples
+    .map((s) => ({ o: clamp01(((s.x - a.x) * vx + (s.y - a.y) * vy) / vl2), c: s.c }))
+    .sort((p, q) => p.o - q.o);
+  return { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stops, mean };
+}
+
+/** Dash pattern of discontinuous loops, as in 2-D: 3 px on, 5 px off. */
+const DASH_ON = 3;
+const DASH_PERIOD = 8;
+
+/**
+ * Cut a polyline section into its "on" dash pieces. Points are at uniform
+ * steps of the loop's normalised parameter (point `c0 + q` at `(c0 + q) / last`)
+ * and the pattern is laid along `lengthPx` — the loop's 2-D length — so at
+ * t = 0 it matches the 2-D dashes and afterwards it stays pinned to the curve.
+ */
+function dashPieces(pts: number[], c0: number, last: number, lengthPx: number): number[][] {
+  const pieces: number[][] = [];
+  let cur: number[] | null = null;
+  const phaseAt = (q: number): number => ((c0 + q) / last) * lengthPx;
+  const n = pts.length / 2;
+  for (let q = 0; q < n - 1; q++) {
+    const u0 = phaseAt(q);
+    const u1 = phaseAt(q + 1);
+    // Breakpoints inside this segment, where the pattern switches on/off.
+    const cuts = [u0];
+    for (let k = Math.floor(u0 / DASH_PERIOD); k * DASH_PERIOD <= u1; k++) {
+      for (const b of [k * DASH_PERIOD, k * DASH_PERIOD + DASH_ON])
+        if (b > u0 && b < u1) cuts.push(b);
+    }
+    cuts.push(u1);
+    for (let j = 0; j < cuts.length - 1; j++) {
+      const a = (cuts[j] - u0) / (u1 - u0 || 1);
+      const b = (cuts[j + 1] - u0) / (u1 - u0 || 1);
+      const mid = (cuts[j] + cuts[j + 1]) / 2;
+      const on = ((mid % DASH_PERIOD) + DASH_PERIOD) % DASH_PERIOD < DASH_ON;
+      const ax = lerp(pts[q * 2], pts[q * 2 + 2], a);
+      const ay = lerp(pts[q * 2 + 1], pts[q * 2 + 3], a);
+      const bx = lerp(pts[q * 2], pts[q * 2 + 2], b);
+      const by = lerp(pts[q * 2 + 1], pts[q * 2 + 3], b);
+      if (on) {
+        if (!cur) {
+          cur = [ax, ay];
+          pieces.push(cur);
+        }
+        cur.push(bx, by);
+      } else cur = null;
+    }
+  }
+  return pieces;
 }
 
 /** Push point `i` of a flat x, y array 0.5 px further from point `j`. */
@@ -436,6 +529,16 @@ interface Framing {
    */
   zoomTrack: number[];
 }
+
+/** Samples either side used for a helix's on-screen axis direction in 3-D. */
+const AXIS_BASELINE = 8;
+/** A cylinder gradient group spans at most this turn on screen (cos 2.5°). */
+const GROUP_COS = Math.cos((2.5 * Math.PI) / 180);
+/** A strand face gradient spans at most this turn on screen (cos 10°). */
+const STRAND_GROUP_COS = Math.cos((10 * Math.PI) / 180);
+
+/** Depth snap (Å) used near t = 0 to preserve the 2-D drawing order. */
+const DEPTH_SNAP = 0.05;
 
 /** Number of intervals in the steadying track. */
 const STEADY_STEPS = 80;
@@ -826,6 +929,7 @@ export class MorphRenderer {
     // Easing channels.
     const eCam = smooth(0, 1, tau);
     const sigma = smooth(0.02, 0.65, tau);
+    coordScale = sigma > 0.05 ? 10 : 100;
     const eW = smooth(0.0, 0.55, tau);
     const eLoop = smooth(0.0, 0.7, tau);
     const eDisc = smooth(0.35, 0.95, tau);
@@ -895,7 +999,7 @@ export class MorphRenderer {
           emit: (run) => {
             // The upper leaflet surface reads as a translucent sheet; the lower
             // one is kept faint so the cytoplasmic side stays legible.
-            const alpha = which === 'top' ? 0.28 : 0.1;
+            const alpha = which === 'top' ? 0.13 : 0.06;
             run.fill({ layer: 0, key: 'disc', kind: 'fill' }, ring, fill, alpha * eDisc);
             run.stroke(
               {
@@ -957,7 +1061,11 @@ export class MorphRenderer {
                   : 4;
       }
     }
-    for (const p of prims) p.depth = Math.round(p.depth * 20);
+    // Near t = 0 everything is (almost) level, so depths are snapped to keep
+    // the 2-D drawing order; the snap fades out as depth becomes meaningful,
+    // since in 3-D it would make near-level pieces swap back and forth.
+    const quantum = DEPTH_SNAP * (1 - smooth(0, 0.3, tau));
+    if (quantum > 1e-6) for (const p of prims) p.depth = Math.round(p.depth / quantum);
     prims.sort(
       (a, b) => a.rank - b.rank || b.depth - a.depth || a.order - b.order || a.sub - b.sub,
     );
@@ -985,26 +1093,32 @@ export class MorphRenderer {
     const m = idx.length;
 
     // Silhouette frame per kept point: screen centre, perpendicular, radius.
+    // The 2-D outline takes its tangent from the neighbouring samples; in 3-D
+    // that is noisy for a helix seen nearly end-on, so blend towards the
+    // projected axis direction over a wider (~1 Å) baseline.
     const sx = new Float64Array(m);
     const sy = new Float64Array(m);
     const ppx = new Float64Array(m);
     const ppy = new Float64Array(m);
     const rs = new Float64Array(m);
     const dep = new Float64Array(m);
+    const unit = (x: number, y: number): [number, number] => {
+      const l = Math.hypot(x, y);
+      return l > 1e-12 ? [x / l, y / l] : [0, 0];
+    };
     for (let i = 0; i < m; i++) {
       const g = idx[i];
-      const a = Math.max(g0, g - 1);
-      const b = Math.min(g1, g + 1);
-      let tx = proj[b * 4] - proj[a * 4];
-      let ty = proj[b * 4 + 1] - proj[a * 4 + 1];
-      const tl = Math.hypot(tx, ty);
-      if (tl > 1e-9) {
-        tx /= tl;
-        ty /= tl;
-      } else {
-        tx = 1;
-        ty = 0;
-      }
+      const [fx, fy] = unit(
+        proj[Math.min(g1, g + 1) * 4] - proj[Math.max(g0, g - 1) * 4],
+        proj[Math.min(g1, g + 1) * 4 + 1] - proj[Math.max(g0, g - 1) * 4 + 1],
+      );
+      const [wx, wy] = unit(
+        proj[Math.min(g1, g + AXIS_BASELINE) * 4] - proj[Math.max(g0, g - AXIS_BASELINE) * 4],
+        proj[Math.min(g1, g + AXIS_BASELINE) * 4 + 1] -
+          proj[Math.max(g0, g - AXIS_BASELINE) * 4 + 1],
+      );
+      const [ux, ty] = unit(lerp(fx, wx, eW), lerp(fy, wy, eW));
+      const tx = ux === 0 && ty === 0 ? 1 : ux;
       sx[i] = proj[g * 4];
       sy[i] = proj[g * 4 + 1];
       ppx[i] = -ty;
@@ -1013,50 +1127,49 @@ export class MorphRenderer {
       dep[i] = proj[g * 4 + 2];
     }
 
-    // Shading bands at each kept point: the brightest line sits where the
-    // surface normal best faces the light.
-    const nb = BAND_HALF.length;
-    const fLo = new Float64Array(m * nb);
-    const fHi = new Float64Array(m * nb);
-    const strength = new Float64Array(m);
-    for (let i = 0; i < m; i++) {
-      const a = ppx[i] * LIGHT[0] - ppy[i] * LIGHT[1];
-      const b = -LIGHT[2];
-      strength[i] = Math.hypot(a, b);
-      const phi = Math.atan2(a, b);
-      for (let j = 0; j < nb; j++) {
-        const lo = Math.max(-Math.PI / 2, phi - BAND_HALF[j]);
-        const hi = Math.min(Math.PI / 2, phi + BAND_HALF[j]);
-        fLo[i * nb + j] = Math.sin(lo);
-        fHi[i * nb + j] = Math.sin(Math.max(lo, hi));
+    // Smooth shading: a linear gradient across the cylinder. A gradient is
+    // straight in screen space, so the cylinder is split into groups whose
+    // on-screen direction stays within a few degrees, each with its own.
+    const group = new Int32Array(Math.max(0, m - 1));
+    let gid = 0;
+    let refX = ppx[0];
+    let refY = ppy[0];
+    for (let i = 0; i < m - 1; i++) {
+      if (ppx[i + 1] * refX + ppy[i + 1] * refY < GROUP_COS) {
+        gid++;
+        refX = ppx[i];
+        refY = ppy[i];
       }
+      group[i] = gid;
     }
     const base = this.colours.helix;
     const edge = hexRgb(this.colours.helixEdge);
+    // Outline colour per element, not per section (see strandPrims).
+    let depthSum = 0;
+    for (let i = 0; i < m; i++) depthSum += dep[i];
+    const edgeC = shadeEdge(edge, sigma, ctx.fogAt(depthSum / Math.max(1, m)));
+    const grads: GradientDef[] = [];
+    for (let k = 0, i = 0; k <= gid; k++) {
+      let j = i;
+      while (j + 1 < m - 1 && group[j + 1] === k) j++;
+      const pm = Math.min(m - 1, Math.round((i + j + 1) / 2));
+      grads.push(
+        this.cylinderGradient(
+          sx[pm],
+          sy[pm],
+          ppx[pm],
+          ppy[pm],
+          rs[pm],
+          base,
+          sigma,
+          ctx.fogAt(dep[pm]),
+        ),
+      );
+      i = j + 1;
+    }
 
     for (let i = 0; i < m - 1; i++) {
       const depth = (dep[i] + dep[i + 1]) / 2;
-      const fog = ctx.fogAt(depth);
-      const s = (strength[i] + strength[i + 1]) / 2;
-      const bands: { pts: number[]; c: RGB }[] = [];
-      // Flat (2-D) shading needs only the silhouette band; stacking identical
-      // bands would darken the anti-aliased edge.
-      const bandCount = sigma > 1e-6 ? nb : 1;
-      for (let j = 0; j < bandCount; j++) {
-        const intensity = AMBIENT + DIFFUSE * s * BAND_LEVEL[j];
-        const c = shade(base, intensity, BAND_SPEC[j], sigma, fog);
-        const pts = [
-          sx[i] + fLo[i * nb + j] * rs[i] * ppx[i],
-          sy[i] + fLo[i * nb + j] * rs[i] * ppy[i],
-          sx[i] + fHi[i * nb + j] * rs[i] * ppx[i],
-          sy[i] + fHi[i * nb + j] * rs[i] * ppy[i],
-          sx[i + 1] + fLo[(i + 1) * nb + j] * rs[i + 1] * ppx[i + 1],
-          sy[i + 1] + fLo[(i + 1) * nb + j] * rs[i + 1] * ppy[i + 1],
-          sx[i + 1] + fHi[(i + 1) * nb + j] * rs[i + 1] * ppx[i + 1],
-          sy[i + 1] + fHi[(i + 1) * nb + j] * rs[i + 1] * ppy[i + 1],
-        ];
-        bands.push({ pts, c });
-      }
       const left = [
         sx[i] + rs[i] * ppx[i],
         sy[i] + rs[i] * ppy[i],
@@ -1069,9 +1182,11 @@ export class MorphRenderer {
         sx[i + 1] - rs[i + 1] * ppx[i + 1],
         sy[i + 1] - rs[i + 1] * ppy[i + 1],
       ];
+      const body = [left[0], left[1], right[0], right[1], left[2], left[3], right[2], right[3]];
       const xs = [left[0], left[2], right[0], right[2]];
       const ys = [left[1], left[3], right[1], right[3]];
-      const edgeC = shadeEdge(edge, sigma, fog);
+      const grad = grads[group[i]];
+      const spec: OpSpec = { layer: 1, key: `cyl${group[i]}`, kind: 'gradient' };
       prims.push({
         id: el.id,
         order: el.order,
@@ -1087,7 +1202,8 @@ export class MorphRenderer {
         pts: [left[0], left[1], left[2], left[3], right[2], right[3], right[0], right[1]],
         pad: 0.75,
         emit: (run) => {
-          for (let j = 0; j < bands.length; j++) run.strip(BAND_SPECS[j], bands[j].pts, bands[j].c);
+          run.strip(spec, body, grad.mean);
+          run.setGradient(spec, grad);
           run.stroke(SILHOUETTE, left, edgeC, 1.5);
           run.stroke(SILHOUETTE_R, right, edgeC, 1.5);
         },
@@ -1104,16 +1220,13 @@ export class MorphRenderer {
       const ol = Math.hypot(ox, oy, oz) || 1;
       cam.toEye(pose.w[g * 4], pose.w[g * 4 + 1], pose.w[g * 4 + 2], this.tmp);
       const facing = (ox * this.tmp[0] + oy * this.tmp[1] + oz * this.tmp[2]) / ol;
-      // Outward axis direction on screen.
-      let qx = sx[end] - sx[end === 0 ? Math.min(m - 1, 1) : Math.max(0, m - 2)];
-      let qy = sy[end] - sy[end === 0 ? Math.min(m - 1, 1) : Math.max(0, m - 2)];
-      const ql = Math.hypot(qx, qy);
-      if (ql > 1e-9) {
-        qx /= ql;
-        qy /= ql;
-      } else {
-        qx = ppy[end];
-        qy = -ppx[end];
+      // Outward axis direction on screen (the tangent, from the stable
+      // perpendicular), pointing away from the body.
+      let qx = ppy[end];
+      let qy = -ppx[end];
+      if (end === 0) {
+        qx = -qx;
+        qy = -qy;
       }
       const minor = rs[end] * Math.abs(facing);
       const ring: number[] = [];
@@ -1136,7 +1249,6 @@ export class MorphRenderer {
       );
       const capC = shade(base, AMBIENT + DIFFUSE * lam, 0, sigma, fog);
       const sideC = shade(base, AMBIENT + DIFFUSE * 0.05, 0, sigma, fog);
-      const edgeC = shadeEdge(edge, sigma, fog);
       const xs = ring.filter((_, k) => k % 2 === 0);
       const ys = ring.filter((_, k) => k % 2 === 1);
       prims.push({
@@ -1155,7 +1267,7 @@ export class MorphRenderer {
         pad: 0.75,
         emit: (run) => {
           if (near) {
-            run.fill({ layer: 3, key: 'cap', kind: 'fill' }, ring, capC);
+            run.fill({ layer: 3, key: `cap${end}`, kind: 'fill' }, ring, capC);
             run.stroke(
               { layer: 4, key: `cap-edge${end}`, kind: 'stroke', linecap: 'round' },
               ring,
@@ -1163,7 +1275,7 @@ export class MorphRenderer {
               1.5,
             );
           } else {
-            run.fill({ layer: 0, key: 'cap-back', kind: 'fill' }, ring, sideC);
+            run.fill({ layer: 0, key: `cap-back${end}`, kind: 'fill' }, ring, sideC);
             run.stroke(
               { layer: 2, key: `cap-arc${end}`, kind: 'stroke', linecap: 'round' },
               arc,
@@ -1240,6 +1352,21 @@ export class MorphRenderer {
     }
     const base = this.colours.strand;
     const edge = hexRgb(this.colours.strandEdge);
+    // Colours that don't vary along the strand are worked out once for the
+    // whole element: if they were averaged over whichever sections share a
+    // depth-sorted run, they would shimmer as the runs change with the view.
+    let depthSum = 0;
+    for (let i = 0; i < m; i++) depthSum += corners[i * 16 + 2];
+    const elFog = ctx.fogAt(depthSum / Math.max(1, m));
+    const sideC = shade(base, AMBIENT * 0.82, 0, sigma, elFog);
+    const edgeC = shadeEdge(edge, sigma, elFog);
+    // Face shading does vary along the strand: one gradient per stretch that
+    // runs straight on screen, built from every section's own colour.
+    const groupStops: { x: number; y: number; c: RGB }[][] = [[]];
+    const groupDefs: GradientDef[] = [];
+    let gid = 0;
+    let refDx = NaN;
+    let refDy = NaN;
     const P = (i: number, c: number): [number, number] => [
       corners[i * 16 + c * 4],
       corners[i * 16 + c * 4 + 1],
@@ -1341,8 +1468,6 @@ export class MorphRenderer {
       const lam = Math.max(0, nc0 * LIGHT[0] + nc1 * LIGHT[1] + nc2 * LIGHT[2]);
       const spec = Math.pow(Math.max(0, nc0 * HALF[0] + nc1 * HALF[1] + nc2 * HALF[2]), 30) * 0.3;
       const faceC = shade(base, AMBIENT + DIFFUSE * lam, spec, sigma, fog);
-      const sideC = shade(base, AMBIENT * 0.82, 0, sigma, fog);
-      const edgeC = shadeEdge(edge, sigma, fog);
 
       const TL0 = P(i, 0),
         TR0 = P(i, 1),
@@ -1352,10 +1477,35 @@ export class MorphRenderer {
         TR1 = P(j, 1),
         BL1 = P(j, 2),
         BR1 = P(j, 3);
+      // Gradient group: start a new one when the strand turns on screen.
+      {
+        const dx = (TL1[0] + TR1[0] - TL0[0] - TR0[0]) / 2;
+        const dy = (TL1[1] + TR1[1] - TL0[1] - TR0[1]) / 2;
+        const dl = Math.hypot(dx, dy);
+        if (dl > 0.5) {
+          if (Number.isNaN(refDx)) {
+            refDx = dx / dl;
+            refDy = dy / dl;
+          } else if ((dx * refDx + dy * refDy) / dl < STRAND_GROUP_COS) {
+            gid++;
+            groupStops.push([]);
+            refDx = dx / dl;
+            refDy = dy / dl;
+          }
+        }
+      }
+      const g = gid;
+      groupStops[g].push({
+        x: (TL0[0] + TR0[0] + TL1[0] + TR1[0]) / 4,
+        y: (TL0[1] + TR0[1] + TL1[1] + TR1[1]) / 4,
+        c: faceC,
+      });
+      const faceTop: OpSpec = { layer: 1, key: `face-t${g}`, kind: 'gradient' };
+      const faceBot: OpSpec = { layer: 1, key: `face-b${g}`, kind: 'gradient' };
       // Quads as (start-left, start-right, end-left, end-right).
       const faces: { spec: OpSpec; q: number[]; c: RGB }[] = [];
-      if (visTop) faces.push({ spec: FACE_TOP, q: [...TL0, ...TR0, ...TL1, ...TR1], c: faceC });
-      if (visBot) faces.push({ spec: FACE_BOT, q: [...BL0, ...BR0, ...BL1, ...BR1], c: faceC });
+      if (visTop) faces.push({ spec: faceTop, q: [...TL0, ...TR0, ...TL1, ...TR1], c: faceC });
+      if (visBot) faces.push({ spec: faceBot, q: [...BL0, ...BR0, ...BL1, ...BR1], c: faceC });
       if (visL) faces.push({ spec: SIDE_L, q: [...TL0, ...BL0, ...TL1, ...BL1], c: sideC });
       if (visR) faces.push({ spec: SIDE_R, q: [...TR0, ...BR0, ...TR1, ...BR1], c: sideC });
       const startWall = visStart ? [...TL0, ...TR0, ...BR0, ...BL0] : null;
@@ -1372,8 +1522,6 @@ export class MorphRenderer {
       }
       const xs = [TL0[0], TR0[0], BL0[0], BR0[0], TL1[0], TR1[0], BL1[0], BR1[0]];
       const ys = [TL0[1], TR0[1], BL0[1], BR0[1], TL1[1], TR1[1], BL1[1], BR1[1]];
-      const midX = (xs[0] + xs[1] + xs[4] + xs[5]) / 4;
-      const midY = (ys[0] + ys[1] + ys[4] + ys[5]) / 4;
       prims.push({
         id: el.id,
         order: el.order,
@@ -1391,13 +1539,14 @@ export class MorphRenderer {
         emit: (run) => {
           for (const f of faces) {
             run.strip(f.spec, f.q, f.c);
-            if (f.spec.kind === 'gradient') run.gradientStop(f.spec, midX, midY, f.c);
+            if (f.spec.kind === 'gradient') run.setGradient(f.spec, groupDefs[g]);
           }
           if (startWall) run.fill(SIDE_START, startWall, sideC);
           for (const e of edges) run.stroke(e.spec, e.pts, edgeC, 1.5);
         },
       });
     }
+    for (const stops of groupStops) groupDefs.push(gradientAlong(stops));
   }
 
   private loopPrims(ctx: FrameCtx, loop: ModelLoop): void {
@@ -1405,7 +1554,7 @@ export class MorphRenderer {
     const { ud, zd } = model;
     // Fine sampling near t = 0 keeps the curve faithful to the 2-D Bézier;
     // coarser in 3-D where the tube is smooth anyway.
-    const spacing = lerp(0.35, 0.7, eW);
+    const spacing = lerp(0.35, 1.2, eW);
     const count = Math.max(12, Math.min(900, Math.ceil(loop.length / spacing))) + 1;
     const dAu = loop.fromG >= 0 ? pose.u[loop.fromG] - ud[loop.fromG] : NaN;
     const dAz = loop.fromG >= 0 ? pose.z[loop.fromG] - zd[loop.fromG] : NaN;
@@ -1453,16 +1602,68 @@ export class MorphRenderer {
       sk[c] = this.tmp[7];
     }
     const coil = this.colours.coil;
-    const dash = loop.discontinuous ? '3 5' : undefined;
-    const coreSpec: OpSpec = { layer: 2, key: 'tube', kind: 'stroke', linecap: 'round', dash };
-    const outSpec: OpSpec = { layer: 1, key: 'tube-o', kind: 'stroke', linecap: 'round', dash };
+    // One set of colours and one width per loop: averaging them over whichever
+    // pieces share a depth-sorted run would make them shimmer as the view moves.
+    let dAvg = 0;
+    let kAvg = 0;
+    for (let c = 0; c < count; c++) {
+      dAvg += sd[c] / count;
+      kAvg += sk[c] / count;
+    }
+    const fog = ctx.fogAt(dAvg);
+    const core = lerp(1.8, 2 * this.options.coilRadius * scale * kAvg, eW);
+    const outer = core + 1.8 * sigma;
+    const coreC = fogged(mixRgb(coil, [150, 150, 150], sigma), fog);
+    const outC = fogged(mixRgb(coil, [52, 52, 52], sigma), fog);
+    const shineC = mixRgb(coreC, WHITE, 0.45);
+
+    // In 3-D a solid loop is drawn as a filled tube with edge lines and a
+    // highlight, so the joins between depth-sorted pieces are invisible. Near
+    // t = 0 (and for dashed loops) it stays a stroke, matching the 2-D curve;
+    // dashes are cut as separate pieces pinned to the curve so they don't
+    // crawl when the loop is split differently from frame to frame.
+    const tube = sigma >= 0.05 && !loop.discontinuous;
+    const cap = loop.discontinuous || !tube ? 'round' : 'butt';
+    const coreSpec: OpSpec = { layer: 2, key: 'tube', kind: 'stroke', linecap: cap };
+    const outSpec: OpSpec = { layer: 1, key: 'tube-o', kind: 'stroke', linecap: cap };
+    const dashPx = loop.discontinuous ? loop.synLength * ctx.pxA : 0;
+    const edgeAlpha = clamp01((sigma - 0.05) / 0.3);
+    const rb = outer / 2;
+    const edgeW = 1.2;
+    // Per-point screen perpendicular (smoothed over a few points).
+    const ppx = new Float64Array(count);
+    const ppy = new Float64Array(count);
+    const shine = new Float64Array(count);
+    if (tube) {
+      const lx = LIGHT[0];
+      const ly = -LIGHT[1];
+      for (let c = 0; c < count; c++) {
+        const a = Math.max(0, c - 2);
+        const b = Math.min(count - 1, c + 2);
+        let tx = sx[b] - sx[a];
+        let ty = sy[b] - sy[a];
+        const tl = Math.hypot(tx, ty);
+        if (tl > 1e-9) {
+          tx /= tl;
+          ty /= tl;
+        } else {
+          tx = 1;
+          ty = 0;
+        }
+        ppx[c] = -ty;
+        ppy[c] = tx;
+        // Highlight offset towards the light, continuous along the tube.
+        const ls = Math.hypot(lx, ly) || 1;
+        shine[c] = 0.32 * rb * ((ppx[c] * lx + ppy[c] * ly) / ls);
+      }
+    }
+
     // Depth-sorted pieces of about 1.2 Å.
     const STEP = Math.max(1, Math.round(((count - 1) * 1.2) / Math.max(loop.length, 1e-6)));
     for (let c = 0; c < count - 1; c += STEP) {
       const e = Math.min(count - 1, c + STEP);
       const pts: number[] = [];
       let dSum = 0;
-      let kSum = 0;
       let zSum = 0;
       let x0 = Infinity,
         y0 = Infinity,
@@ -1471,7 +1672,6 @@ export class MorphRenderer {
       for (let q = c; q <= e; q++) {
         pts.push(sx[q], sy[q]);
         dSum += sd[q];
-        kSum += sk[q];
         zSum += wz[q];
         x0 = Math.min(x0, sx[q]);
         y0 = Math.min(y0, sy[q]);
@@ -1479,18 +1679,51 @@ export class MorphRenderer {
         y1 = Math.max(y1, sy[q]);
       }
       const cnt = e - c + 1;
-      const depth = dSum / cnt;
-      const fog = ctx.fogAt(depth);
-      const core = lerp(1.8, 2 * this.options.coilRadius * scale * (kSum / cnt), eW);
-      const outer = core + 1.8 * sigma;
-      const coreC = fogged(mixRgb(coil, [150, 150, 150], sigma), fog);
-      const outC = fogged(mixRgb(coil, [52, 52, 52], sigma), fog);
       const pad = outer / 2 + 1;
+      let emit: (run: Run) => void;
+      if (tube) {
+        const quads: number[][] = [];
+        const left: number[] = [];
+        const right: number[] = [];
+        const hi: number[] = [];
+        const re = rb - edgeW / 2;
+        for (let q = c; q <= e; q++) {
+          left.push(sx[q] + re * ppx[q], sy[q] + re * ppy[q]);
+          right.push(sx[q] - re * ppx[q], sy[q] - re * ppy[q]);
+          hi.push(sx[q] + shine[q] * ppx[q], sy[q] + shine[q] * ppy[q]);
+          if (q < e) {
+            quads.push([
+              sx[q] + rb * ppx[q],
+              sy[q] + rb * ppy[q],
+              sx[q] - rb * ppx[q],
+              sy[q] - rb * ppy[q],
+              sx[q + 1] + rb * ppx[q + 1],
+              sy[q + 1] + rb * ppy[q + 1],
+              sx[q + 1] - rb * ppx[q + 1],
+              sy[q + 1] - rb * ppy[q + 1],
+            ]);
+          }
+        }
+        emit = (run) => {
+          for (const quad of quads) run.strip(TUBE_BODY, quad, coreC);
+          run.stroke(TUBE_SHINE, hi, shineC, rb * 0.55, edgeAlpha);
+          run.stroke(TUBE_EDGE_L, left, outC, edgeW, edgeAlpha);
+          run.stroke(TUBE_EDGE_R, right, outC, edgeW, edgeAlpha);
+        };
+      } else {
+        emit = (run) => {
+          const pieces = dashPx > 0 ? dashPieces(pts, c, count - 1, dashPx) : [pts];
+          for (const piece of pieces) {
+            if (sigma > 0) run.stroke(outSpec, piece, outC, outer, sigma);
+            run.stroke(coreSpec, piece, coreC, core);
+          }
+        };
+      }
       prims.push({
         id: loop.id,
         order: loop.order,
         sub: c,
-        depth,
+        depth: dSum / cnt,
         zc: zSum / cnt,
         rank: 0,
         x0: x0 - pad,
@@ -1498,12 +1731,9 @@ export class MorphRenderer {
         x1: x1 + pad,
         y1: y1 + pad,
         faded: loop.faded,
-        pts: pts,
+        pts,
         pad: outer / 2,
-        emit: (run) => {
-          if (sigma > 0) run.stroke(outSpec, pts, outC, outer, sigma);
-          run.stroke(coreSpec, pts, coreC, core);
-        },
+        emit,
       });
     }
   }
@@ -1774,11 +2004,12 @@ export class MorphRenderer {
           path.set('stroke-dasharray', null);
           path.set('fill-rule', 'nonzero');
           path.set('opacity', alpha < 0.999 ? alpha.toFixed(3) : null);
-          const grad = op.spec.kind === 'gradient' ? this.gradientFor(op, gi) : null;
+          const grad =
+            op.spec.kind === 'gradient' && op.grad ? this.gradientFromDef(op.grad, gi) : null;
           if (grad) {
             gi++;
             path.set('fill', grad);
-          } else path.set('fill', rgbStr(avg));
+          } else path.set('fill', rgbStr(op.grad ? op.grad.mean : avg));
         }
       }
       for (let j = ops.length; j < slot.paths.length; j++) slot.paths[j].set('display', 'none');
@@ -1786,23 +2017,61 @@ export class MorphRenderer {
     for (let i = runs.length; i < this.slots.length; i++) this.slots[i].g.set('display', 'none');
   }
 
-  /** A linear gradient along a ribbon run, or null when a flat fill will do. */
-  private gradientFor(op: Op, gi: number): string | null {
-    const stops = op.stops;
-    if (stops.length < 2) return null;
-    const a = stops[0];
-    const b = stops[stops.length - 1];
-    const vx = b.x - a.x;
-    const vy = b.y - a.y;
-    const vl2 = vx * vx + vy * vy;
+  /** Lighting profile across a cylinder at one point, as a gradient. */
+  private cylinderGradient(
+    cx: number,
+    cy: number,
+    px: number,
+    py: number,
+    r: number,
+    base: RGB,
+    sigma: number,
+    fog: number,
+  ): GradientDef {
+    // Surface normal at fraction f across the silhouette (camera space):
+    // f·P + √(1−f²)·(towards the viewer), with P the on-screen perpendicular.
+    const Px = px;
+    const Py = -py;
+    const stops: { o: number; c: RGB }[] = [];
+    const K = 9;
+    let sum: RGB = [0, 0, 0];
+    for (let k = 0; k < K; k++) {
+      const f = Math.sin(-Math.PI / 2 + (k * Math.PI) / (K - 1));
+      const q = Math.sqrt(Math.max(0, 1 - f * f));
+      const nx = f * Px;
+      const ny = f * Py;
+      const nz = -q;
+      const lam = Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
+      const hv = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
+      const c = shade(base, AMBIENT + DIFFUSE * lam, 0.35 * Math.pow(hv, 24), sigma, fog);
+      stops.push({ o: (f + 1) / 2, c });
+      sum = [sum[0] + c[0] / K, sum[1] + c[1] / K, sum[2] + c[2] / K];
+    }
+    return { x1: cx - r * px, y1: cy - r * py, x2: cx + r * px, y2: cy + r * py, stops, mean: sum };
+  }
+
+  /** Emit an explicit gradient, or null when its stops are all one colour. */
+  private gradientFromDef(g: GradientDef, gi: number): string | null {
+    const a = g.stops[0].c;
     let flat = true;
-    for (const s of stops) {
-      if (Math.abs(s.c[0] - a.c[0]) + Math.abs(s.c[1] - a.c[1]) + Math.abs(s.c[2] - a.c[2]) > 1.5) {
+    for (const s of g.stops) {
+      if (Math.abs(s.c[0] - a[0]) + Math.abs(s.c[1] - a[1]) + Math.abs(s.c[2] - a[2]) > 1.5) {
         flat = false;
         break;
       }
     }
-    if (flat || vl2 < 4) return null;
+    if (flat || Math.hypot(g.x2 - g.x1, g.y2 - g.y1) < 0.5) return null;
+    return this.writeGradient(gi, g.x1, g.y1, g.x2, g.y2, g.stops);
+  }
+
+  private writeGradient(
+    gi: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    sorted: { o: number; c: RGB }[],
+  ): string {
     let slot = this.grads[gi];
     if (!slot) {
       const el = document.createElementNS(SVG_NS, 'linearGradient');
@@ -1812,13 +2081,10 @@ export class MorphRenderer {
       slot = { el: new Pooled(el), stops: [] };
       this.grads.push(slot);
     }
-    slot.el.set('x1', a.x.toFixed(2));
-    slot.el.set('y1', a.y.toFixed(2));
-    slot.el.set('x2', b.x.toFixed(2));
-    slot.el.set('y2', b.y.toFixed(2));
-    const sorted = stops
-      .map((s) => ({ o: clamp01(((s.x - a.x) * vx + (s.y - a.y) * vy) / vl2), c: s.c }))
-      .sort((p, q) => p.o - q.o);
+    slot.el.set('x1', f2(x1));
+    slot.el.set('y1', f2(y1));
+    slot.el.set('x2', f2(x2));
+    slot.el.set('y2', f2(y2));
     for (let k = 0; k < sorted.length; k++) {
       let st = slot.stops[k];
       if (!st) {
@@ -1827,7 +2093,6 @@ export class MorphRenderer {
         st = new Pooled(el);
         slot.stops.push(st);
       }
-      st.set('display', null);
       st.set('offset', sorted[k].o.toFixed(4));
       st.set('stop-color', rgbStr(sorted[k].c));
     }
@@ -1907,12 +2172,13 @@ interface FrameCtx {
 
 const SILHOUETTE: OpSpec = { layer: 2, key: 'sil-l', kind: 'stroke', linecap: 'round' };
 const SILHOUETTE_R: OpSpec = { layer: 2, key: 'sil-r', kind: 'stroke', linecap: 'round' };
-const FACE_TOP: OpSpec = { layer: 1, key: 'face-t', kind: 'gradient' };
-const FACE_BOT: OpSpec = { layer: 1, key: 'face-b', kind: 'gradient' };
+const TUBE_BODY: OpSpec = { layer: 1, key: 'tube-body', kind: 'fill' };
+const TUBE_SHINE: OpSpec = { layer: 2, key: 'tube-shine', kind: 'stroke', linecap: 'round' };
+const TUBE_EDGE_L: OpSpec = { layer: 3, key: 'tube-l', kind: 'stroke', linecap: 'round' };
+const TUBE_EDGE_R: OpSpec = { layer: 3, key: 'tube-r', kind: 'stroke', linecap: 'round' };
 const SIDE_L: OpSpec = { layer: 1, key: 'side-l', kind: 'fill' };
 const SIDE_R: OpSpec = { layer: 1, key: 'side-r', kind: 'fill' };
 const SIDE_START: OpSpec = { layer: 1, key: 'side-s', kind: 'fill' };
-const BAND_SPECS: OpSpec[] = BAND_HALF.map((_, j) => ({ layer: 1, key: `band${j}`, kind: 'fill' }));
 const EDGE_TL: OpSpec = { layer: 2, key: 'e-tl', kind: 'stroke', linecap: 'round' };
 const EDGE_TR: OpSpec = { layer: 2, key: 'e-tr', kind: 'stroke', linecap: 'round' };
 const EDGE_BL: OpSpec = { layer: 2, key: 'e-bl', kind: 'stroke', linecap: 'round' };
