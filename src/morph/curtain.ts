@@ -99,12 +99,43 @@ export function localProgress(tau: number, p: number, sweep: number): number {
   return smoothstep((tau * (1 + sweep) - p) / sweep);
 }
 
+function applyRigid(X: Float64Array, Y: Float64Array, H: Float64Array, r: Rigid): void {
+  const c = Math.cos(r.phi);
+  const s = Math.sin(r.phi);
+  for (let k = 0; k < X.length; k++) {
+    const x = X[k];
+    const y = Y[k];
+    X[k] = c * x - s * y + r.tx;
+    Y[k] = s * x + c * y + r.ty;
+    H[k] += r.phi;
+  }
+}
+
 /** Curtain-grid spacing (Å) for the cylinder mode. */
 const GRID = 0.5;
 /** Extra curtain beyond the samples (Å), for loop curves and widths. */
 const GRID_MARGIN = 60;
 
-export function computePose(model: MorphModel, tau: number, sweep: number): Pose {
+/**
+ * A rigid motion in the membrane plane (rotation `phi` about +z, then a
+ * shift), applied to the whole curtain so the morph can be kept steady on
+ * screen without changing its shape.
+ */
+export interface Rigid {
+  phi: number;
+  tx: number;
+  ty: number;
+}
+
+/**
+ * Pose of every sample at progress `tau`.
+ *
+ * Each joint of the curtain bends by its own share of the final turn (scaled
+ * by its local progress), so a sweeping roll curls up like a carpet: the
+ * finished part is a rigid copy of the real structure, the rest is still flat,
+ * and curvature never exceeds the final curvature. `rigid` places the result.
+ */
+export function computePose(model: MorphModel, tau: number, sweep: number, rigid?: Rigid): Pose {
   const { n, ud, zd, ua, zr, nr, br, pos, anchor } = model;
   const t = new Float64Array(n);
   for (let k = 0; k < n; k++) t[k] = localProgress(tau, pos[k], sweep);
@@ -129,12 +160,20 @@ export function computePose(model: MorphModel, tau: number, sweep: number): Pose
     const H = new Float64Array(n);
     const psi = new Float64Array(Math.max(0, n - 1));
     const lam = new Float64Array(Math.max(0, n - 1));
+    const th = model.stepTheta;
     for (let k = 0; k < n - 1; k++) {
       const ts = 0.5 * (t[k] + t[k + 1]);
       const d = ud[k + 1] - ud[k];
       const r = ua[k + 1] - ua[k];
       lam[k] = Math.max(0, d + ts * (r - d));
-      psi[k] = ts * model.stepTheta[k];
+    }
+    // Step headings: the anchor step stays horizontal; every joint turns by
+    // its real turn scaled by the progress at that joint.
+    const a = Math.min(anchor, n - 2);
+    if (a >= 0) {
+      psi[a] = 0;
+      for (let k = a + 1; k < n - 1; k++) psi[k] = psi[k - 1] + t[k] * (th[k] - th[k - 1]);
+      for (let k = a - 1; k >= 0; k--) psi[k] = psi[k + 1] - t[k + 1] * (th[k + 1] - th[k]);
     }
     if (n > 0) U[anchor] = ud[anchor] + t[anchor] * (ua[anchor] - ud[anchor]);
     for (let k = anchor; k < n - 1; k++) {
@@ -153,6 +192,7 @@ export function computePose(model: MorphModel, tau: number, sweep: number): Pose
       else if (k === n - 1) H[k] = psi[n - 2];
       else H[k] = 0.5 * (psi[k - 1] + psi[k]);
     }
+    if (rigid) applyRigid(X, Y, H, rigid);
     curtain = new Curtain(U, X, Y, H);
     for (let k = 0; k < n; k++) {
       u[k] = U[k];
@@ -201,6 +241,7 @@ export function computePose(model: MorphModel, tau: number, sweep: number): Pose
       X[k] = X[k + 1] - GRID * Math.cos(hm);
       Y[k] = Y[k + 1] - GRID * Math.sin(hm);
     }
+    if (rigid) applyRigid(X, Y, H, rigid);
     curtain = new Curtain(U, X, Y, H);
     for (let k = 0; k < n; k++) curtain.place(u[k], z[k], nn[k], bb[k], w, k * 4);
   }

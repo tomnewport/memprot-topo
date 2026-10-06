@@ -245,7 +245,19 @@ function smoothLoops(
   }
 }
 
-export function buildMorphModel(scene: MorphScene): MorphModel {
+export interface MorphModelOptions {
+  /**
+   * Which sample stays put while the curtain rolls up around it.
+   * `centre`: the middle of the 2-D picture — right for a uniform roll, which
+   * then curls in symmetrically from both ends.
+   * `end`: the C-terminal end — right for a roll that sweeps from the
+   * N-terminus, so the part still to be rolled never moves and the rolled-up
+   * part travels along it like a carpet being rolled.
+   */
+  anchor?: 'centre' | 'end';
+}
+
+export function buildMorphModel(scene: MorphScene, options: MorphModelOptions = {}): MorphModel {
   const segStart: number[] = [];
   let n = 0;
   for (const seg of scene.segments) {
@@ -387,10 +399,10 @@ export function buildMorphModel(scene: MorphScene): MorphModel {
   const span = udMax - udMin;
   for (let k = 0; k < n; k++) pos[k] = span > 0 ? (ud[k] - udMin) / span : 0;
 
-  // Anchor: the sample nearest the middle of the 2-D picture.
+  // Anchor: the sample nearest the middle (or right-hand end) of the picture.
   let anchor = 0;
   {
-    const mid = (udMin + udMax) / 2;
+    const mid = options.anchor === 'end' ? udMax : (udMin + udMax) / 2;
     let best = Infinity;
     for (let k = 0; k < n; k++) {
       const d = Math.abs(ud[k] - mid);

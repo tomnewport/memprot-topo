@@ -1,6 +1,6 @@
 import { ssOutline, type OutlinePoint, type OutlineSection } from '../components/ss-outline.js';
 import { Camera } from './camera.js';
-import { computePose, type Pose } from './curtain.js';
+import { computePose, type Pose, type Rigid } from './curtain.js';
 import type { MorphModel, ModelElement, ModelLoop } from './model.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -39,7 +39,7 @@ export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
   coilRadius: 0.42,
   elevation: (16 * Math.PI) / 180,
   fov: 2 * Math.atan(Math.hypot(36, 24) / 2 / 35),
-  sweep: 0.7,
+  sweep: 0.35,
 };
 
 /** User orbit applied on top of the scripted camera (radians). */
@@ -430,7 +430,20 @@ interface Framing {
   /** Viewport-relative x of the camera centre at t = 0. */
   vx0: number;
   disc1: { x: number; y: number; r: number };
+  /**
+   * Extra zoom-out (≤ 1) sampled at τ = 0, 0.1, … 1 so the half-rolled
+   * protein stays in frame; the end framing alone only fits τ = 1.
+   */
+  zoomTrack: number[];
 }
+
+/** Number of intervals in the steadying track. */
+const STEADY_STEPS = 80;
+
+/** Number of intervals in the zoom track. */
+const ZOOM_STEPS = 10;
+/** Screen margin (px) the zoom track keeps clear. */
+const ZOOM_MARGIN = 12;
 
 /**
  * Renders the morph between the 2-D topology view (τ = 0) and a 3-D
@@ -450,6 +463,8 @@ export class MorphRenderer {
   }[] = [];
   private readonly texts: Pooled<SVGTextElement>[] = [];
   private framing: Framing | null = null;
+  /** Steadying rigid motion sampled at τ = i / STEADY_STEPS. */
+  private steady: Rigid[] = [];
   private readonly tmp = new Float64Array(8);
   private readonly colours: {
     helix: RGB;
@@ -497,7 +512,8 @@ export class MorphRenderer {
     const { model, options } = this;
     const fr = model.scene.frame;
     const half = model.scene.slab.half;
-    const pose = computePose(model, 1, 0);
+    this.steady = this.fitSteadyTrack();
+    const pose = computePose(model, 1, options.sweep, this.rigidAt(1));
     let x0 = Infinity,
       x1 = -Infinity,
       y0 = Infinity,
@@ -627,34 +643,161 @@ export class MorphRenderer {
       cy0,
       vx0,
       disc1: { x: dcx, y: dcy, r: dr },
+      zoomTrack: new Array<number>(ZOOM_STEPS + 1).fill(1),
     };
+    this.framing.zoomTrack = this.fitZoomTrack();
   }
 
-  /** Render the morph at progress `tau` ∈ [0, 1]. */
-  render(tau: number, orbit: Orbit = { az: 0, el: 0 }): FrameLayout {
-    if (!this.framing) this.configure(this.model.scene.frame.width, 0);
-    const F = this.framing!;
+  /**
+   * Keep the morph steady on screen. The curtain is integrated from a fixed
+   * anchor, so whichever end isn't rolling yet tends to swing round like a
+   * lever. Step through the morph and, at each step, find the rotation about
+   * the membrane normal and the shift that best line the samples up with the
+   * previous step (least squares); applying that track leaves only the
+   * motion the roll itself needs. Sampled once, so scrubbing is repeatable.
+   */
+  private fitSteadyTrack(): Rigid[] {
     const { model, options } = this;
-    const st = model.scene.style;
-    const pxA = model.scene.frame.pxPerA;
+    const track: Rigid[] = [{ phi: 0, tx: 0, ty: 0 }];
+    const stride = Math.max(1, Math.floor(model.n / 600));
+    let prev: number[] = [];
+    {
+      const p0 = computePose(model, 0, options.sweep);
+      for (let k = 0; k < model.n; k += stride) prev.push(p0.w[k * 4], p0.w[k * 4 + 1]);
+    }
+    let phiPrev = 0;
+    for (let i = 1; i <= STEADY_STEPS; i++) {
+      const pose = computePose(model, i / STEADY_STEPS, options.sweep);
+      const cur: number[] = [];
+      for (let k = 0; k < model.n; k += stride) cur.push(pose.w[k * 4], pose.w[k * 4 + 1]);
+      const m = cur.length / 2;
+      let qx = 0,
+        qy = 0,
+        px = 0,
+        py = 0;
+      for (let j = 0; j < m; j++) {
+        qx += cur[j * 2];
+        qy += cur[j * 2 + 1];
+        px += prev[j * 2];
+        py += prev[j * 2 + 1];
+      }
+      qx /= m;
+      qy /= m;
+      px /= m;
+      py /= m;
+      let dot = 0;
+      let crs = 0;
+      for (let j = 0; j < m; j++) {
+        const ax = cur[j * 2] - qx;
+        const ay = cur[j * 2 + 1] - qy;
+        const bx = prev[j * 2] - px;
+        const by = prev[j * 2 + 1] - py;
+        dot += ax * bx + ay * by;
+        crs += ax * by - ay * bx;
+      }
+      let phi = Math.atan2(crs, dot);
+      // Keep the angle continuous from step to step.
+      while (phi - phiPrev > Math.PI) phi -= 2 * Math.PI;
+      while (phi - phiPrev < -Math.PI) phi += 2 * Math.PI;
+      phiPrev = phi;
+      const c = Math.cos(phi);
+      const sn = Math.sin(phi);
+      const tx = px - (c * qx - sn * qy);
+      const ty = py - (sn * qx + c * qy);
+      track.push({ phi, tx, ty });
+      const next: number[] = [];
+      for (let j = 0; j < m; j++) {
+        const x = cur[j * 2];
+        const y = cur[j * 2 + 1];
+        next.push(c * x - sn * y + tx, sn * x + c * y + ty);
+      }
+      prev = next;
+    }
+    return track;
+  }
 
-    // Easing channels.
+  /** Steadying rigid motion at τ (linear between the sampled steps). */
+  private rigidAt(tau: number): Rigid | undefined {
+    const tr = this.steady;
+    if (tr.length < 2) return undefined;
+    const x = Math.max(0, Math.min(1, tau)) * (tr.length - 1);
+    const i = Math.min(tr.length - 2, Math.floor(x));
+    const f = x - i;
+    const a = tr[i];
+    const b = tr[i + 1];
+    return { phi: lerp(a.phi, b.phi, f), tx: lerp(a.tx, b.tx, f), ty: lerp(a.ty, b.ty, f) };
+  }
+
+  /**
+   * Simulate the morph at a few steps and work out how far to zoom out so the
+   * rolled-up part, and the full height of everything, stays on screen. The
+   * still-flat strip may run off the sides (the 2-D view scrolls anyway).
+   */
+  private fitZoomTrack(): number[] {
+    const F = this.framing!;
+    const track = new Array<number>(ZOOM_STEPS + 1).fill(1);
+    const tmp = new Float64Array(4);
+    for (let i = 1; i < ZOOM_STEPS; i++) {
+      const tau = i / ZOOM_STEPS;
+      const pose = computePose(this.model, tau, this.options.sweep, this.rigidAt(tau));
+      const v = this.view(tau, { az: 0, el: 0 }, 1);
+      const { cx, cy } = v.cam.p;
+      const left = v.scrollLeft + ZOOM_MARGIN;
+      const right = v.scrollLeft + Math.min(F.clientWidth, v.width) - ZOOM_MARGIN;
+      const top = ZOOM_MARGIN;
+      const bottom = v.height - ZOOM_MARGIN;
+      let need = 1;
+      for (let k = 0; k < this.model.n; k += 3) {
+        v.cam.project(pose.w[k * 4], pose.w[k * 4 + 1], pose.w[k * 4 + 2], tmp);
+        const dy = tmp[1] - cy;
+        if (dy > 0 && bottom > cy) need = Math.max(need, dy / (bottom - cy));
+        if (dy < 0 && cy > top) need = Math.max(need, -dy / (cy - top));
+        if (pose.t[k] < 0.5) continue;
+        const dx = tmp[0] - cx;
+        if (dx > 0 && right > cx) need = Math.max(need, dx / (right - cx));
+        if (dx < 0 && cx > left) need = Math.max(need, -dx / (cx - left));
+      }
+      track[i] = 1 / need;
+    }
+    return track;
+  }
+
+  /** Zoom-track value at τ (Catmull–Rom through the samples, never above 1). */
+  private zoomAt(tau: number): number {
+    const tr = this.framing!.zoomTrack;
+    const x = Math.max(0, Math.min(1, tau)) * ZOOM_STEPS;
+    const i = Math.min(ZOOM_STEPS - 1, Math.floor(x));
+    const f = x - i;
+    const p0 = tr[Math.max(0, i - 1)];
+    const p1 = tr[i];
+    const p2 = tr[i + 1];
+    const p3 = tr[Math.min(ZOOM_STEPS, i + 2)];
+    const v =
+      0.5 *
+      (2 * p1 +
+        (-p0 + p2) * f +
+        (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f +
+        (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f);
+    return Math.min(1, v);
+  }
+
+  /** Camera and picture size at progress `tau`. */
+  private view(
+    tau: number,
+    orbit: Orbit,
+    zoom: number,
+  ): { cam: Camera; width: number; height: number; scrollLeft: number } {
+    const F = this.framing!;
+    const { options } = this;
     const eCam = smooth(0, 1, tau);
     const eFov = smooth(0.05, 0.9, tau);
     const eEl = smooth(0.0, 0.8, tau);
-    const sigma = smooth(0.02, 0.65, tau);
-    const eW = smooth(0.0, 0.55, tau);
-    const eLoop = smooth(0.0, 0.7, tau);
-    const eDisc = smooth(0.35, 0.95, tau);
-    const labelAlpha = 1 - smooth(0, 0.22, tau);
-    const tieAlpha = 1 - smooth(0, 0.3, tau);
-
     const width = lerp(F.width0, F.width1, eCam);
     const height = lerp(F.height0, F.height1, eCam);
     const scrollLeft = lerp(F.scroll0, 0, eCam);
     const cx = scrollLeft + lerp(F.vx0, F.width1 / 2, eCam);
     const cy = lerp(F.cy0, F.height1 / 2, eCam);
-    const scale = Math.exp(lerp(Math.log(F.scale0), Math.log(F.scale1), eCam));
+    const scale = Math.exp(lerp(Math.log(F.scale0), Math.log(F.scale1), eCam)) * zoom;
     const cam = new Camera({
       target: [
         lerp(F.target0[0], F.target1[0], eCam),
@@ -669,8 +812,30 @@ export class MorphRenderer {
       cx,
       cy,
     });
+    return { cam, width, height, scrollLeft };
+  }
 
-    const pose = computePose(model, tau, options.sweep);
+  /** Render the morph at progress `tau` ∈ [0, 1]. */
+  render(tau: number, orbit: Orbit = { az: 0, el: 0 }): FrameLayout {
+    if (!this.framing) this.configure(this.model.scene.frame.width, 0);
+    const F = this.framing!;
+    const { model, options } = this;
+    const st = model.scene.style;
+    const pxA = model.scene.frame.pxPerA;
+
+    // Easing channels.
+    const eCam = smooth(0, 1, tau);
+    const sigma = smooth(0.02, 0.65, tau);
+    const eW = smooth(0.0, 0.55, tau);
+    const eLoop = smooth(0.0, 0.7, tau);
+    const eDisc = smooth(0.35, 0.95, tau);
+    const labelAlpha = 1 - smooth(0, 0.22, tau);
+    const tieAlpha = 1 - smooth(0, 0.3, tau);
+
+    const { cam, width, height, scrollLeft } = this.view(tau, orbit, this.zoomAt(tau));
+    const scale = cam.p.scale;
+
+    const pose = computePose(model, tau, options.sweep, this.rigidAt(tau));
 
     // Project every sample once.
     const n = model.n;

@@ -20,6 +20,8 @@ export class MorphController {
   private goal = 0;
   private renderer: MorphRenderer | null = null;
   private mounted = false;
+  /** Renderer framed for the current scroll state but not yet swapped in. */
+  private prepared = false;
   private raf = 0;
   private scroll0 = 0;
   /** Last scrollLeft we applied (writing it forces a layout, so skip no-ops). */
@@ -71,6 +73,9 @@ export class MorphController {
     const x0 = Math.acos(1 - 2 * from) / Math.PI;
     const x1 = goal;
     const duration = DURATION_MS * Math.abs(x1 - x0);
+    // Do the one-off set-up (model, framing, steadying track) before the
+    // clock starts, so the first frames don't stall.
+    this.prepare();
     const start = performance.now();
     const step = (now: number): void => {
       const f = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
@@ -113,19 +118,35 @@ export class MorphController {
     this.onChange?.(this.tau, this.goal);
   }
 
-  private mount(): MorphRenderer {
+  /** Build and frame the renderer for the current scroll state (once per mount). */
+  private prepare(): MorphRenderer {
     if (!this.renderer) {
-      this.renderer = new MorphRenderer(buildMorphModel(this.scene), this.options, this.idPrefix);
+      // A sweeping roll is anchored at the end it reaches last (the renderer
+      // then steadies the whole morph on screen).
+      const anchor = this.options.sweep > 0 ? 'end' : 'centre';
+      this.renderer = new MorphRenderer(
+        buildMorphModel(this.scene, { anchor }),
+        this.options,
+        this.idPrefix,
+      );
       this.bindOrbit(this.renderer.svg);
     }
-    if (!this.mounted) {
+    if (!this.mounted && !this.prepared) {
       this.scroll0 = this.scroll.scrollLeft;
       this.renderer.configure(this.scroll.clientWidth, this.scroll0);
-      this.svg2d.replaceWith(this.renderer.svg);
+      this.prepared = true;
+    }
+    return this.renderer;
+  }
+
+  private mount(): MorphRenderer {
+    const renderer = this.prepare();
+    if (!this.mounted) {
+      this.svg2d.replaceWith(renderer.svg);
       this.mounted = true;
       this.appliedScroll = NaN;
     }
-    return this.renderer;
+    return renderer;
   }
 
   private unmount(): void {
@@ -133,6 +154,7 @@ export class MorphController {
     this.renderer.svg.replaceWith(this.svg2d);
     this.scroll.scrollLeft = this.scroll0;
     this.mounted = false;
+    this.prepared = false;
     this.orbit.az = 0;
     this.orbit.el = 0;
   }

@@ -33,9 +33,23 @@ Things the 2-D layout invents are blended out as the curtain rolls:
 - element widths grow from the 2-D bar width to 3-D cylinder / ribbon sizes, and
   non-barrel strands grow their arrowheads.
 
-By default the roll travels as a wave from the N-terminus (`morph-sweep`,
-default `0.7`; `0` rolls the whole chain at once). The middle of the picture is
-the anchor that stays put.
+By default the roll travels as a wave from the N-terminus to the C-terminus
+(`morph-sweep`, default `0.35` of the chain; `0` rolls the whole chain at once).
+Each joint of the curtain bends by its own share of the final turn, so the strip
+rolls up like a carpet: the finished part is already a rigid copy of the real
+structure, the rest is still flat, and the curtain never curls tighter than it
+will at the end.
+
+The curtain is built outwards from one anchor sample, which on its own would
+make whatever is furthest from the anchor swing round like a lever. So the
+renderer precomputes a steadying track: it steps through the morph and, at each
+step, finds the rotation about the membrane normal and the shift that best line
+every sample up with the previous step (least squares). Applying that track
+leaves only the motion the roll itself needs; across the demo proteins it cuts
+total on-screen motion by 2–3× and the largest per-frame jump by 2–5×. It is
+sampled once per transition, so scrubbing back and forth is repeatable. One
+consequence: the final orientation is the one that best matches where the parts
+sat in the 2-D strip, not a chosen "best" view (drag to orbit).
 
 ## Camera
 
@@ -43,7 +57,9 @@ The camera is a dolly-zoom: as the field of view opens from 0 (orthographic —
 the 2-D view) to a 35 mm-equivalent perspective, the camera backs off to keep
 the scale at the target constant. It also tilts to look slightly down onto the
 membrane, re-centres on the protein, and the picture grows from the 2-D strip
-to a 3-D-friendly aspect ratio. Drag to orbit once in 3-D.
+to a 3-D-friendly aspect ratio. A precomputed zoom track backs the camera off
+where a half-rolled frame would otherwise run out of the picture. Drag to orbit
+once in 3-D.
 
 ## Drawing: SVG all the way
 

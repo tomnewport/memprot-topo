@@ -181,6 +181,20 @@ describe('morph pose (arc-length unroll)', () => {
     expect(rigidError(got, want)).toBeLessThan(1e-6);
   });
 
+  it('leaves the not-yet-rolled end flat and in place during an end-anchored sweep', () => {
+    const endModel = buildMorphModel(scene, { anchor: 'end' });
+    const pose = computePose(endModel, 0.4, 0.35);
+    const a = endModel.anchor;
+    let flat = 0;
+    for (let k = 0; k < endModel.n; k++) {
+      if (pose.t[k] > 0) continue;
+      flat++;
+      expect(pose.w[k * 4]).toBeCloseTo(endModel.ud[k] - endModel.ud[a], 6);
+      expect(pose.w[k * 4 + 1]).toBeCloseTo(0, 6);
+    }
+    expect(flat).toBeGreaterThan(50);
+  });
+
   it('preserves lengths along an element throughout the roll', () => {
     const el = model.elements[0];
     for (const tau of [0.25, 0.5, 0.75]) {
@@ -231,6 +245,10 @@ describe('morph pose (β-barrel unwrap)', () => {
   it('renders every frame without NaN coordinates', () => {
     const r = new MorphRenderer(model);
     r.configure(900, 0);
+    // The steadying track starts at the identity, so frame 0 is untouched.
+    const rigid0 = (r as unknown as { rigidAt(t: number): { phi: number; tx: number } }).rigidAt(0);
+    expect(rigid0.phi).toBe(0);
+    expect(rigid0.tx).toBe(0);
     for (const tau of [0.001, 0.3, 0.6, 1]) {
       r.render(tau);
       const ds = [...r.svg.querySelectorAll('path')].map((p) => p.getAttribute('d') ?? '');

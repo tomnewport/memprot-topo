@@ -1836,7 +1836,7 @@ function renderChainPicker(
 }
 
 /** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
-const DEFAULT_MORPH_SWEEP = 0.7;
+const DEFAULT_MORPH_SWEEP = 0.35;
 
 let _instanceCounter = 0;
 
@@ -1934,7 +1934,7 @@ export class TopologyDisplay extends HTMLElement {
 
   /**
    * Width of the rolling wave in the 2-D → 3-D morph, as a fraction of the
-   * chain (`morph-sweep`, default 0.7). 0 rolls the whole chain up at once;
+   * chain (`morph-sweep`, default 0.35). 0 rolls the whole chain up at once;
    * larger values roll it up progressively from the N-terminal end.
    */
   private get morphSweep(): number {
