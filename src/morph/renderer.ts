@@ -2494,7 +2494,7 @@ function fogged(c: RGB, fog: number): RGB {
 }
 
 /** Opacity of the upper and lower leaflet sheets. */
-const SHEET_ALPHA: [number, number] = [0.13, 0.06];
+const SHEET_ALPHA: [number, number] = [0.22, 0.1];
 
 /**
  * The two leaflet surfaces as translucent sheets. Painting a sheet over the
