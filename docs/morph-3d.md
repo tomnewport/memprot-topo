@@ -91,6 +91,10 @@ finished 3-D view stays vector (and exportable).
   per path and depth snapping all made the picture shimmer while orbiting.
   Dashes are cut as separate pieces pinned to the curve, and the depth snap
   that preserves the 2-D drawing order near t = 0 fades out by t = 0.3.
+- Faded neighbouring chains (assembly barrels) start at the 2-D figure's
+  translucency and become opaque by t = 0.3, with colours lightened so they
+  look the same over white. Translucent pieces of one element overlap slightly
+  where it is split for depth sorting, which would show as darker lines.
 
 ## Limitations
 

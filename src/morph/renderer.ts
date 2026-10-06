@@ -271,6 +271,8 @@ class Run {
   constructor(
     readonly id: number,
     readonly faded: boolean,
+    /** Overlap strip ends to hide seams (only safe for opaque runs). */
+    private readonly extend = true,
   ) {}
 
   private op(spec: OpSpec): Op {
@@ -341,10 +343,12 @@ class Run {
     // Nudge both ends of the strip outwards by half a pixel so that where an
     // element is split across runs the pieces overlap instead of leaving an
     // anti-aliased seam. (The outline stroke covers the overhang at real ends.)
-    extendEnd(s.L, 0, 2);
-    extendEnd(s.R, 0, 2);
-    extendEnd(s.L, s.L.length - 2, s.L.length - 4);
-    extendEnd(s.R, s.R.length - 2, s.R.length - 4);
+    if (this.extend) {
+      extendEnd(s.L, 0, 2);
+      extendEnd(s.R, 0, 2);
+      extendEnd(s.L, s.L.length - 2, s.L.length - 4);
+      extendEnd(s.R, s.R.length - 2, s.R.length - 4);
+    }
     let d = 'M' + f2(s.L[0]) + ',' + f2(s.L[1]);
     for (let i = 2; i < s.L.length; i += 2) d += 'L' + f2(s.L[i]) + ',' + f2(s.L[i + 1]);
     for (let i = s.R.length - 2; i >= 0; i -= 2) d += 'L' + f2(s.R[i]) + ',' + f2(s.R[i + 1]);
@@ -566,6 +570,14 @@ export class MorphRenderer {
   }[] = [];
   private readonly texts: Pooled<SVGTextElement>[] = [];
   private framing: Framing | null = null;
+  /**
+   * Opacity of faded (neighbouring-chain) elements this frame. They start at
+   * the 2-D figure's translucency and become opaque — with colours lightened
+   * so they look the same over white — as the protein rolls up: translucent
+   * pieces of one element that overlap where it is split for depth sorting
+   * would otherwise show darker lines.
+   */
+  private fadeOpacity = 1;
   /** Steadying rigid motion sampled at τ = i / STEADY_STEPS. */
   private steady: Rigid[] = [];
   private readonly tmp = new Float64Array(8);
@@ -930,6 +942,7 @@ export class MorphRenderer {
     const eCam = smooth(0, 1, tau);
     const sigma = smooth(0.02, 0.65, tau);
     coordScale = sigma > 0.05 ? 10 : 100;
+    this.fadeOpacity = lerp(st.fadedOpacity, 1, smooth(0.02, 0.3, tau));
     const eW = smooth(0.0, 0.55, tau);
     const eLoop = smooth(0.0, 0.7, tau);
     const eDisc = smooth(0.35, 0.95, tau);
@@ -1942,7 +1955,7 @@ export class MorphRenderer {
       }
       if (ri === undefined) {
         ri = runs.length;
-        runs.push(new Run(p.id, p.faded));
+        runs.push(new Run(p.id, p.faded, !p.faded || this.fadeOpacity >= 0.999));
         open.set(p.id, ri);
       }
       p.run = ri;
@@ -1960,6 +1973,15 @@ export class MorphRenderer {
 
   private emitRuns(runs: Run[]): void {
     const fadedOpacity = this.model.scene.style.fadedOpacity;
+    const fadeA = this.fadeOpacity;
+    // Lighten faded colours so that, drawn at `fadeA`, they look as they did
+    // at the 2-D opacity over a white ground.
+    const k = fadedOpacity / fadeA;
+    const lighten = (c: RGB): RGB => [
+      255 - k * (255 - c[0]),
+      255 - k * (255 - c[1]),
+      255 - k * (255 - c[2]),
+    ];
     let gi = 0;
     for (let i = 0; i < runs.length; i++) {
       const run = runs[i];
@@ -1971,7 +1993,8 @@ export class MorphRenderer {
         this.slots.push(slot);
       }
       slot.g.set('display', null);
-      slot.g.set('opacity', run.faded ? String(fadedOpacity) : null);
+      slot.g.set('opacity', run.faded && fadeA < 0.999 ? fadeA.toFixed(3) : null);
+      const tint = run.faded ? lighten : (c: RGB): RGB => c;
       const ops = run.sortedOps();
       for (let j = 0; j < ops.length; j++) {
         const op = ops[j];
@@ -1985,7 +2008,7 @@ export class MorphRenderer {
         path.set('display', null);
         path.set('d', op.d.join(''));
         const n = Math.max(1, op.rgb[3]);
-        const avg: RGB = [op.rgb[0] / n, op.rgb[1] / n, op.rgb[2] / n];
+        const avg: RGB = tint([op.rgb[0] / n, op.rgb[1] / n, op.rgb[2] / n]);
         const alpha = op.opacity[1] > 0 ? op.opacity[0] / op.opacity[1] : 1;
         if (op.spec.kind === 'stroke') {
           path.set('fill', 'none');
@@ -2005,11 +2028,11 @@ export class MorphRenderer {
           path.set('fill-rule', 'nonzero');
           path.set('opacity', alpha < 0.999 ? alpha.toFixed(3) : null);
           const grad =
-            op.spec.kind === 'gradient' && op.grad ? this.gradientFromDef(op.grad, gi) : null;
+            op.spec.kind === 'gradient' && op.grad ? this.gradientFromDef(op.grad, gi, tint) : null;
           if (grad) {
             gi++;
             path.set('fill', grad);
-          } else path.set('fill', rgbStr(op.grad ? op.grad.mean : avg));
+          } else path.set('fill', rgbStr(op.grad ? tint(op.grad.mean) : avg));
         }
       }
       for (let j = ops.length; j < slot.paths.length; j++) slot.paths[j].set('display', 'none');
@@ -2051,7 +2074,7 @@ export class MorphRenderer {
   }
 
   /** Emit an explicit gradient, or null when its stops are all one colour. */
-  private gradientFromDef(g: GradientDef, gi: number): string | null {
+  private gradientFromDef(g: GradientDef, gi: number, tint: (c: RGB) => RGB): string | null {
     const a = g.stops[0].c;
     let flat = true;
     for (const s of g.stops) {
@@ -2061,7 +2084,8 @@ export class MorphRenderer {
       }
     }
     if (flat || Math.hypot(g.x2 - g.x1, g.y2 - g.y1) < 0.5) return null;
-    return this.writeGradient(gi, g.x1, g.y1, g.x2, g.y2, g.stops);
+    const stops = g.stops.map((s) => ({ o: s.o, c: tint(s.c) }));
+    return this.writeGradient(gi, g.x1, g.y1, g.x2, g.y2, stops);
   }
 
   private writeGradient(
