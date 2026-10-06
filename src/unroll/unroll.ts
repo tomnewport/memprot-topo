@@ -33,6 +33,23 @@ export interface UnrolledSegment {
   samples: UnrolledPoint[];
   /** One entry per input Cα in this segment. */
   residues: UnrolledResidue[];
+  /**
+   * 3-D membrane-frame position of each sample (aligned with `samples`), i.e.
+   * the smoothed trace before it was flattened. Lets a renderer roll the
+   * unrolled view back up into the real structure.
+   */
+  positions?: Vec[];
+}
+
+/**
+ * How a cylindrical unwrap maps `arc` back to an angle about the barrel axis:
+ * `θ = sign · (arc + arcOffset) / radius`, measured about `centre` in xy.
+ */
+export interface CylinderMapping {
+  centre: { x: number; y: number };
+  radius: number;
+  sign: 1 | -1;
+  arcOffset: number;
 }
 
 export interface UnrollResult {
@@ -43,6 +60,8 @@ export interface UnrollResult {
   /** Observed z range across input Cα. */
   zMin: number;
   zMax: number;
+  /** Present for a cylindrical (β-barrel) unwrap; see {@link CylinderMapping}. */
+  cylinder?: CylinderMapping;
 }
 
 export interface UnrollOptions {
@@ -253,6 +272,7 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
 
     const allSamples: UnrolledPoint[] = [];
     const allResidues: UnrolledResidue[] = [];
+    const allPositions: Vec[] = [];
     let sampleOffset = 0;
     let arc = arcOffset;
     let prevPt: Vec | null = null;
@@ -301,6 +321,7 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
         }
         prevPt = s;
         subUnrolled.push({ arc, z: s.z });
+        allPositions.push({ x: s.x, y: s.y, z: s.z });
       }
 
       // Each residue's arc from the spline; z from actual Cα (physically
@@ -326,7 +347,7 @@ export function unrollChain(calphas: Calpha[], options: UnrollOptions = {}): Unr
     }
 
     arcOffset = allSamples.length > 0 ? allSamples[allSamples.length - 1].arc : arcOffset;
-    segments.push({ samples: allSamples, residues: allResidues });
+    segments.push({ samples: allSamples, residues: allResidues, positions: allPositions });
   }
 
   if (!Number.isFinite(zMin)) {

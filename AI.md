@@ -8,10 +8,12 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 
 ## Component Status
 
-| Component              | Status       | Notes                                                                             |
-| ---------------------- | ------------ | --------------------------------------------------------------------------------- |
-| `src/contacts/`        | AI-generated | β-sheet partner detection and β-barrel geometry (n, shear, tilt). Human-reviewed. |
-| `src/unroll/barrel.ts` | AI-generated | Cylindrical unwrap so barrel strands render parallel (issue #12). Human-reviewed. |
+| Component                      | Status       | Notes                                                                             |
+| ------------------------------ | ------------ | --------------------------------------------------------------------------------- |
+| `src/contacts/`                | AI-generated | β-sheet partner detection and β-barrel geometry (n, shear, tilt). Human-reviewed. |
+| `src/unroll/barrel.ts`         | AI-generated | Cylindrical unwrap so barrel strands render parallel (issue #12). Human-reviewed. |
+| `src/morph/`                   | AI-generated | 2-D → 3-D morph into a Richardson-style diagram (issue #22). Not yet reviewed.    |
+| `src/components/ss-outline.ts` | AI-generated | Helix/strand outline geometry shared by the 2-D view and the morph.               |
 
 ## Disclosure Guidelines
 
