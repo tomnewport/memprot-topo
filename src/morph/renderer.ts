@@ -429,15 +429,15 @@ const DASH_ON = 3;
 const DASH_PERIOD = 8;
 
 /**
- * Cut a polyline section into its "on" dash pieces. Points are at uniform
- * steps of the loop's normalised parameter (point `c0 + q` at `(c0 + q) / last`)
- * and the pattern is laid along `lengthPx` — the loop's 2-D length — so at
- * t = 0 it matches the 2-D dashes and afterwards it stays pinned to the curve.
+ * Cut a polyline section into its "on" dash pieces. `params` gives each
+ * point's normalised position along the loop, and the pattern is laid along
+ * `lengthPx` — the loop's 2-D length — so at t = 0 it matches the 2-D dashes
+ * and afterwards it stays pinned to the curve.
  */
-function dashPieces(pts: number[], c0: number, last: number, lengthPx: number): number[][] {
+function dashPieces(pts: number[], params: number[], lengthPx: number): number[][] {
   const pieces: number[][] = [];
   let cur: number[] | null = null;
-  const phaseAt = (q: number): number => ((c0 + q) / last) * lengthPx;
+  const phaseAt = (q: number): number => params[q] * lengthPx;
   const n = pts.length / 2;
   for (let q = 0; q < n - 1; q++) {
     const u0 = phaseAt(q);
@@ -972,8 +972,41 @@ export class MorphRenderer {
     const fogAt = (d: number): number =>
       dMax - dMin > 1e-6 ? FOG * sigma * clamp01((d - dMin) / (dMax - dMin)) : 0;
 
+    // Membrane: the leaflet sheets' fills go behind the protein, which takes
+    // their tint where it is seen through them (see Veil); only their rims are
+    // depth-sorted with the protein.
+    const half = model.scene.slab.half;
+    const discX = lerp((model.slabX0 + model.slabX1) / 2, F.disc1.x, eCam);
+    const discY = lerp(0, F.disc1.y, eCam);
+    const discR = lerp((model.slabX1 - model.slabX0) / 2, F.disc1.r, eCam);
+    const planesOn = eDisc > 0.001 && Math.abs(cam.p.el) > 1e-3;
+    const veil = new Veil(
+      cam,
+      discX,
+      discY,
+      discR,
+      half,
+      planesOn ? eDisc : 0,
+      hexRgb(st.membraneFill),
+    );
+    this.drawBackRim(cam, discX, discY, discR, half, sigma);
+    this.drawDiscs(cam, discX, discY, discR, half, planesOn ? eDisc : 0);
+
     const prims: Prim[] = [];
-    const ctx: FrameCtx = { model, pose, cam, proj, scale, sigma, eW, eLoop, fogAt, pxA, prims };
+    const ctx: FrameCtx = {
+      model,
+      pose,
+      cam,
+      proj,
+      scale,
+      sigma,
+      eW,
+      eLoop,
+      fogAt,
+      pxA,
+      prims,
+      veil,
+    };
 
     for (const el of model.elements) {
       if (el.type === 'helix') this.helixPrims(ctx, el);
@@ -981,17 +1014,7 @@ export class MorphRenderer {
     }
     for (const loop of model.loops) this.loopPrims(ctx, loop);
     if (tieAlpha > 0.001) this.tiePrims(ctx, tieAlpha * 0.5);
-
-    // Membrane: drawn behind the protein. As a translucent sheet over the
-    // protein it tinted everything below the upper leaflet, and where a strand
-    // seen side-on passes through the plane that tint boundary runs along the
-    // strand, so the strand looked half-hidden.
-    const half = model.scene.slab.half;
-    const discX = lerp((model.slabX0 + model.slabX1) / 2, F.disc1.x, eCam);
-    const discY = lerp(0, F.disc1.y, eCam);
-    const discR = lerp((model.slabX1 - model.slabX0) / 2, F.disc1.r, eCam);
-    this.drawBackRim(cam, discX, discY, discR, half, sigma);
-    this.drawDiscs(cam, discX, discY, discR, half, eDisc);
+    if (planesOn) this.rimPrims(ctx, discX, discY, discR, half, eDisc);
 
     // Near t = 0 everything is (almost) level, so depths are snapped to keep
     // the 2-D drawing order; the snap fades out as depth becomes meaningful,
@@ -1020,23 +1043,23 @@ export class MorphRenderer {
     if (g1 - g0 < 1) return;
     const rA = lerp(st.halfWidthPx / pxA, this.options.helixRadius, eW);
     const idx = this.downsample(ctx, g0, g1, lerp(0.5, 1.0, ctx.eW));
-    const m = idx.length;
+    const m0 = idx.length;
 
     // Silhouette frame per kept point: screen centre, perpendicular, radius.
     // The 2-D outline takes its tangent from the neighbouring samples; in 3-D
     // that is noisy for a helix seen nearly end-on, so blend towards the
     // projected axis direction over a wider (~1 Å) baseline.
-    const sx = new Float64Array(m);
-    const sy = new Float64Array(m);
-    const ppx = new Float64Array(m);
-    const ppy = new Float64Array(m);
-    const rs = new Float64Array(m);
-    const dep = new Float64Array(m);
+    const sx0 = new Float64Array(m0);
+    const sy0 = new Float64Array(m0);
+    const ppx0 = new Float64Array(m0);
+    const ppy0 = new Float64Array(m0);
+    const rs0 = new Float64Array(m0);
+    const dep0 = new Float64Array(m0);
     const unit = (x: number, y: number): [number, number] => {
       const l = Math.hypot(x, y);
       return l > 1e-12 ? [x / l, y / l] : [0, 0];
     };
-    for (let i = 0; i < m; i++) {
+    for (let i = 0; i < m0; i++) {
       const g = idx[i];
       const [fx, fy] = unit(
         proj[Math.min(g1, g + 1) * 4] - proj[Math.max(g0, g - 1) * 4],
@@ -1049,12 +1072,73 @@ export class MorphRenderer {
       );
       const [ux, ty] = unit(lerp(fx, wx, eW), lerp(fy, wy, eW));
       const tx = ux === 0 && ty === 0 ? 1 : ux;
-      sx[i] = proj[g * 4];
-      sy[i] = proj[g * 4 + 1];
-      ppx[i] = -ty;
-      ppy[i] = tx;
-      rs[i] = rA * scale * proj[g * 4 + 3];
-      dep[i] = proj[g * 4 + 2];
+      sx0[i] = proj[g * 4];
+      sy0[i] = proj[g * 4 + 1];
+      ppx0[i] = -ty;
+      ppy0[i] = tx;
+      rs0[i] = rA * scale * proj[g * 4 + 3];
+      dep0[i] = proj[g * 4 + 2];
+    }
+
+    // Cut where the membrane tint starts or stops (see strandPrims): extra
+    // points on the axis polyline, interpolated between their neighbours.
+    const veil = ctx.veil;
+    const sxL: number[] = [];
+    const syL: number[] = [];
+    const ppxL: number[] = [];
+    const ppyL: number[] = [];
+    const rsL: number[] = [];
+    const depL: number[] = [];
+    const wL: number[] = [];
+    const point = (i: number, j: number, u: number): void => {
+      sxL.push(lerp(sx0[i], sx0[j], u));
+      syL.push(lerp(sy0[i], sy0[j], u));
+      const px = lerp(ppx0[i], ppx0[j], u);
+      const py = lerp(ppy0[i], ppy0[j], u);
+      const pl = Math.hypot(px, py) || 1;
+      ppxL.push(px / pl);
+      ppyL.push(py / pl);
+      rsL.push(lerp(rs0[i], rs0[j], u));
+      depL.push(lerp(dep0[i], dep0[j], u));
+      for (let k = 0; k < 3; k++) wL.push(lerp(pose.w[idx[i] * 4 + k], pose.w[idx[j] * 4 + k], u));
+    };
+    for (let i = 0; i < m0; i++) {
+      point(i, i, 0);
+      if (i + 1 >= m0 || veil.on <= 0) continue;
+      const a = idx[i] * 4;
+      const b = idx[i + 1] * 4;
+      const lvAt = (u: number): number =>
+        veil.level(
+          lerp(pose.w[a], pose.w[b], u),
+          lerp(pose.w[a + 1], pose.w[b + 1], u),
+          lerp(pose.w[a + 2], pose.w[b + 2], u),
+        );
+      let la = lvAt(0);
+      const lb = lvAt(1);
+      let from = 0;
+      for (let guard = 0; guard < 3 && la !== lb; guard++) {
+        const u = veilBoundary(lvAt, from, 1, la);
+        if (u <= from + 1e-3 || u >= 1 - 1e-3) break;
+        point(i, i + 1, u);
+        from = u;
+        la = lvAt(lerp(u, 1, 1e-3));
+      }
+    }
+    const m = sxL.length;
+    const sx = Float64Array.from(sxL);
+    const sy = Float64Array.from(syL);
+    const ppx = Float64Array.from(ppxL);
+    const ppy = Float64Array.from(ppyL);
+    const rs = Float64Array.from(rsL);
+    const dep = Float64Array.from(depL);
+    /** Membrane sheets in front of each section's midpoint. */
+    const lvSec = new Int32Array(Math.max(0, m - 1));
+    for (let i = 0; i < m - 1; i++) {
+      lvSec[i] = veil.level(
+        (wL[i * 3] + wL[i * 3 + 3]) / 2,
+        (wL[i * 3 + 1] + wL[i * 3 + 4]) / 2,
+        (wL[i * 3 + 2] + wL[i * 3 + 5]) / 2,
+      );
     }
 
     // Smooth shading: a linear gradient across the cylinder. A gradient is
@@ -1069,32 +1153,36 @@ export class MorphRenderer {
         gid++;
         refX = ppx[i];
         refY = ppy[i];
-      }
+      } else if (i > 0 && lvSec[i] !== lvSec[i - 1]) gid++;
       group[i] = gid;
     }
     const base = this.colours.helix;
     const edge = hexRgb(this.colours.helixEdge);
     // Outline colour per element, not per section (see strandPrims).
     let depthSum = 0;
-    for (let i = 0; i < m; i++) depthSum += dep[i];
-    const edgeC = shadeEdge(edge, sigma, ctx.fogAt(depthSum / Math.max(1, m)));
+    for (let i = 0; i < m0; i++) depthSum += dep0[i];
+    const edgeC = shadeEdge(edge, sigma, ctx.fogAt(depthSum / Math.max(1, m0)));
     const grads: GradientDef[] = [];
     for (let k = 0, i = 0; k <= gid; k++) {
       let j = i;
       while (j + 1 < m - 1 && group[j + 1] === k) j++;
       const pm = Math.min(m - 1, Math.round((i + j + 1) / 2));
-      grads.push(
-        this.cylinderGradient(
-          sx[pm],
-          sy[pm],
-          ppx[pm],
-          ppy[pm],
-          rs[pm],
-          base,
-          sigma,
-          ctx.fogAt(dep[pm]),
-        ),
+      const g = this.cylinderGradient(
+        sx[pm],
+        sy[pm],
+        ppx[pm],
+        ppy[pm],
+        rs[pm],
+        base,
+        sigma,
+        ctx.fogAt(dep[pm]),
       );
+      const lv = lvSec[Math.min(i, m - 2)] ?? 0;
+      grads.push({
+        ...g,
+        stops: g.stops.map((t) => ({ o: t.o, c: veil.apply(t.c, lv) })),
+        mean: veil.apply(g.mean, lv),
+      });
       i = j + 1;
     }
 
@@ -1117,6 +1205,9 @@ export class MorphRenderer {
       const ys = [left[1], left[3], right[1], right[3]];
       const grad = grads[group[i]];
       const spec: OpSpec = { layer: 1, key: `cyl${group[i]}`, kind: 'gradient' };
+      const silL = veiled(SILHOUETTE, lvSec[i]);
+      const silR = veiled(SILHOUETTE_R, lvSec[i]);
+      const lineC = veil.apply(edgeC, lvSec[i]);
       prims.push({
         id: el.id,
         order: el.order,
@@ -1132,16 +1223,18 @@ export class MorphRenderer {
         emit: (run) => {
           run.strip(spec, body, grad.mean);
           run.setGradient(spec, grad);
-          run.stroke(SILHOUETTE, left, edgeC, 1.5);
-          run.stroke(SILHOUETTE_R, right, edgeC, 1.5);
+          run.stroke(silL, left, lineC, 1.5);
+          run.stroke(silR, right, lineC, 1.5);
         },
       });
     }
 
     // End caps.
     for (const end of [0, m - 1]) {
-      const g = idx[end];
-      const gIn = idx[end === 0 ? Math.min(m - 1, 1) : Math.max(0, m - 2)];
+      const g = idx[end === 0 ? 0 : m0 - 1];
+      const gIn = idx[end === 0 ? Math.min(m0 - 1, 1) : Math.max(0, m0 - 2)];
+      const lv = veil.level(pose.w[g * 4], pose.w[g * 4 + 1], pose.w[g * 4 + 2]);
+      const lineC = veil.apply(edgeC, lv);
       const ox = pose.w[g * 4] - pose.w[gIn * 4];
       const oy = pose.w[g * 4 + 1] - pose.w[gIn * 4 + 1];
       const oz = pose.w[g * 4 + 2] - pose.w[gIn * 4 + 2];
@@ -1175,8 +1268,8 @@ export class MorphRenderer {
         0,
         this.tmp[4] * LIGHT[0] + this.tmp[5] * LIGHT[1] + this.tmp[6] * LIGHT[2],
       );
-      const capC = shade(base, AMBIENT + DIFFUSE * lam, 0, sigma, fog);
-      const sideC = shade(base, AMBIENT + DIFFUSE * 0.05, 0, sigma, fog);
+      const capC = veil.apply(shade(base, AMBIENT + DIFFUSE * lam, 0, sigma, fog), lv);
+      const sideC = veil.apply(shade(base, AMBIENT + DIFFUSE * 0.05, 0, sigma, fog), lv);
       const xs = ring.filter((_, k) => k % 2 === 0);
       const ys = ring.filter((_, k) => k % 2 === 1);
       prims.push({
@@ -1197,7 +1290,7 @@ export class MorphRenderer {
             run.stroke(
               { layer: 4, key: `cap-edge${end}`, kind: 'stroke', linecap: 'round' },
               ring,
-              edgeC,
+              lineC,
               1.5,
             );
           } else {
@@ -1205,7 +1298,7 @@ export class MorphRenderer {
             run.stroke(
               { layer: 2, key: `cap-arc${end}`, kind: 'stroke', linecap: 'round' },
               arc,
-              edgeC,
+              lineC,
               1.5,
             );
           }
@@ -1236,10 +1329,48 @@ export class MorphRenderer {
       arrowLength: lerp(el.withArrow ? st.arrowLengthPx : 0, opt.arrowLength * pxA, eW),
     });
     if (sections.length < 2) return;
+    const veil = ctx.veil;
     const kept = this.keepSections(sections, pts, lerp(0.5, 1.3, eW) * pxA);
+    /** Membrane sheets in front of the centre line at outline index `fi`. */
+    const levelAt = (fi: number): number => {
+      const ga = Math.min(g1, Math.floor(g0 + fi));
+      const gb = Math.min(g1, ga + 1);
+      const f = g0 + fi - ga;
+      return veil.level(
+        lerp(pose.w[ga * 4], pose.w[gb * 4], f),
+        lerp(pose.w[ga * 4 + 1], pose.w[gb * 4 + 1], f),
+        lerp(pose.w[ga * 4 + 2], pose.w[gb * 4 + 2], f),
+      );
+    };
+    // Cut the strand where the membrane tint starts or stops, so each
+    // section is wholly in front of or behind a sheet.
+    const secs: OutlineSection[] = [];
+    const added: boolean[] = [];
+    for (let k = 0; k < kept.length; k++) {
+      const a = kept[k];
+      secs.push(a);
+      added.push(false);
+      const b = kept[k + 1];
+      if (veil.on <= 0 || !b || b.fi - a.fi < 1e-9) continue;
+      let from = a;
+      let la = levelAt(a.fi);
+      const lb = levelAt(b.fi);
+      for (let guard = 0; guard < 3 && la !== lb; guard++) {
+        const fi = veilBoundary(levelAt, from.fi, b.fi, la);
+        const u = (fi - a.fi) / (b.fi - a.fi);
+        if (u <= 1e-3 || u >= 1 - 1e-3) break;
+        const px = lerp(a.px, b.px, u);
+        const py = lerp(a.py, b.py, u);
+        const pl = Math.hypot(px, py) || 1;
+        from = { fi, hw: lerp(a.hw, b.hw, u), px: px / pl, py: py / pl };
+        secs.push(from);
+        added.push(true);
+        la = levelAt(lerp(fi, b.fi, 1e-3));
+      }
+    }
 
     // 3-D cross-sections: centre, width vector, normal; projected corners.
-    const m = kept.length;
+    const m = secs.length;
     const C = new Float64Array(m * 3);
     const W = new Float64Array(m * 3);
     const N = new Float64Array(m * 3);
@@ -1247,7 +1378,7 @@ export class MorphRenderer {
     const hT = opt.strandThickness / 2;
     const tmp = this.tmp;
     for (let i = 0; i < m; i++) {
-      const s = kept[i];
+      const s = secs[i];
       const fi = g0 + s.fi;
       const ga = Math.min(g1, Math.floor(fi));
       const gb = Math.min(g1, ga + 1);
@@ -1281,9 +1412,10 @@ export class MorphRenderer {
     // Colours that don't vary along the strand are worked out once for the
     // whole element: if they were averaged over whichever sections share a
     // depth-sorted run, they would shimmer as the runs change with the view.
+    // (Over the kept sections only, so the membrane cuts don't move them.)
     let depthSum = 0;
-    for (let i = 0; i < m; i++) depthSum += corners[i * 16 + 2];
-    const elFog = ctx.fogAt(depthSum / Math.max(1, m));
+    for (let i = 0; i < m; i++) if (!added[i]) depthSum += corners[i * 16 + 2];
+    const elFog = ctx.fogAt(depthSum / Math.max(1, kept.length));
     const sideC = shade(base, AMBIENT * 0.82, 0, sigma, elFog);
     const edgeC = shadeEdge(edge, sigma, elFog);
     // Face shading does vary along the strand: one gradient per stretch that
@@ -1293,6 +1425,7 @@ export class MorphRenderer {
     let gid = 0;
     let refDx = NaN;
     let refDy = NaN;
+    let groupLv = -1;
     const P = (i: number, c: number): [number, number] => [
       corners[i * 16 + c * 4],
       corners[i * 16 + c * 4 + 1],
@@ -1392,13 +1525,16 @@ export class MorphRenderer {
         const hv = Math.max(0, tmp[4] * HALF[0] + tmp[5] * HALF[1] + tmp[6] * HALF[2]);
         return shade(base, AMBIENT + DIFFUSE * lam, Math.pow(hv, 30) * 0.3, sigma, fog);
       };
+      const lv = veil.level(mx, my, mz);
       // Two-sided Lambert on the ribbon face.
       const sgn = (vN >= 0 ? 1 : -1) / nl;
-      const faceC = lit(nx * sgn, ny * sgn, nz * sgn);
+      const faceC = veil.apply(lit(nx * sgn, ny * sgn, nz * sgn), lv);
       // The side walls keep one dark tone that reads as the ribbon's
       // thickness; the blunt start wall is lit like a face, as in that dark
       // tone it read as a stray rectangle.
-      const startC = visStart ? lit(nS[0], nS[1], nS[2]) : sideC;
+      const wallC = veil.apply(sideC, lv);
+      const lineC = veil.apply(edgeC, lv);
+      const startC = veil.apply(visStart ? lit(nS[0], nS[1], nS[2]) : sideC, lv);
 
       const TL0 = P(i, 0),
         TR0 = P(i, 1),
@@ -1408,7 +1544,16 @@ export class MorphRenderer {
         TR1 = P(j, 1),
         BL1 = P(j, 2),
         BR1 = P(j, 3);
-      // Gradient group: start a new one when the strand turns on screen.
+      // Gradient group: start a new one when the strand turns on screen, or
+      // passes behind a membrane sheet.
+      if (lv !== groupLv) {
+        if (groupLv >= 0) {
+          gid++;
+          groupStops.push([]);
+          refDx = NaN;
+        }
+        groupLv = lv;
+      }
       {
         const dx = (TL1[0] + TR1[0] - TL0[0] - TR0[0]) / 2;
         const dy = (TL1[1] + TR1[1] - TL0[1] - TR0[1]) / 2;
@@ -1437,43 +1582,52 @@ export class MorphRenderer {
       const faces: { spec: OpSpec; q: number[]; c: RGB }[] = [];
       if (visTop) faces.push({ spec: faceTop, q: [...TL0, ...TR0, ...TL1, ...TR1], c: faceC });
       if (visBot) faces.push({ spec: faceBot, q: [...BL0, ...BR0, ...BL1, ...BR1], c: faceC });
-      if (visL) faces.push({ spec: SIDE_L, q: [...TL0, ...BL0, ...TL1, ...BL1], c: sideC });
-      if (visR) faces.push({ spec: SIDE_R, q: [...TR0, ...BR0, ...TR1, ...BR1], c: sideC });
+      const sideL = veiled(SIDE_L, lv);
+      const sideR = veiled(SIDE_R, lv);
+      if (visL) faces.push({ spec: sideL, q: [...TL0, ...BL0, ...TL1, ...BL1], c: wallC });
+      if (visR) faces.push({ spec: sideR, q: [...TR0, ...BR0, ...TR1, ...BR1], c: wallC });
       const startWall = visStart ? [...TL0, ...TR0, ...BR0, ...BL0] : null;
       const edges: { spec: OpSpec; pts: number[] }[] = [];
-      if (visTop !== visL) edges.push({ spec: EDGE_TL, pts: [...TL0, ...TL1] });
-      if (visTop !== visR) edges.push({ spec: EDGE_TR, pts: [...TR0, ...TR1] });
-      if (visBot !== visL) edges.push({ spec: EDGE_BL, pts: [...BL0, ...BL1] });
-      if (visBot !== visR) edges.push({ spec: EDGE_BR, pts: [...BR0, ...BR1] });
+      const edge = (spec: OpSpec, pts: number[]): void => {
+        edges.push({ spec: veiled(spec, lv), pts });
+      };
+      if (visTop !== visL) edge(EDGE_TL, [...TL0, ...TL1]);
+      if (visTop !== visR) edge(EDGE_TR, [...TR0, ...TR1]);
+      if (visBot !== visL) edge(EDGE_BL, [...BL0, ...BL1]);
+      if (visBot !== visR) edge(EDGE_BR, [...BR0, ...BR1]);
       if (i === 0) {
-        if (visStart !== visTop) edges.push({ spec: EDGE_X, pts: [...TL0, ...TR0] });
-        if (visStart !== visBot) edges.push({ spec: EDGE_X, pts: [...BL0, ...BR0] });
-        if (visStart !== visL) edges.push({ spec: EDGE_X, pts: [...TL0, ...BL0] });
-        if (visStart !== visR) edges.push({ spec: EDGE_X, pts: [...TR0, ...BR0] });
+        if (visStart !== visTop) edge(EDGE_X, [...TL0, ...TR0]);
+        if (visStart !== visBot) edge(EDGE_X, [...BL0, ...BR0]);
+        if (visStart !== visL) edge(EDGE_X, [...TL0, ...BL0]);
+        if (visStart !== visR) edge(EDGE_X, [...TR0, ...BR0]);
       }
       // Where two visible faces meet there is no outline, and the two
       // abutting polygons would leave a light anti-aliasing hairline: cover
       // the shared edge with a thin line in the wall's colour.
       const seams: { spec: OpSpec; pts: number[]; c: RGB }[] = [];
-      if (visTop && visL) seams.push({ spec: SEAM_TL, pts: [...TL0, ...TL1], c: sideC });
-      if (visTop && visR) seams.push({ spec: SEAM_TR, pts: [...TR0, ...TR1], c: sideC });
-      if (visBot && visL) seams.push({ spec: SEAM_BL, pts: [...BL0, ...BL1], c: sideC });
-      if (visBot && visR) seams.push({ spec: SEAM_BR, pts: [...BR0, ...BR1], c: sideC });
+      const seam = (spec: OpSpec, pts: number[], c: RGB): void => {
+        seams.push({ spec: veiled(spec, lv), pts, c });
+      };
+      if (visTop && visL) seam(SEAM_TL, [...TL0, ...TL1], wallC);
+      if (visTop && visR) seam(SEAM_TR, [...TR0, ...TR1], wallC);
+      if (visBot && visL) seam(SEAM_BL, [...BL0, ...BL1], wallC);
+      if (visBot && visR) seam(SEAM_BR, [...BR0, ...BR1], wallC);
       if (visStart) {
-        if (visTop) seams.push({ spec: SEAM_X, pts: [...TL0, ...TR0], c: startC });
-        if (visBot) seams.push({ spec: SEAM_X, pts: [...BL0, ...BR0], c: startC });
-        if (visL) seams.push({ spec: SEAM_X, pts: [...TL0, ...BL0], c: startC });
-        if (visR) seams.push({ spec: SEAM_X, pts: [...TR0, ...BR0], c: startC });
+        if (visTop) seam(SEAM_X, [...TL0, ...TR0], startC);
+        if (visBot) seam(SEAM_X, [...BL0, ...BR0], startC);
+        if (visL) seam(SEAM_X, [...TL0, ...BL0], startC);
+        if (visR) seam(SEAM_X, [...TR0, ...BR0], startC);
       }
+      const startSpec = veiled(SIDE_START, lv);
       const pts = [...TL0, ...TR0, ...BL0, ...BR0, ...TL1, ...TR1, ...BL1, ...BR1];
       const emit = (run: Run): void => {
         for (const f of faces) {
           run.strip(f.spec, f.q, f.c);
           if (f.spec.kind === 'gradient') run.setGradient(f.spec, groupDefs[g]);
         }
-        if (startWall) run.fill(SIDE_START, startWall, startC);
+        if (startWall) run.fill(startSpec, startWall, startC);
         for (const e of seams) run.stroke(e.spec, e.pts, e.c, 1);
-        for (const e of edges) run.stroke(e.spec, e.pts, edgeC, 1.5);
+        for (const e of edges) run.stroke(e.spec, e.pts, lineC, 1.5);
       };
       // A shoulder (now just its outline) is depth-sorted with the arrowhead
       // section after it: on its own, its tiny footprint could be painted over
@@ -1538,6 +1692,9 @@ export class MorphRenderer {
     const sy = new Float64Array(count);
     const sd = new Float64Array(count);
     const sk = new Float64Array(count);
+    const wx = new Float64Array(count);
+    const wy = new Float64Array(count);
+    const wz = new Float64Array(count);
     let js = 0;
     let jr = 0;
     const { syn, synS, real, realS } = loop;
@@ -1562,6 +1719,9 @@ export class MorphRenderer {
       const cu = lerp(su + lerp(aU, bU, s), ru, eLoop);
       const cz = lerp(sz + lerp(aZ, bZ, s), rz, eLoop);
       pose.curtain.place(cu, cz, rn * eLoop, rbb * eLoop, this.tmp);
+      wx[c] = this.tmp[0];
+      wy[c] = this.tmp[1];
+      wz[c] = this.tmp[2];
       cam.project(this.tmp[0], this.tmp[1], this.tmp[2], this.tmp, 4);
       sx[c] = this.tmp[4];
       sy[c] = this.tmp[5];
@@ -1625,26 +1785,56 @@ export class MorphRenderer {
       }
     }
 
-    // Depth-sorted pieces of about 1.2 Å.
-    const STEP = Math.max(1, Math.round(((count - 1) * 1.2) / Math.max(loop.length, 1e-6)));
-    for (let c = 0; c < count - 1; c += STEP) {
-      const e = Math.min(count - 1, c + STEP);
+    // Depth-sorted pieces of about 1.2 Å, cut where the membrane tint starts
+    // or stops (see strandPrims).
+    const veil = ctx.veil;
+    const lvS = new Int32Array(count);
+    for (let c = 0; c < count; c++) lvS[c] = veil.level(wx[c], wy[c], wz[c]);
+    interface LoopPoint {
+      x: number;
+      y: number;
+      d: number;
+      px: number;
+      py: number;
+      sh: number;
+      s: number;
+    }
+    const at = (q: number, r: number, u: number): LoopPoint => {
+      let px = lerp(ppx[q], ppx[r], u);
+      let py = lerp(ppy[q], ppy[r], u);
+      const pl = Math.hypot(px, py);
+      if (pl > 1e-12) {
+        px /= pl;
+        py /= pl;
+      }
+      return {
+        x: lerp(sx[q], sx[r], u),
+        y: lerp(sy[q], sy[r], u),
+        d: lerp(sd[q], sd[r], u),
+        px,
+        py,
+        sh: lerp(shine[q], shine[r], u),
+        s: lerp(q, r, u) / (count - 1),
+      };
+    };
+    const piece = (P: LoopPoint[], lv: number, sub: number): void => {
       const pts: number[] = [];
       let dSum = 0;
       let x0 = Infinity,
         y0 = Infinity,
         x1 = -Infinity,
         y1 = -Infinity;
-      for (let q = c; q <= e; q++) {
-        pts.push(sx[q], sy[q]);
-        dSum += sd[q];
-        x0 = Math.min(x0, sx[q]);
-        y0 = Math.min(y0, sy[q]);
-        x1 = Math.max(x1, sx[q]);
-        y1 = Math.max(y1, sy[q]);
+      for (const p of P) {
+        pts.push(p.x, p.y);
+        dSum += p.d;
+        x0 = Math.min(x0, p.x);
+        y0 = Math.min(y0, p.y);
+        x1 = Math.max(x1, p.x);
+        y1 = Math.max(y1, p.y);
       }
-      const cnt = e - c + 1;
       const pad = outer / 2 + 1;
+      const cC = veil.apply(coreC, lv);
+      const oC = veil.apply(outC, lv);
       let emit: (run: Run) => void;
       if (tube) {
         const quads: number[][] = [];
@@ -1652,43 +1842,53 @@ export class MorphRenderer {
         const right: number[] = [];
         const hi: number[] = [];
         const re = rb - edgeW / 2;
-        for (let q = c; q <= e; q++) {
-          left.push(sx[q] + re * ppx[q], sy[q] + re * ppy[q]);
-          right.push(sx[q] - re * ppx[q], sy[q] - re * ppy[q]);
-          hi.push(sx[q] + shine[q] * ppx[q], sy[q] + shine[q] * ppy[q]);
-          if (q < e) {
+        for (let q = 0; q < P.length; q++) {
+          const p = P[q];
+          left.push(p.x + re * p.px, p.y + re * p.py);
+          right.push(p.x - re * p.px, p.y - re * p.py);
+          hi.push(p.x + p.sh * p.px, p.y + p.sh * p.py);
+          const n = P[q + 1];
+          if (n) {
             quads.push([
-              sx[q] + rb * ppx[q],
-              sy[q] + rb * ppy[q],
-              sx[q] - rb * ppx[q],
-              sy[q] - rb * ppy[q],
-              sx[q + 1] + rb * ppx[q + 1],
-              sy[q + 1] + rb * ppy[q + 1],
-              sx[q + 1] - rb * ppx[q + 1],
-              sy[q + 1] - rb * ppy[q + 1],
+              p.x + rb * p.px,
+              p.y + rb * p.py,
+              p.x - rb * p.px,
+              p.y - rb * p.py,
+              n.x + rb * n.px,
+              n.y + rb * n.py,
+              n.x - rb * n.px,
+              n.y - rb * n.py,
             ]);
           }
         }
+        const hC = veil.apply(shineC, lv);
+        const bodyS = veiled(TUBE_BODY, lv);
+        const shineS = veiled(TUBE_SHINE, lv);
+        const edgeL = veiled(TUBE_EDGE_L, lv);
+        const edgeR = veiled(TUBE_EDGE_R, lv);
         emit = (run) => {
-          for (const quad of quads) run.strip(TUBE_BODY, quad, coreC);
-          run.stroke(TUBE_SHINE, hi, shineC, rb * 0.55, edgeAlpha);
-          run.stroke(TUBE_EDGE_L, left, outC, edgeW, edgeAlpha);
-          run.stroke(TUBE_EDGE_R, right, outC, edgeW, edgeAlpha);
+          for (const quad of quads) run.strip(bodyS, quad, cC);
+          run.stroke(shineS, hi, hC, rb * 0.55, edgeAlpha);
+          run.stroke(edgeL, left, oC, edgeW, edgeAlpha);
+          run.stroke(edgeR, right, oC, edgeW, edgeAlpha);
         };
       } else {
+        const params = P.map((p) => p.s);
+        const coreS = veiled(coreSpec, lv);
+        const outS = veiled(outSpec, lv);
         emit = (run) => {
-          const pieces = dashPx > 0 ? dashPieces(pts, c, count - 1, dashPx) : [pts];
-          for (const piece of pieces) {
-            if (sigma > 0) run.stroke(outSpec, piece, outC, outer, sigma);
-            run.stroke(coreSpec, piece, coreC, core);
+          const pieces = dashPx > 0 ? dashPieces(pts, params, dashPx) : [pts];
+          for (const pc of pieces) {
+            if (sigma > 0) run.stroke(outS, pc, oC, outer, sigma);
+            run.stroke(coreS, pc, cC, core);
           }
         };
       }
       prims.push({
         id: loop.id,
         order: loop.order,
-        sub: c,
-        depth: dSum / cnt,
+        sub,
+        depth: dSum / P.length,
         x0: x0 - pad,
         y0: y0 - pad,
         x1: x1 + pad,
@@ -1698,6 +1898,37 @@ export class MorphRenderer {
         pad: outer / 2,
         emit,
       });
+    };
+    const STEP = Math.max(1, Math.round(((count - 1) * 1.2) / Math.max(loop.length, 1e-6)));
+    for (let c = 0; c < count - 1; c += STEP) {
+      const e = Math.min(count - 1, c + STEP);
+      const parts: { pts: LoopPoint[]; lv: number }[] = [];
+      let cur: LoopPoint[] = [at(c, c, 0)];
+      let lv = lvS[c];
+      for (let q = c; q < e; q++) {
+        if (lvS[q + 1] !== lvS[q]) {
+          const lvAt = (u: number): number =>
+            veil.level(
+              lerp(wx[q], wx[q + 1], u),
+              lerp(wy[q], wy[q + 1], u),
+              lerp(wz[q], wz[q + 1], u),
+            );
+          let from = 0;
+          for (let guard = 0; guard < 3 && lv !== lvS[q + 1]; guard++) {
+            const u = veilBoundary(lvAt, from, 1, lv);
+            const b = at(q, q + 1, u);
+            cur.push(b);
+            parts.push({ pts: cur, lv });
+            cur = [b];
+            lv = lvAt(lerp(u, 1, 1e-3));
+            from = u;
+          }
+          lv = lvS[q + 1];
+        }
+        cur.push(at(q + 1, q + 1, 0));
+      }
+      parts.push({ pts: cur, lv });
+      parts.forEach((part, k) => piece(part.pts, part.lv, c + k / 16));
     }
   }
 
@@ -1851,9 +2082,9 @@ export class MorphRenderer {
   }
 
   /**
-   * The two leaflet surfaces, far one first. The upper surface reads as a
-   * translucent sheet; the lower one is kept faint so the cytoplasmic side
-   * stays legible.
+   * Fills of the two leaflet sheets, far one first, behind the protein. The
+   * upper sheet reads as translucent; the lower one is kept faint so the
+   * cytoplasmic side stays legible.
    */
   private drawDiscs(
     cam: Camera,
@@ -1865,7 +2096,7 @@ export class MorphRenderer {
   ): void {
     const st = this.model.scene.style;
     const [far, near] = this.back.discs;
-    if (eDisc <= 0.001 || Math.abs(cam.p.el) <= 1e-3) {
+    if (eDisc <= 0) {
       far.set('display', 'none');
       near.set('display', 'none');
       return;
@@ -1885,11 +2116,51 @@ export class MorphRenderer {
       path.set('display', null);
       path.set('d', d + 'Z');
       path.set('fill', st.membraneFill);
-      path.set('fill-opacity', ((which === 'top' ? 0.13 : 0.06) * eDisc).toFixed(3));
-      path.set('stroke', st.membraneEdge);
-      path.set('stroke-opacity', eDisc.toFixed(3));
-      path.set('stroke-width', '1');
-      path.set('stroke-linejoin', 'round');
+      path.set('fill-opacity', (SHEET_ALPHA[which === 'top' ? 0 : 1] * eDisc).toFixed(3));
+    }
+  }
+
+  /** Rims of the leaflet sheets, depth-sorted with the protein. */
+  private rimPrims(
+    ctx: FrameCtx,
+    cxw: number,
+    cyw: number,
+    r: number,
+    half: number,
+    alpha: number,
+  ): void {
+    const { cam, prims } = ctx;
+    const edge = hexRgb(this.model.scene.style.membraneEdge);
+    const N = 64;
+    for (const [k, zp] of [
+      [0, half],
+      [1, -half],
+    ]) {
+      const ring = new Float64Array((N + 1) * 3);
+      for (let a = 0; a <= N; a++) {
+        const th = (a / N) * 2 * Math.PI;
+        cam.project(cxw + r * Math.cos(th), cyw + r * Math.sin(th), zp, this.tmp);
+        ring[a * 3] = this.tmp[0];
+        ring[a * 3 + 1] = this.tmp[1];
+        ring[a * 3 + 2] = this.tmp[2];
+      }
+      for (let a = 0; a < N; a++) {
+        const pts = [ring[a * 3], ring[a * 3 + 1], ring[a * 3 + 3], ring[a * 3 + 4]];
+        prims.push({
+          id: -11 - k,
+          order: -1,
+          sub: a,
+          depth: (ring[a * 3 + 2] + ring[a * 3 + 5]) / 2,
+          x0: Math.min(pts[0], pts[2]) - 1,
+          y0: Math.min(pts[1], pts[3]) - 1,
+          x1: Math.max(pts[0], pts[2]) + 1,
+          y1: Math.max(pts[1], pts[3]) + 1,
+          faded: false,
+          pts,
+          pad: 0.5,
+          emit: (run) => run.stroke(RIM, pts, edge, 1, alpha),
+        });
+      }
     }
   }
 
@@ -2183,8 +2454,10 @@ interface FrameCtx {
   fogAt: (depth: number) => number;
   pxA: number;
   prims: Prim[];
+  veil: Veil;
 }
 
+const RIM: OpSpec = { layer: 0, key: 'rim', kind: 'stroke', linecap: 'round' };
 const SILHOUETTE: OpSpec = { layer: 2, key: 'sil-l', kind: 'stroke', linecap: 'round' };
 const SILHOUETTE_R: OpSpec = { layer: 2, key: 'sil-r', kind: 'stroke', linecap: 'round' };
 const TUBE_BODY: OpSpec = { layer: 1, key: 'tube-body', kind: 'fill' };
@@ -2218,4 +2491,101 @@ function shadeEdge(edge: RGB, sigma: number, fog: number): RGB {
 
 function fogged(c: RGB, fog: number): RGB {
   return fog > 0 ? mixRgb(c, WHITE, fog) : c;
+}
+
+/** Opacity of the upper and lower leaflet sheets. */
+const SHEET_ALPHA: [number, number] = [0.13, 0.06];
+
+/**
+ * The two leaflet surfaces as translucent sheets. Painting a sheet over the
+ * protein would need every piece split by the planes in drawing order, and a
+ * piece straddling a plane can only go on one side of it. Instead the sheet
+ * fills are drawn behind the protein, and any piece seen through a sheet takes
+ * the sheet's tint in its own colour; pieces are cut exactly where that
+ * changes, so the boundary is where the line of sight meets the sheet's edge
+ * or the piece passes through the plane.
+ */
+class Veil {
+  private readonly alpha: [number, number];
+
+  constructor(
+    private readonly cam: Camera,
+    private readonly cx: number,
+    private readonly cy: number,
+    private readonly r: number,
+    private readonly half: number,
+    /** Sheet fade-in (0 = no sheets). */
+    readonly on: number,
+    private readonly fill: RGB,
+  ) {
+    this.alpha = [SHEET_ALPHA[0] * on, SHEET_ALPHA[1] * on];
+  }
+
+  /** Sheets between world point (x, y, z) and the eye: bit 1 upper, bit 2 lower. */
+  level(x: number, y: number, z: number): number {
+    if (this.on <= 0) return 0;
+    const cam = this.cam;
+    // Ray towards the eye: P + s·d, reaching the eye at s = 1 (perspective).
+    let dx: number;
+    let dy: number;
+    let dz: number;
+    let reach = Infinity;
+    if (Number.isFinite(cam.dist)) {
+      dx = cam.eye[0] - x;
+      dy = cam.eye[1] - y;
+      dz = cam.eye[2] - z;
+      reach = 1;
+    } else {
+      dx = -cam.v[0];
+      dy = -cam.v[1];
+      dz = -cam.v[2];
+    }
+    if (Math.abs(dz) < 1e-12) return 0;
+    let lv = 0;
+    for (let k = 0; k < 2; k++) {
+      const s = ((k === 0 ? this.half : -this.half) - z) / dz;
+      if (s <= 0 || s >= reach) continue;
+      const qx = x + s * dx - this.cx;
+      const qy = y + s * dy - this.cy;
+      if (qx * qx + qy * qy <= this.r * this.r) lv |= 1 << k;
+    }
+    return lv;
+  }
+
+  /** Colour `c` as seen through sheets `lv`. */
+  apply(c: RGB, lv: number): RGB {
+    if (lv === 0) return c;
+    let keep = 1;
+    if (lv & 1) keep *= 1 - this.alpha[0];
+    if (lv & 2) keep *= 1 - this.alpha[1];
+    return mixRgb(c, this.fill, 1 - keep);
+  }
+}
+
+/**
+ * Parameter in (a, b) where `level` changes from `la` (its value at a), by
+ * bisection; assumes a single change in the interval.
+ */
+function veilBoundary(level: (t: number) => number, a: number, b: number, la: number): number {
+  let lo = a;
+  let hi = b;
+  for (let k = 0; k < 20; k++) {
+    const mid = (lo + hi) / 2;
+    if (level(mid) === la) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+const veiledSpecs = new WeakMap<OpSpec, OpSpec[]>();
+
+/** `spec` for pieces seen through sheets `lv`: its own op, so its own colour. */
+function veiled(spec: OpSpec, lv: number): OpSpec {
+  if (lv === 0) return spec;
+  let list = veiledSpecs.get(spec);
+  if (!list) {
+    list = [];
+    veiledSpecs.set(spec, list);
+  }
+  return (list[lv] ??= { ...spec, key: `${spec.key}~${lv}` });
 }

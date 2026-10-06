@@ -74,10 +74,18 @@ finished 3-D view stays vector (and exportable).
 
 - Elements are cut into short sections and drawn back-to-front (painter's
   algorithm).
-- The membrane (leaflet surfaces, slab rim, midplane) is drawn behind the
-  protein. Drawn as a translucent sheet over it, the upper leaflet tinted every
-  piece below the plane; on strands seen side-on the plane cuts the ribbon
-  almost lengthwise on screen, so strands looked half-hidden.
+- The leaflet surfaces are translucent sheets, but they are not painted over
+  the protein: that would need every piece split by the planes in drawing
+  order, and a piece straddling a plane can only be drawn on one side of it,
+  which showed as strands split lengthwise into light and dark wedges. Instead
+  the sheet fills are drawn behind the protein, and every piece whose line of
+  sight passes through a sheet takes the sheet's tint in its own colour (the
+  same colour compositing would give). Strands, helices and loops are cut
+  exactly where that changes — where they pass through a plane, or where the
+  line of sight leaves the sheet past its rim — so the boundary is a clean cut
+  across the element. The rims are depth-sorted with the protein, so the near
+  rim passes in front of whatever lies behind it and marks the edge of the
+  tint.
 - Consecutive sections of the same element are merged into one path whenever
   nothing drawn in between overlaps them on screen (convex-footprint test).
   This keeps the DOM small and avoids anti-aliasing seams; contiguous sections
