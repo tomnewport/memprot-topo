@@ -133,17 +133,11 @@ interface Prim {
   order: number;
   sub: number;
   depth: number;
-  /** World z for membrane layering. */
-  zc: number;
-  /** Membrane layer rank (filled in before sorting). */
-  rank: number;
   x0: number;
   y0: number;
   x1: number;
   y1: number;
   faded: boolean;
-  /** Membrane discs pin themselves to a layer. */
-  plane?: 'top' | 'bottom';
   /** Screen footprint points (flat x, y); absent = overlaps everything. */
   pts?: number[];
   /** Convex hull of `pts`, computed only when an overlap test needs it. */
@@ -560,7 +554,12 @@ const ZOOM_MARGIN = 12;
 export class MorphRenderer {
   readonly svg: SVGSVGElement;
   private readonly defs: SVGDefsElement;
-  private readonly back: { rim: Pooled<SVGPathElement>; mid: Pooled<SVGPathElement> };
+  private readonly back: {
+    rim: Pooled<SVGPathElement>;
+    mid: Pooled<SVGPathElement>;
+    /** Leaflet surfaces, far one first. */
+    discs: [Pooled<SVGPathElement>, Pooled<SVGPathElement>];
+  };
   private readonly runsG: SVGGElement;
   private readonly labelsG: SVGGElement;
   private readonly slots: RunSlot[] = [];
@@ -611,8 +610,14 @@ export class MorphRenderer {
     const backG = document.createElementNS(SVG_NS, 'g');
     const rim = document.createElementNS(SVG_NS, 'path');
     const mid = document.createElementNS(SVG_NS, 'path');
-    backG.append(rim, mid);
-    this.back = { rim: new Pooled(rim), mid: new Pooled(mid) };
+    const disc0 = document.createElementNS(SVG_NS, 'path');
+    const disc1 = document.createElementNS(SVG_NS, 'path');
+    backG.append(rim, mid, disc0, disc1);
+    this.back = {
+      rim: new Pooled(rim),
+      mid: new Pooled(mid),
+      discs: [new Pooled(disc0), new Pooled(disc1)],
+    };
     this.runsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG.setAttribute('font-family', 'sans-serif');
@@ -977,111 +982,23 @@ export class MorphRenderer {
     for (const loop of model.loops) this.loopPrims(ctx, loop);
     if (tieAlpha > 0.001) this.tiePrims(ctx, tieAlpha * 0.5);
 
-    // Membrane.
+    // Membrane: drawn behind the protein. As a translucent sheet over the
+    // protein it tinted everything below the upper leaflet, and where a strand
+    // seen side-on passes through the plane that tint boundary runs along the
+    // strand, so the strand looked half-hidden.
     const half = model.scene.slab.half;
     const discX = lerp((model.slabX0 + model.slabX1) / 2, F.disc1.x, eCam);
     const discY = lerp(0, F.disc1.y, eCam);
     const discR = lerp((model.slabX1 - model.slabX0) / 2, F.disc1.r, eCam);
     this.drawBackRim(cam, discX, discY, discR, half, sigma);
-    const planesOn = eDisc > 0.001 && Math.abs(cam.p.el) > 1e-3;
-    if (planesOn) {
-      for (const which of ['top', 'bottom'] as const) {
-        const zp = which === 'top' ? half : -half;
-        const ring: number[] = [];
-        let dSum = 0;
-        for (let a = 0; a < 64; a++) {
-          const th = (a / 64) * 2 * Math.PI;
-          cam.project(discX + discR * Math.cos(th), discY + discR * Math.sin(th), zp, this.tmp);
-          ring.push(this.tmp[0], this.tmp[1]);
-          dSum += this.tmp[2];
-        }
-        const fill = hexRgb(st.membraneFill);
-        prims.push({
-          id: -10 - (which === 'top' ? 1 : 2),
-          order: -1,
-          sub: 0,
-          depth: dSum / 64,
-          zc: zp,
-          rank: 0,
-          x0: -1e9,
-          y0: -1e9,
-          x1: 1e9,
-          y1: 1e9,
-          faded: false,
-          plane: which,
-          emit: (run) => {
-            // The upper leaflet surface reads as a translucent sheet; the lower
-            // one is kept faint so the cytoplasmic side stays legible.
-            const alpha = which === 'top' ? 0.13 : 0.06;
-            run.fill({ layer: 0, key: 'disc', kind: 'fill' }, ring, fill, alpha * eDisc);
-            run.stroke(
-              {
-                layer: 1,
-                key: 'disc-edge',
-                kind: 'stroke',
-                linecap: 'round',
-              },
-              [...ring, ring[0], ring[1]],
-              hexRgb(st.membraneEdge),
-              1,
-              eDisc,
-            );
-          },
-        });
-      }
-    }
+    this.drawDiscs(cam, discX, discY, discR, half, eDisc);
 
-    // Membrane layering (a BSP split on the two bilayer planes), then depth.
-    const eyeZ = Number.isFinite(cam.dist) ? cam.eye[2] : cam.p.el > 0 ? Infinity : -Infinity;
-    for (const p of prims) {
-      if (!planesOn) {
-        p.rank = 0;
-        continue;
-      }
-      const side = p.plane ? null : p.zc > half ? 'above' : p.zc < -half ? 'below' : 'inside';
-      if (eyeZ > half) {
-        p.rank =
-          p.plane === 'bottom'
-            ? 1
-            : p.plane === 'top'
-              ? 3
-              : side === 'below'
-                ? 0
-                : side === 'inside'
-                  ? 2
-                  : 4;
-      } else if (eyeZ < -half) {
-        p.rank =
-          p.plane === 'top'
-            ? 1
-            : p.plane === 'bottom'
-              ? 3
-              : side === 'above'
-                ? 0
-                : side === 'inside'
-                  ? 2
-                  : 4;
-      } else {
-        p.rank =
-          p.plane === 'top'
-            ? 1
-            : p.plane === 'bottom'
-              ? 3
-              : side === 'above'
-                ? 0
-                : side === 'below'
-                  ? 2
-                  : 4;
-      }
-    }
     // Near t = 0 everything is (almost) level, so depths are snapped to keep
     // the 2-D drawing order; the snap fades out as depth becomes meaningful,
     // since in 3-D it would make near-level pieces swap back and forth.
     const quantum = DEPTH_SNAP * (1 - smooth(0, 0.3, tau));
     if (quantum > 1e-6) for (const p of prims) p.depth = Math.round(p.depth / quantum);
-    prims.sort(
-      (a, b) => a.rank - b.rank || b.depth - a.depth || a.order - b.order || a.sub - b.sub,
-    );
+    prims.sort((a, b) => b.depth - a.depth || a.order - b.order || a.sub - b.sub);
 
     const runs = this.mergeRuns(prims, width, height);
     this.emitRuns(runs);
@@ -1205,8 +1122,6 @@ export class MorphRenderer {
         order: el.order,
         sub: i + 1,
         depth,
-        zc: (pose.w[idx[i] * 4 + 2] + pose.w[idx[i + 1] * 4 + 2]) / 2,
-        rank: 0,
         x0: Math.min(...xs) - 1,
         y0: Math.min(...ys) - 1,
         x1: Math.max(...xs) + 1,
@@ -1269,8 +1184,6 @@ export class MorphRenderer {
         order: el.order,
         sub: near ? 1e6 + end : -1 - end,
         depth: dep[end] + (near ? -1e-3 : 1e-3),
-        zc: pose.w[g * 4 + 2],
-        rank: 0,
         x0: Math.min(...xs) - 1,
         y0: Math.min(...ys) - 1,
         x1: Math.max(...xs) + 1,
@@ -1385,8 +1298,7 @@ export class MorphRenderer {
       corners[i * 16 + c * 4 + 1],
     ];
 
-    // Interior reference for a degenerate (zero-length) section: the next
-    // distinct centre, so the shoulder walls of an arrowhead face backwards.
+    // Next centre distinct from centre i (skipping zero-length sections).
     const distinct = (i: number): number => {
       for (let j = i + 1; j < m; j++) {
         const d = Math.hypot(
@@ -1399,6 +1311,8 @@ export class MorphRenderer {
       return -1;
     };
 
+    /** A shoulder section waiting to be drawn with the section after it. */
+    let held: { pts: number[]; emit: (run: Run) => void } | null = null;
     for (let i = 0; i < m - 1; i++) {
       const j = i + 1;
       const mx = (C[i * 3] + C[j * 3]) / 2;
@@ -1418,11 +1332,12 @@ export class MorphRenderer {
       const visBot = vN < -EPS;
 
       // Side walls: outward normal = edge × N, oriented away from the inside.
-      const ref =
-        Math.hypot(C[j * 3] - C[i * 3], C[j * 3 + 1] - C[i * 3 + 1], C[j * 3 + 2] - C[i * 3 + 2]) >
-        1e-6
-          ? -1
-          : distinct(i);
+      // A zero-length section is an arrowhead shoulder. Its walls (facing back
+      // along the strand) are left out: seen face-on while the arrowhead
+      // itself is edge-on, they showed as small detached rectangles.
+      const shoulder =
+        Math.hypot(C[j * 3] - C[i * 3], C[j * 3 + 1] - C[i * 3 + 1], C[j * 3 + 2] - C[i * 3 + 2]) <=
+        1e-6;
       const wallVis = (side: 1 | -1): boolean => {
         const ax = C[i * 3] + side * W[i * 3];
         const ay = C[i * 3 + 1] + side * W[i * 3 + 1];
@@ -1444,43 +1359,46 @@ export class MorphRenderer {
         const cxw = (ax + bx) / 2;
         const cyw = (ay + by) / 2;
         const czw = (az + bz) / 2;
-        const rx = ref < 0 ? mx : C[ref * 3];
-        const ry = ref < 0 ? my : C[ref * 3 + 1];
-        const rz = ref < 0 ? mz : C[ref * 3 + 2];
-        if ((cxw - rx) * wx + (cyw - ry) * wy + (czw - rz) * wz < 0) {
+        if ((cxw - mx) * wx + (cyw - my) * wy + (czw - mz) * wz < 0) {
           wx = -wx;
           wy = -wy;
           wz = -wz;
         }
         return wx * ex + wy * ey + wz * ez > EPS;
       };
-      const visL = wallVis(1);
-      const visR = wallVis(-1);
+      const visL = !shoulder && wallVis(1);
+      const visR = !shoulder && wallVis(-1);
 
       // Start wall (first section only): faces back along the strand.
       let visStart = false;
+      const nS = [0, 0, 0];
       if (i === 0) {
         const k = distinct(0);
         if (k > 0) {
-          const ax = C[0] - C[k * 3];
-          const ay = C[1] - C[k * 3 + 1];
-          const az = C[2] - C[k * 3 + 2];
-          const al = Math.hypot(ax, ay, az) || 1;
-          visStart = (ax * ex + ay * ey + az * ez) / al > EPS;
+          const al = Math.hypot(C[0] - C[k * 3], C[1] - C[k * 3 + 1], C[2] - C[k * 3 + 2]) || 1;
+          nS[0] = (C[0] - C[k * 3]) / al;
+          nS[1] = (C[1] - C[k * 3 + 1]) / al;
+          nS[2] = (C[2] - C[k * 3 + 2]) / al;
+          visStart = nS[0] * ex + nS[1] * ey + nS[2] * ez > EPS;
         }
       }
 
       const depth = (corners[i * 16 + 2] + corners[j * 16 + 2]) / 2;
       const fog = ctx.fogAt(depth);
+      /** Lambert + specular shade of a surface with unit world normal n. */
+      const lit = (n0: number, n1: number, n2: number): RGB => {
+        cam.toCam(n0, n1, n2, tmp, 4);
+        const lam = Math.max(0, tmp[4] * LIGHT[0] + tmp[5] * LIGHT[1] + tmp[6] * LIGHT[2]);
+        const hv = Math.max(0, tmp[4] * HALF[0] + tmp[5] * HALF[1] + tmp[6] * HALF[2]);
+        return shade(base, AMBIENT + DIFFUSE * lam, Math.pow(hv, 30) * 0.3, sigma, fog);
+      };
       // Two-sided Lambert on the ribbon face.
-      cam.toCam(nx / nl, ny / nl, nz / nl, tmp, 4);
-      const sgn = vN >= 0 ? 1 : -1;
-      const nc0 = tmp[4] * sgn;
-      const nc1 = tmp[5] * sgn;
-      const nc2 = tmp[6] * sgn;
-      const lam = Math.max(0, nc0 * LIGHT[0] + nc1 * LIGHT[1] + nc2 * LIGHT[2]);
-      const spec = Math.pow(Math.max(0, nc0 * HALF[0] + nc1 * HALF[1] + nc2 * HALF[2]), 30) * 0.3;
-      const faceC = shade(base, AMBIENT + DIFFUSE * lam, spec, sigma, fog);
+      const sgn = (vN >= 0 ? 1 : -1) / nl;
+      const faceC = lit(nx * sgn, ny * sgn, nz * sgn);
+      // The side walls keep one dark tone that reads as the ribbon's
+      // thickness; the blunt start wall is lit like a face, as in that dark
+      // tone it read as a stray rectangle.
+      const startC = visStart ? lit(nS[0], nS[1], nS[2]) : sideC;
 
       const TL0 = P(i, 0),
         TR0 = P(i, 1),
@@ -1533,30 +1451,68 @@ export class MorphRenderer {
         if (visStart !== visL) edges.push({ spec: EDGE_X, pts: [...TL0, ...BL0] });
         if (visStart !== visR) edges.push({ spec: EDGE_X, pts: [...TR0, ...BR0] });
       }
-      const xs = [TL0[0], TR0[0], BL0[0], BR0[0], TL1[0], TR1[0], BL1[0], BR1[0]];
-      const ys = [TL0[1], TR0[1], BL0[1], BR0[1], TL1[1], TR1[1], BL1[1], BR1[1]];
+      // Where two visible faces meet there is no outline, and the two
+      // abutting polygons would leave a light anti-aliasing hairline: cover
+      // the shared edge with a thin line in the wall's colour.
+      const seams: { spec: OpSpec; pts: number[]; c: RGB }[] = [];
+      if (visTop && visL) seams.push({ spec: SEAM_TL, pts: [...TL0, ...TL1], c: sideC });
+      if (visTop && visR) seams.push({ spec: SEAM_TR, pts: [...TR0, ...TR1], c: sideC });
+      if (visBot && visL) seams.push({ spec: SEAM_BL, pts: [...BL0, ...BL1], c: sideC });
+      if (visBot && visR) seams.push({ spec: SEAM_BR, pts: [...BR0, ...BR1], c: sideC });
+      if (visStart) {
+        if (visTop) seams.push({ spec: SEAM_X, pts: [...TL0, ...TR0], c: startC });
+        if (visBot) seams.push({ spec: SEAM_X, pts: [...BL0, ...BR0], c: startC });
+        if (visL) seams.push({ spec: SEAM_X, pts: [...TL0, ...BL0], c: startC });
+        if (visR) seams.push({ spec: SEAM_X, pts: [...TR0, ...BR0], c: startC });
+      }
+      const pts = [...TL0, ...TR0, ...BL0, ...BR0, ...TL1, ...TR1, ...BL1, ...BR1];
+      const emit = (run: Run): void => {
+        for (const f of faces) {
+          run.strip(f.spec, f.q, f.c);
+          if (f.spec.kind === 'gradient') run.setGradient(f.spec, groupDefs[g]);
+        }
+        if (startWall) run.fill(SIDE_START, startWall, startC);
+        for (const e of seams) run.stroke(e.spec, e.pts, e.c, 1);
+        for (const e of edges) run.stroke(e.spec, e.pts, edgeC, 1.5);
+      };
+      // A shoulder (now just its outline) is depth-sorted with the arrowhead
+      // section after it: on its own, its tiny footprint could be painted over
+      // a neighbouring strand that hides the rest of the arrowhead.
+      if (shoulder && j < m - 1) {
+        held = { pts, emit };
+        continue;
+      }
+      const before = held;
+      held = null;
+      const all = before ? [...before.pts, ...pts] : pts;
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (let k = 0; k < all.length; k += 2) {
+        x0 = Math.min(x0, all[k]);
+        y0 = Math.min(y0, all[k + 1]);
+        x1 = Math.max(x1, all[k]);
+        y1 = Math.max(y1, all[k + 1]);
+      }
       prims.push({
         id: el.id,
         order: el.order,
         sub: i,
         depth,
-        zc: mz,
-        rank: 0,
-        x0: Math.min(...xs) - 1,
-        y0: Math.min(...ys) - 1,
-        x1: Math.max(...xs) + 1,
-        y1: Math.max(...ys) + 1,
+        x0: x0 - 1,
+        y0: y0 - 1,
+        x1: x1 + 1,
+        y1: y1 + 1,
         faded: el.faded,
-        pts: [...TL0, ...TR0, ...BL0, ...BR0, ...TL1, ...TR1, ...BL1, ...BR1],
+        pts: all,
         pad: 0.75,
-        emit: (run) => {
-          for (const f of faces) {
-            run.strip(f.spec, f.q, f.c);
-            if (f.spec.kind === 'gradient') run.setGradient(f.spec, groupDefs[g]);
-          }
-          if (startWall) run.fill(SIDE_START, startWall, sideC);
-          for (const e of edges) run.stroke(e.spec, e.pts, edgeC, 1.5);
-        },
+        emit: before
+          ? (run) => {
+              before.emit(run);
+              emit(run);
+            }
+          : emit,
       });
     }
     for (const stops of groupStops) groupDefs.push(gradientAlong(stops));
@@ -1582,7 +1538,6 @@ export class MorphRenderer {
     const sy = new Float64Array(count);
     const sd = new Float64Array(count);
     const sk = new Float64Array(count);
-    const wz = new Float64Array(count);
     let js = 0;
     let jr = 0;
     const { syn, synS, real, realS } = loop;
@@ -1607,7 +1562,6 @@ export class MorphRenderer {
       const cu = lerp(su + lerp(aU, bU, s), ru, eLoop);
       const cz = lerp(sz + lerp(aZ, bZ, s), rz, eLoop);
       pose.curtain.place(cu, cz, rn * eLoop, rbb * eLoop, this.tmp);
-      wz[c] = this.tmp[2];
       cam.project(this.tmp[0], this.tmp[1], this.tmp[2], this.tmp, 4);
       sx[c] = this.tmp[4];
       sy[c] = this.tmp[5];
@@ -1677,7 +1631,6 @@ export class MorphRenderer {
       const e = Math.min(count - 1, c + STEP);
       const pts: number[] = [];
       let dSum = 0;
-      let zSum = 0;
       let x0 = Infinity,
         y0 = Infinity,
         x1 = -Infinity,
@@ -1685,7 +1638,6 @@ export class MorphRenderer {
       for (let q = c; q <= e; q++) {
         pts.push(sx[q], sy[q]);
         dSum += sd[q];
-        zSum += wz[q];
         x0 = Math.min(x0, sx[q]);
         y0 = Math.min(y0, sy[q]);
         x1 = Math.max(x1, sx[q]);
@@ -1737,8 +1689,6 @@ export class MorphRenderer {
         order: loop.order,
         sub: c,
         depth: dSum / cnt,
-        zc: zSum / cnt,
-        rank: 0,
         x0: x0 - pad,
         y0: y0 - pad,
         x1: x1 + pad,
@@ -1772,8 +1722,6 @@ export class MorphRenderer {
         order: -1,
         sub: 0,
         depth,
-        zc: 0,
-        rank: 0,
         x0: Math.min(ends[0], ends[2]) - 1,
         y0: Math.min(ends[1], ends[3]) - 1,
         x1: Math.max(ends[0], ends[2]) + 1,
@@ -1900,6 +1848,49 @@ export class MorphRenderer {
     mid.set('stroke', st.midplane);
     mid.set('stroke-width', '1');
     mid.set('stroke-dasharray', '4 4');
+  }
+
+  /**
+   * The two leaflet surfaces, far one first. The upper surface reads as a
+   * translucent sheet; the lower one is kept faint so the cytoplasmic side
+   * stays legible.
+   */
+  private drawDiscs(
+    cam: Camera,
+    cxw: number,
+    cyw: number,
+    r: number,
+    half: number,
+    eDisc: number,
+  ): void {
+    const st = this.model.scene.style;
+    const [far, near] = this.back.discs;
+    if (eDisc <= 0.001 || Math.abs(cam.p.el) <= 1e-3) {
+      far.set('display', 'none');
+      near.set('display', 'none');
+      return;
+    }
+    // Seen from above, the lower leaflet is the far one.
+    const eyeZ = Number.isFinite(cam.dist) ? cam.eye[2] : cam.p.el;
+    const fromAbove = eyeZ > 0;
+    for (const which of ['top', 'bottom'] as const) {
+      const zp = which === 'top' ? half : -half;
+      let d = '';
+      for (let a = 0; a < 64; a++) {
+        const th = (a / 64) * 2 * Math.PI;
+        cam.project(cxw + r * Math.cos(th), cyw + r * Math.sin(th), zp, this.tmp);
+        d += (a === 0 ? 'M' : 'L') + this.tmp[0].toFixed(2) + ',' + this.tmp[1].toFixed(2);
+      }
+      const path = (which === 'top') === fromAbove ? near : far;
+      path.set('display', null);
+      path.set('d', d + 'Z');
+      path.set('fill', st.membraneFill);
+      path.set('fill-opacity', ((which === 'top' ? 0.13 : 0.06) * eDisc).toFixed(3));
+      path.set('stroke', st.membraneEdge);
+      path.set('stroke-opacity', eDisc.toFixed(3));
+      path.set('stroke-width', '1');
+      path.set('stroke-linejoin', 'round');
+    }
   }
 
   private mergeRuns(prims: Prim[], width: number, height: number): Run[] {
@@ -2208,6 +2199,11 @@ const EDGE_TR: OpSpec = { layer: 2, key: 'e-tr', kind: 'stroke', linecap: 'round
 const EDGE_BL: OpSpec = { layer: 2, key: 'e-bl', kind: 'stroke', linecap: 'round' };
 const EDGE_BR: OpSpec = { layer: 2, key: 'e-br', kind: 'stroke', linecap: 'round' };
 const EDGE_X: OpSpec = { layer: 2, key: 'e-x', kind: 'stroke', linecap: 'round' };
+const SEAM_TL: OpSpec = { layer: 1, key: 's-tl', kind: 'stroke', linecap: 'butt' };
+const SEAM_TR: OpSpec = { layer: 1, key: 's-tr', kind: 'stroke', linecap: 'butt' };
+const SEAM_BL: OpSpec = { layer: 1, key: 's-bl', kind: 'stroke', linecap: 'butt' };
+const SEAM_BR: OpSpec = { layer: 1, key: 's-br', kind: 'stroke', linecap: 'butt' };
+const SEAM_X: OpSpec = { layer: 1, key: 's-x', kind: 'stroke', linecap: 'butt' };
 
 /** Lit colour, blended in by `sigma` (0 = flat 2-D colour), then fogged. */
 function shade(base: RGB, intensity: number, spec: number, sigma: number, fog: number): RGB {

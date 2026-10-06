@@ -73,8 +73,11 @@ static SVG is swapped for the morph SVG without a visible change, and the
 finished 3-D view stays vector (and exportable).
 
 - Elements are cut into short sections and drawn back-to-front (painter's
-  algorithm), with a BSP-style split on the two membrane planes so the
-  translucent leaflet surfaces layer correctly.
+  algorithm).
+- The membrane (leaflet surfaces, slab rim, midplane) is drawn behind the
+  protein. Drawn as a translucent sheet over it, the upper leaflet tinted every
+  piece below the plane; on strands seen side-on the plane cuts the ribbon
+  almost lengthwise on screen, so strands looked half-hidden.
 - Consecutive sections of the same element are merged into one path whenever
   nothing drawn in between overlaps them on screen (convex-footprint test).
   This keeps the DOM small and avoids anti-aliasing seams; contiguous sections
@@ -85,6 +88,12 @@ finished 3-D view stays vector (and exportable).
   each with its own. Strand faces get a gradient along each straight stretch,
   and loops become tubes with edge lines and a highlight. Shading, fog,
   outlines and the membrane surfaces all fade in from the flat 2-D style.
+- Strands are thin boxes: the long side walls keep one dark tone for the
+  ribbon's thickness, and the blunt start is lit like a face. Arrowhead
+  shoulders have no walls: seen face-on while the arrowhead is edge-on, they
+  showed as small detached rectangles. Where two visible faces of a strand
+  meet (face and side wall), a thin line in the wall colour covers the
+  anti-aliasing hairline the abutting polygons would leave.
 - Anything that should look the same from frame to frame is computed per
   element, not per depth-sorted run: colours averaged over whichever sections
   happen to share a run, round line ends at run joins, dash patterns restarted
