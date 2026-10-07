@@ -205,9 +205,15 @@ const STYLES = `
     stroke: var(--mp-hover);
     stroke-width: var(--mp-hover-width);
   }
-  .ss-element.selected, .loop.selected { stroke: var(--mp-selection); }
+  /* Selection: a wide outline with a soft glow around the element. */
+  .ss-element.selected, .loop.selected {
+    stroke: var(--mp-selection);
+    filter: drop-shadow(0 0 var(--mp-selection-glow-blur) var(--mp-selection-glow));
+  }
   .ss-element.selected { stroke-width: var(--mp-selection-width); }
   .ss-element.selected:hover, .ss-element.selected:focus-visible {
+    filter: brightness(1.15)
+      drop-shadow(0 0 var(--mp-selection-glow-blur) var(--mp-selection-glow));
     stroke-width: calc(var(--mp-selection-width) + 1px);
   }
   .loop.selected { stroke-width: calc(var(--mp-selection-width) + 0.5px); }

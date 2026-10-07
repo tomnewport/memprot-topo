@@ -45,6 +45,8 @@ export interface Theme {
   hover: string;
   /** Outline of selected elements and loops. */
   selection: string;
+  /** Glow around selected elements and loops. */
+  selectionGlow: string;
 
   // Chain-picker icons (helix, strand and text come from above).
   iconBackground: string;
@@ -71,6 +73,8 @@ export interface Theme {
   hoverWidth: number;
   /** Outline of a selected element (selected loops are drawn 0.5 px wider). */
   selectionWidth: number;
+  /** Blur radius (px) of the selection glow; 0 turns it off. */
+  selectionGlowBlur: number;
 
   // Type.
   /** Interface text and residue-number labels. */
@@ -139,7 +143,8 @@ export const LIGHT_THEME: Readonly<Theme> = Object.freeze({
   contact: '#c98a3b',
   label: '#333333',
   hover: '#111111',
-  selection: '#e6550d',
+  selection: '#d99a00',
+  selectionGlow: '#ffc53d',
 
   iconBackground: '#ffffff',
   iconCoil: '#f7f7f7',
@@ -157,7 +162,8 @@ export const LIGHT_THEME: Readonly<Theme> = Object.freeze({
   midplaneWidth: 1,
   contactWidth: 1,
   hoverWidth: 2.5,
-  selectionWidth: 2.5,
+  selectionWidth: 3.5,
+  selectionGlowBlur: 4,
 
   fontFamily: 'sans-serif',
   serifFontFamily: 'Georgia, "Times New Roman", serif',
@@ -188,7 +194,8 @@ export const DARK_THEME: Readonly<Theme> = Object.freeze({
   contact: '#dba760',
   label: '#d2d4d6',
   hover: '#ffffff',
-  selection: '#fd8d3c',
+  selection: '#ffc53d',
+  selectionGlow: '#ffd77a',
 
   iconBackground: '#1c1d20',
   iconCoil: '#3a3d42',
@@ -254,6 +261,7 @@ const PX_TOKENS = new Set<keyof Theme>([
   'contactWidth',
   'hoverWidth',
   'selectionWidth',
+  'selectionGlowBlur',
   'cornerRadius',
 ]);
 
