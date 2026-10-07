@@ -116,16 +116,17 @@ async function main() {
   await pipeline(downloadRes.body, ws);
   console.log(`Downloaded ZIP to ${zipPath}`);
 
-  // Extract PNG files from the ZIP using the system unzip command
+  // Extract the images (PNG screenshots, WebP animations) from the ZIP using
+  // the system unzip command
   const { execFileSync } = await import('child_process');
   try {
-    execFileSync('unzip', ['-o', zipPath, 'current/*.png', '-d', PREV_DIR], {
+    execFileSync('unzip', ['-o', zipPath, 'current/*', '-d', PREV_DIR], {
       stdio: 'inherit',
     });
     // Move current/ subdirectory contents up if nested
     const nestedDir = join(PREV_DIR, 'current');
     if (existsSync(nestedDir)) {
-      execFileSync('sh', ['-c', `mv "${nestedDir}"/*.png "${PREV_DIR}/" 2>/dev/null || true`]);
+      execFileSync('sh', ['-c', `mv "${nestedDir}"/* "${PREV_DIR}/" 2>/dev/null || true`]);
       execFileSync('rmdir', [nestedDir]);
     }
   } catch (err) {

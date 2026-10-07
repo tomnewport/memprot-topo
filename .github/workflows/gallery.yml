@@ -18,6 +18,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Install ffmpeg (transition animations)
+        run: ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libwebp_anim || (sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg)
       - run: npm run build:demo
       - name: Fetch real PDB data for gallery
         run: npm run prebuild:gallery

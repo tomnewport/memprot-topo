@@ -8,6 +8,7 @@ import {
   unrollChain,
   unwrapBarrel,
   catmullRomBezier,
+  type CylinderMapping,
   type UnrolledSegment,
   type UnrolledPoint,
   type UnrollResult,
@@ -15,6 +16,11 @@ import {
 } from '../unroll/index.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
+import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
+import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
+import type { MorphController } from '../morph/controller.js';
+import type { MorphOptions } from '../morph/renderer.js';
+import { PROJECTIONS } from '../morph/projections.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -106,6 +112,32 @@ const STYLES = `
        to compute height from container width, producing a huge whitespace gap */
   }
   .placeholder { font-style: italic; color: #888; }
+  .morph-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.75rem;
+    color: #6c757d;
+  }
+  .morph-toggle {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid #1f77b4;
+    border-radius: 4px;
+    background: #fff;
+    color: #1f77b4;
+    cursor: pointer;
+  }
+  .morph-toggle[aria-pressed='true'] { background: #1f77b4; color: #fff; }
+  .morph-toggle:focus-visible, .morph-scrub:focus-visible {
+    outline: 2px solid #1f77b4;
+    outline-offset: 1px;
+  }
+  .morph-scrub { width: 10rem; accent-color: #1f77b4; }
+  .morph-hint { visibility: hidden; }
+  .morph-bar.is-3d .morph-hint { visibility: visible; }
 `;
 
 const PLOT = {
@@ -337,8 +369,10 @@ function placeResidueLabel(
   resSeq: number,
   isStart: boolean,
   placedBoxes: LabelBox[],
+  rec?: { recorder: SceneRecorder; seg: number },
 ): void {
   if (samples.length < 2) return;
+  rec?.recorder.labels.push({ seg: rec.seg, sample: sampleIdx, text: String(resSeq), isStart });
 
   const sx = samples[sampleIdx].arc * PLOT.arcPxPerA;
   const sy = -samples[sampleIdx].z * PLOT.zPxPerA;
@@ -388,17 +422,6 @@ function placeResidueLabel(
 }
 
 /**
- * Render a helix or strand run as one filled+stroked polygon: a uniform-width
- * body with butt ends, terminated at the C-terminal end by an integrated
- * arrowhead when `withArrow` is true. Sharing one outline (rather than
- * overlaying a separate arrow on a stroked path) is what gives the element
- * its single-shape appearance.
- *
- * Widths are specified in screen pixels and back-projected into user space so
- * the polygon stays consistent under the plot group's non-uniform scale.
- */
-
-/**
  * Walk the C-terminal samples of a strand backward and return the index of the
  * last sample whose local tangent is still within 25° of the strand's core
  * axis direction.  Residues that DSSP assigns to the strand but that actually
@@ -436,6 +459,17 @@ function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: numbe
   return endIdx;
 }
 
+/**
+ * Render a helix or strand run as one filled+stroked polygon: a uniform-width
+ * body with butt ends, terminated at the C-terminal end by an integrated
+ * arrowhead when `withArrow` is true. Sharing one outline (rather than
+ * overlaying a separate arrow on a stroked path) is what gives the element
+ * its single-shape appearance. The geometry lives in {@link ssOutline} so the
+ * 3-D morph can rebuild exactly the same shape.
+ *
+ * Widths are specified in screen pixels and back-projected into user space so
+ * the polygon stays consistent under the plot group's non-uniform scale.
+ */
 function drawSsPolygon(
   plot: SVGGElement,
   samples: UnrolledPoint[],
@@ -447,119 +481,19 @@ function drawSsPolygon(
 ): void {
   if (endIdx <= startIdx) return;
 
-  const screen: { sx: number; sy: number }[] = [];
+  const screen: OutlinePoint[] = [];
   for (let i = startIdx; i <= endIdx; i++) {
     screen.push({ sx: samples[i].arc * PLOT.arcPxPerA, sy: -samples[i].z * PLOT.zPxPerA });
   }
-  if (screen.length < 2) return;
+  const sections = ssOutline(screen, withArrow, {
+    halfWidth: SS_BODY.halfWidthPx,
+    arrowHalfWidth: SS_BODY.arrowHalfWidthPx,
+    arrowLength: SS_BODY.arrowLengthPx,
+  });
+  if (sections.length === 0) return;
 
-  // Unit tangent in screen space at each sample (averaged across adjacent
-  // segments at interior points so the perpendicular offsets transition smoothly).
-  const tx = new Array<number>(screen.length).fill(0);
-  const ty = new Array<number>(screen.length).fill(0);
-  for (let i = 0; i < screen.length; i++) {
-    let dx = 0,
-      dy = 0;
-    if (i > 0) {
-      dx += screen[i].sx - screen[i - 1].sx;
-      dy += screen[i].sy - screen[i - 1].sy;
-    }
-    if (i < screen.length - 1) {
-      dx += screen[i + 1].sx - screen[i].sx;
-      dy += screen[i + 1].sy - screen[i].sy;
-    }
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len > 1e-9) {
-      tx[i] = dx / len;
-      ty[i] = dy / len;
-    }
-  }
-
-  const halfW = SS_BODY.halfWidthPx;
-  const arrowHalfW = SS_BODY.arrowHalfWidthPx;
-  const arrowLen = SS_BODY.arrowLengthPx;
-  const lastIdx = screen.length - 1;
-
-  // Arrow base = a point `arrowLen` screen pixels back from the tip along the
-  // polyline. `bodyLast` is the last sample fully part of the body before the
-  // arrow base; sample indices > bodyLast sit inside the arrowhead.
-  let bodyLast = lastIdx;
-  let baseSx = screen[lastIdx].sx;
-  let baseSy = screen[lastIdx].sy;
-  let basePx = -ty[lastIdx];
-  let basePy = tx[lastIdx];
-
-  if (withArrow) {
-    let remaining = arrowLen;
-    let baseSegEnd = lastIdx;
-    let baseFrac = 0;
-    let walkedOff = true;
-    for (let i = lastIdx; i > 0; i--) {
-      const dx = screen[i].sx - screen[i - 1].sx;
-      const dy = screen[i].sy - screen[i - 1].sy;
-      const segLen = Math.sqrt(dx * dx + dy * dy);
-      if (segLen <= 0) continue;
-      if (remaining <= segLen) {
-        baseSegEnd = i;
-        baseFrac = 1 - remaining / segLen;
-        walkedOff = false;
-        break;
-      }
-      remaining -= segLen;
-    }
-
-    if (walkedOff) {
-      // Strand shorter than the arrow length — collapse body to a single point
-      // at the start and render as a pure arrowhead from start to tip.
-      bodyLast = -1;
-      baseSx = screen[0].sx;
-      baseSy = screen[0].sy;
-      basePx = -ty[0];
-      basePy = tx[0];
-    } else {
-      bodyLast = baseSegEnd - 1;
-      baseSx =
-        screen[baseSegEnd - 1].sx + baseFrac * (screen[baseSegEnd].sx - screen[baseSegEnd - 1].sx);
-      baseSy =
-        screen[baseSegEnd - 1].sy + baseFrac * (screen[baseSegEnd].sy - screen[baseSegEnd - 1].sy);
-      // Derive the arrowhead perpendicular from the smoothed body-axis tangent at
-      // bodyLast rather than from the interpolated local tangent at the base.
-      // The terminal Cα is projected with a one-sided window during unrolling and
-      // can land off-axis, which rotates the interpolated tangent and produces a
-      // visible kink where the body meets the head.  tx/ty[bodyLast] is a
-      // two-sided interior tangent and stays reliably axis-aligned. The tip vertex
-      // is kept at screen[lastIdx] so loop connections are not displaced.
-      const bLen = Math.sqrt(tx[bodyLast] * tx[bodyLast] + ty[bodyLast] * ty[bodyLast]);
-      if (bLen > 1e-9) {
-        basePx = -ty[bodyLast] / bLen;
-        basePy = tx[bodyLast] / bLen;
-      }
-    }
-  }
-
-  // Walk the left edge forward, traverse the end cap (arrowhead or butt), then
-  // the right edge backward. When `!withArrow`, the natural transition between
-  // the last left-edge vertex and the first right-edge vertex at `lastIdx`
-  // forms the perpendicular butt end.
-  const vertsS: [number, number][] = [];
-  for (let i = 0; i <= bodyLast; i++) {
-    vertsS.push([screen[i].sx + halfW * -ty[i], screen[i].sy + halfW * tx[i]]);
-  }
-
-  if (withArrow) {
-    vertsS.push([baseSx + halfW * basePx, baseSy + halfW * basePy]);
-    vertsS.push([baseSx + arrowHalfW * basePx, baseSy + arrowHalfW * basePy]);
-    vertsS.push([screen[lastIdx].sx, screen[lastIdx].sy]);
-    vertsS.push([baseSx - arrowHalfW * basePx, baseSy - arrowHalfW * basePy]);
-    vertsS.push([baseSx - halfW * basePx, baseSy - halfW * basePy]);
-  }
-
-  for (let i = bodyLast; i >= 0; i--) {
-    vertsS.push([screen[i].sx - halfW * -ty[i], screen[i].sy - halfW * tx[i]]);
-  }
-
-  const points = vertsS
-    .map(([sx, sy]) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
+  const points = outlinePolygon(screen, sections)
+    .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
     .join(' ');
 
   const poly = document.createElementNS(SVG_NS, 'polygon');
@@ -624,6 +558,18 @@ interface LoopExtreme {
   samples: UnrolledPoint[];
   startSample: number;
   endSample: number;
+}
+
+/**
+ * Collects what the 2-D renderer draws, in draw order, so the 3-D morph can
+ * rebuild exactly the same picture as its first frame.
+ */
+interface SceneRecorder {
+  elements: MorphElement[];
+  loops: MorphLoop[];
+  labels: MorphLabel[];
+  ties: MorphTie[];
+  order: number;
 }
 
 /**
@@ -777,6 +723,7 @@ function drawLoop(
   loopResidues: { resSeq: number }[],
   opts: LoopRenderOptions,
   faded = false,
+  rec?: { recorder: SceneRecorder; seg: number },
 ): void {
   const prev: LoopEnd | null = prevRun ? { samples, index: prevRun.endResSampleIdx } : null;
   const next: LoopEnd | null = nextRun ? { samples, index: nextRun.startSample } : null;
@@ -797,6 +744,15 @@ function drawLoop(
   }
 
   renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints, faded);
+  rec?.recorder.loops.push({
+    points: points.map((p) => ({ arc: p.arc, z: p.z })),
+    discontinuous,
+    faded,
+    from: prevRun ? { seg: rec.seg, sample: prevRun.endResSampleIdx } : null,
+    to: nextRun ? { seg: rec.seg, sample: nextRun.startSample } : null,
+    seg: rec.seg,
+    order: rec.recorder.order++,
+  });
 }
 
 /** A chain segment with its samples repositioned into display (fixed-gap) space. */
@@ -1066,10 +1022,17 @@ function barrelLayout(
  * (arc, z) positions reflect true 3-D adjacency, so a tie reads as "these two
  * residues hydrogen-bond across the sheet".
  */
-function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: SegmentLayout[]): void {
-  const pos = new Map<number, { arc: number; z: number }>();
-  for (const layout of layouts) {
-    for (const r of layout.residues) pos.set(r.resSeq, { arc: r.arc, z: r.z });
+function drawContacts(
+  plot: SVGGElement,
+  analysis: BarrelAnalysis,
+  layouts: SegmentLayout[],
+  recorder?: SceneRecorder,
+): void {
+  const pos = new Map<number, { arc: number; z: number; seg: number; sample: number }>();
+  for (let s = 0; s < layouts.length; s++) {
+    for (const r of layouts[s].residues) {
+      pos.set(r.resSeq, { arc: r.arc, z: r.z, seg: s, sample: r.sampleIndex });
+    }
   }
   // Only tie pairings between barrel-wall (ring) strands. Strands that fold
   // inside the barrel render as coil at an unreliable arc near the axis, so a
@@ -1093,6 +1056,10 @@ function drawContacts(plot: SVGGElement, analysis: BarrelAnalysis, layouts: Segm
       line.setAttribute('stroke-opacity', '0.5');
       line.setAttribute('vector-effect', 'non-scaling-stroke');
       group.appendChild(line);
+      recorder?.ties.push({
+        a: { seg: a.seg, sample: a.sample, z: a.z },
+        b: { seg: b.seg, sample: b.sample, z: b.z },
+      });
     }
   }
   plot.appendChild(group);
@@ -1126,6 +1093,8 @@ function unwrapAssembly(
 ): {
   segments: UnrolledSegment[];
   focal: boolean[];
+  /** Unwrap mapping of each segment (each protomer is unwrapped separately). */
+  cylinders: (CylinderMapping | undefined)[];
   wallSegments: SecondaryStructureSegment[];
   zMin: number;
   zMax: number;
@@ -1139,6 +1108,7 @@ function unwrapAssembly(
   }
   const segments: UnrolledSegment[] = [];
   const focal: boolean[] = [];
+  const cylinders: (CylinderMapping | undefined)[] = [];
   const wallSet = new Map<string, SecondaryStructureSegment>();
   let zMin = Infinity;
   let zMax = -Infinity;
@@ -1163,6 +1133,7 @@ function unwrapAssembly(
     for (const seg of u.segments) {
       segments.push(seg);
       focal.push(cid === focalChainId);
+      cylinders.push(u.cylinder);
     }
     zMin = Math.min(zMin, u.zMin);
     zMax = Math.max(zMax, u.zMax);
@@ -1171,7 +1142,7 @@ function unwrapAssembly(
     zMin = 0;
     zMax = 0;
   }
-  return { segments, focal, wallSegments: [...wallSet.values()], zMin, zMax };
+  return { segments, focal, cylinders, wallSegments: [...wallSet.values()], zMin, zMax };
 }
 
 interface AssemblyContext {
@@ -1186,7 +1157,7 @@ function renderChainSvg(
   analysis: BarrelAnalysis,
   showContacts: boolean,
   assembly?: AssemblyContext,
-): SVGSVGElement {
+): { svg: SVGSVGElement; scene: MorphScene | null } {
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
   // unwraps by angle; everything else uses the arc-length unroll.
@@ -1286,11 +1257,12 @@ function renderChainSvg(
   plot.appendChild(mid);
 
   const barrel = asm !== null || isBetaBarrel(chain);
+  const recorder: SceneRecorder = { elements: [], loops: [], labels: [], ties: [], order: 0 };
 
   // β-sheet contact ties, drawn first so the strand polygons sit on top of them.
   // (Assembly barrels pool several chains that may share residue numbers, so the
   // single-chain contact map doesn't apply.)
-  if (showContacts && useUnwrap && !asm) drawContacts(plot, analysis, layouts);
+  if (showContacts && useUnwrap && !asm) drawContacts(plot, analysis, layouts, recorder);
 
   // Labels group: same origin as `plot` but no scale, so text isn't
   // y-flipped or stretched by the plot transform. Appended after the plot
@@ -1325,6 +1297,7 @@ function renderChainSvg(
       hasBreakBefore,
       hasBreakAfter,
       focalFlags ? !focalFlags[s] : false,
+      { recorder, seg: s },
     );
     // Dashed connector across a chain break. Anchor at the nearest SS endpoint
     // on each side so that any trailing/leading coil in the adjacent segments is
@@ -1342,6 +1315,15 @@ function renderChainSvg(
         : { samples: layout.samples, index: 0 };
       const points = buildLoopPoints(prev, next, null, loopOpts);
       renderLoopCurve(plot, markersGroup, points, true, loopOpts.showPoints);
+      recorder.loops.push({
+        points: points.map((p) => ({ arc: p.arc, z: p.z })),
+        discontinuous: true,
+        faded: false,
+        from: { seg: s - 1, sample: prev.index },
+        to: { seg: s, sample: next.index },
+        seg: s,
+        order: recorder.order++,
+      });
     }
   }
 
@@ -1366,13 +1348,65 @@ function renderChainSvg(
 
   const finalWidth = maxX - minX;
   const finalHeight = maxY - minY;
-  if (finalWidth > svgWidth || finalHeight > svgHeight) {
+  const expanded = finalWidth > svgWidth || finalHeight > svgHeight;
+  if (expanded) {
     svg.setAttribute('viewBox', `${minX} ${minY} ${finalWidth} ${finalHeight}`);
     svg.setAttribute('width', `${finalWidth}`);
     svg.setAttribute('height', `${finalHeight}`);
   }
 
-  return svg;
+  // Every displayed sample needs its 3-D position, or it would roll up to the
+  // origin: without them the chain gets no 3-D view.
+  const morphable = layouts.every(
+    (layout, s) => unroll.segments[s]?.positions?.length === layout.samples.length,
+  );
+  const scene: MorphScene | null = !morphable
+    ? null
+    : {
+        mode: useUnwrap ? 'cylinder' : 'polyline',
+        segments: layouts.map((layout, s) => ({
+          display: layout.samples,
+          positions: unroll.segments[s]?.positions ?? [],
+          unwrapArc: useUnwrap ? unroll.segments[s]?.samples.map((p) => p.arc) : undefined,
+          cylinder: useUnwrap ? (asm ? asm.cylinders[s] : unroll.cylinder) : undefined,
+        })),
+        elements: recorder.elements,
+        loops: recorder.loops,
+        labels: recorder.labels,
+        ties: recorder.ties,
+        slab: { x0: 0, x1: totalArc, half: PLOT.membraneHalf },
+        frame: {
+          originX: cx,
+          originY: cy,
+          minX: expanded ? minX : 0,
+          minY: expanded ? minY : 0,
+          width: expanded ? finalWidth : svgWidth,
+          height: expanded ? finalHeight : svgHeight,
+          pxPerA: PLOT.arcPxPerA,
+        },
+        gapA: LOOP.elementGapPx / PLOT.arcPxPerA,
+        style: {
+          helixFill: COLOURS.helix,
+          helixStroke: COLOURS.helixEdge,
+          strandFill: COLOURS.strand,
+          strandStroke: COLOURS.strandEdge,
+          coil: COLOURS.coil,
+          membraneFill: COLOURS.membraneFill,
+          membraneEdge: COLOURS.membraneEdge,
+          midplane: COLOURS.zAxis,
+          contact: COLOURS.contact,
+          labelFill: LABEL.fill,
+          labelFontSize: LABEL.fontSizePx,
+          labelGap: LABEL.gapPx,
+          labelTangentStep: LABEL.tangentStepSamples,
+          halfWidthPx: SS_BODY.halfWidthPx,
+          arrowHalfWidthPx: SS_BODY.arrowHalfWidthPx,
+          arrowLengthPx: SS_BODY.arrowLengthPx,
+          fadedOpacity: 0.32,
+        },
+      };
+
+  return { svg, scene };
 }
 
 function isSs(run: SsRun | undefined): run is SsRun {
@@ -1404,6 +1438,7 @@ function drawSegment(
   hasBreakBefore = false,
   hasBreakAfter = false,
   faded = false,
+  rec?: { recorder: SceneRecorder; seg: number },
 ): void {
   const { samples, residues } = layout;
   // For barrel strand arrows, trim C-terminal samples that curl away from the
@@ -1430,6 +1465,17 @@ function drawSegment(
         withArrow,
         faded,
       );
+      if (rec && run.endResSampleIdx > run.startSample) {
+        rec.recorder.elements.push({
+          type: run.type,
+          seg: rec.seg,
+          start: run.startSample,
+          end: run.endResSampleIdx,
+          withArrow,
+          faded,
+          order: rec.recorder.order++,
+        });
+      }
       // Faded neighbouring protomers are context only — don't clutter with labels.
       if (!faded) {
         placeResidueLabel(
@@ -1439,6 +1485,7 @@ function drawSegment(
           run.startResSeq,
           true,
           placedBoxes,
+          rec,
         );
         if (run.endResSeq !== run.startResSeq) {
           placeResidueLabel(
@@ -1448,6 +1495,7 @@ function drawSegment(
             run.endResSeq,
             false,
             placedBoxes,
+            rec,
           );
         }
       }
@@ -1462,7 +1510,7 @@ function drawSegment(
     // break — the cross-break connector will cover it to the next SS start.
     if (nextRun === null && hasBreakAfter) continue;
     const loopResidues = residues.slice(run.residueStart, run.residueEnd + 1);
-    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts, faded);
+    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts, faded, rec);
   }
 }
 
@@ -1796,6 +1844,12 @@ function renderChainPicker(
   return container;
 }
 
+/** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
+const DEFAULT_MORPH_SWEEP = 0.35;
+
+/** Default strand arrowhead width over ribbon width in the morph (6.2 / 3.8 Å). */
+const STRAND_ARROW_RATIO = 6.2 / 3.8;
+
 let _instanceCounter = 0;
 
 export class TopologyDisplay extends HTMLElement {
@@ -1805,10 +1859,24 @@ export class TopologyDisplay extends HTMLElement {
     'loop-extreme-points',
     'loop-extreme-threshold',
     'show-contacts',
+    'morph-sweep',
+    'morph-projection',
+    'morph-strand-width',
+    'morph-strand-thickness',
   ];
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
+  /** What the displayed chain's 3-D morph is built from, until it is needed. */
+  private _morphSource: {
+    scroll: HTMLElement;
+    svg: SVGSVGElement;
+    scene: MorphScene;
+    options: Partial<MorphOptions>;
+    bar: HTMLDivElement;
+  } | null = null;
+  private _morph: MorphController | null = null;
+  private _morphLoad: Promise<MorphController | null> | null = null;
   private _selectedChainId: string | null = null;
   private _styleEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
@@ -1850,7 +1918,11 @@ export class TopologyDisplay extends HTMLElement {
       name === 'debug-loops' ||
       name === 'loop-extreme-points' ||
       name === 'loop-extreme-threshold' ||
-      name === 'show-contacts'
+      name === 'show-contacts' ||
+      name === 'morph-sweep' ||
+      name === 'morph-projection' ||
+      name === 'morph-strand-width' ||
+      name === 'morph-strand-thickness'
     ) {
       this.render();
       return;
@@ -1887,6 +1959,46 @@ export class TopologyDisplay extends HTMLElement {
     return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
   }
 
+  /**
+   * Width of the rolling wave in the 2-D → 3-D morph, as a fraction of the
+   * chain (`morph-sweep`, default 0.35). 0 rolls the whole chain up at once;
+   * larger values roll it up progressively from the N-terminal end.
+   */
+  private get morphSweep(): number {
+    const v = Number.parseFloat(this.getAttribute('morph-sweep') ?? '');
+    return Number.isFinite(v) && v >= 0 ? v : DEFAULT_MORPH_SWEEP;
+  }
+
+  /**
+   * Projection of the finished 3-D view (`morph-projection`): `isometric`
+   * (default, parallel) or `perspective` (35 mm-equivalent).
+   */
+  private get morphProjection(): keyof typeof PROJECTIONS {
+    return this.getAttribute('morph-projection') === 'perspective' ? 'perspective' : 'isometric';
+  }
+
+  /**
+   * Strand ribbon size in the 3-D view, in Å (`morph-strand-width`,
+   * `morph-strand-thickness`; defaults 3.8 × 1.0). The arrowhead keeps its
+   * default proportion to the ribbon width. Invalid or non-positive values
+   * fall back to the defaults.
+   */
+  private get morphStrandOptions(): Partial<MorphOptions> {
+    const read = (name: string): number | null => {
+      const v = Number.parseFloat(this.getAttribute(name) ?? '');
+      return Number.isFinite(v) && v > 0 ? v : null;
+    };
+    const opts: Partial<MorphOptions> = {};
+    const width = read('morph-strand-width');
+    if (width !== null) {
+      opts.strandWidth = width;
+      opts.arrowWidth = width * STRAND_ARROW_RATIO;
+    }
+    const thickness = read('morph-strand-thickness');
+    if (thickness !== null) opts.strandThickness = thickness;
+    return opts;
+  }
+
   /** Assemble the loop rendering options from the component's attributes. */
   private get loopOptions(): LoopRenderOptions {
     const ext = this.getAttribute('loop-extreme-points');
@@ -1901,7 +2013,60 @@ export class TopologyDisplay extends HTMLElement {
     this.render();
   }
 
+  /** 2-D ↔ 3-D morph progress of the displayed chain: 0 = 2-D, 1 = 3-D. */
+  get morphProgress(): number {
+    return this._morph?.progress ?? 0;
+  }
+
+  /**
+   * Jump the morph to `tau` ∈ [0, 1] without animating. Resolves once the
+   * frame is drawn (the morph code is loaded on first use).
+   */
+  async setMorphProgress(tau: number): Promise<void> {
+    (await this.loadMorph())?.setProgress(tau);
+  }
+
+  /** Animate between the 2-D topology and the 3-D view. */
+  async toggle3d(): Promise<void> {
+    (await this.loadMorph())?.toggle();
+  }
+
+  /**
+   * The displayed chain's morph controller. The morph code is loaded on
+   * first use, so pages that never show the 3-D view don't pay for it.
+   */
+  private loadMorph(): Promise<MorphController | null> {
+    const src = this._morphSource;
+    if (!src) return Promise.resolve(null);
+    if (this._morph) return Promise.resolve(this._morph);
+    this._morphLoad ??= import('../morph/controller.js')
+      .then(({ MorphController }) => {
+        // Re-rendered (new chain or settings) while loading: stale.
+        if (this._morphSource !== src) return null;
+        const morph = new MorphController(
+          src.scroll,
+          src.svg,
+          src.scene,
+          `mp${this._instanceId}`,
+          src.options,
+        );
+        this._morph = morph;
+        this.bindMorphBar(src.bar, morph);
+        return morph;
+      })
+      .catch((err: unknown) => {
+        // Let a later click try again (e.g. after a network blip).
+        this._morphLoad = null;
+        throw err;
+      });
+    return this._morphLoad;
+  }
+
   private render() {
+    this._morph?.dispose();
+    this._morph = null;
+    this._morphSource = null;
+    this._morphLoad = null;
     this._contentEl.replaceChildren();
 
     if (!this._data) {
@@ -2056,13 +2221,85 @@ export class TopologyDisplay extends HTMLElement {
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
-    scroll.appendChild(
-      renderChainSvg(selectedChain, this.loopOptions, analysis, this.showContacts, assembly),
+    const { svg, scene } = renderChainSvg(
+      selectedChain,
+      this.loopOptions,
+      analysis,
+      this.showContacts,
+      assembly,
     );
+    scroll.appendChild(svg);
+    const bar = this.renderMorphBar(scene !== null);
+    if (scene) {
+      this._morphSource = {
+        scroll,
+        svg,
+        scene,
+        options: {
+          sweep: this.morphSweep,
+          ...PROJECTIONS[this.morphProjection],
+          ...this.morphStrandOptions,
+        },
+        bar,
+      };
+    }
+    block.appendChild(bar);
     block.appendChild(scroll);
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+  }
+
+  /**
+   * Toggle + scrubber for the 2-D ↔ 3-D morph; disabled when the chain has no
+   * 3-D view. Pointing at or focusing the bar loads the morph code and does
+   * its set-up ahead of the click.
+   */
+  private renderMorphBar(available: boolean): HTMLDivElement {
+    const bar = document.createElement('div');
+    bar.className = 'morph-bar';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'morph-toggle';
+    toggle.textContent = '3D';
+    toggle.setAttribute('aria-pressed', 'false');
+    toggle.setAttribute('aria-label', 'Roll the topology up into a 3-D view');
+    const scrub = document.createElement('input');
+    scrub.type = 'range';
+    scrub.className = 'morph-scrub';
+    scrub.min = '0';
+    scrub.max = '1000';
+    scrub.value = '0';
+    scrub.setAttribute('aria-label', 'Morph between the 2-D topology and the 3-D view');
+    const hint = document.createElement('span');
+    hint.className = 'morph-hint';
+    hint.textContent = 'Drag to rotate';
+    bar.append(toggle, scrub, hint);
+    if (!available) {
+      toggle.disabled = true;
+      scrub.disabled = true;
+      bar.title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
+      return bar;
+    }
+    toggle.addEventListener('click', () => void this.toggle3d());
+    scrub.addEventListener('input', () => void this.setMorphProgress(Number(scrub.value) / 1000));
+    const warm = (): void => {
+      void this.loadMorph().then((m) => m?.precompute());
+    };
+    bar.addEventListener('pointerenter', warm, { once: true });
+    bar.addEventListener('focusin', warm, { once: true });
+    return bar;
+  }
+
+  /** Keep the bar in step with the morph once it is loaded. */
+  private bindMorphBar(bar: HTMLDivElement, morph: MorphController): void {
+    const toggle = bar.querySelector<HTMLButtonElement>('.morph-toggle')!;
+    const scrub = bar.querySelector<HTMLInputElement>('.morph-scrub')!;
+    morph.onChange = (tau, goal) => {
+      scrub.value = String(Math.round(tau * 1000));
+      toggle.setAttribute('aria-pressed', goal >= 0.5 ? 'true' : 'false');
+      bar.classList.toggle('is-3d', tau > 0);
+    };
   }
 }
 

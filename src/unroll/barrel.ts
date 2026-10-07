@@ -24,9 +24,9 @@
  */
 
 import type { Calpha, SecondaryStructureSegment } from '../types.js';
-import { sampleCurve, type Vec } from './catmull-rom.js';
+import { evaluate, sampleCurve, type Vec } from './catmull-rom.js';
 import { fitBSpline, sampleBSpline } from './bspline.js';
-import { projectHelixAxis } from './helix-axis.js';
+import { projectHelixAxis, projectLocalAxis } from './helix-axis.js';
 import type { UnrolledPoint, UnrolledResidue, UnrolledSegment, UnrollResult } from './unroll.js';
 
 export interface UnwrapBarrelOptions {
@@ -71,6 +71,30 @@ interface BreakGroup {
   calphas: Calpha[];
   /** Pre-computed unwrapped (u, z) point per Cα, aligned with `calphas`. */
   pts: Vec[];
+  /** Smoothed 3-D membrane-frame point per Cα (helix/strand on their axis). */
+  pts3d: Vec[];
+}
+
+/**
+ * 3-D position for every spline sample of a run: a centripetal Catmull–Rom
+ * through the run's smoothed Cα, with each sample placed at the same fractional
+ * residue position it occupies in the unwrapped spline (via `controlIndex`).
+ */
+function samplePositions(pts3d: Vec[], controlIndex: number[], total: number): Vec[] {
+  const out = new Array<Vec>(total);
+  const n = pts3d.length;
+  if (n === 1) {
+    for (let j = 0; j < total; j++) out[j] = { ...pts3d[0] };
+    return out;
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const a = controlIndex[i];
+    const b = controlIndex[i + 1];
+    for (let j = a; j <= b; j++) out[j] = evaluate(pts3d, i + (b > a ? (j - a) / (b - a) : 0));
+  }
+  for (let j = 0; j < controlIndex[0]; j++) out[j] = { ...pts3d[0] };
+  for (let j = controlIndex[n - 1] + 1; j < total; j++) out[j] = { ...pts3d[n - 1] };
+  return out;
 }
 
 /**
@@ -131,11 +155,20 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     u[i] = radius * theta;
   }
   // Orient so the chain winds in the +arc direction (left-to-right unrolling).
-  if (u[u.length - 1] < u[0]) for (let i = 0; i < u.length; i++) u[i] = -u[i];
+  const sign: 1 | -1 = u[u.length - 1] < u[0] ? -1 : 1;
+  if (sign < 0) for (let i = 0; i < u.length; i++) u[i] = -u[i];
+
+  // Smoothed 3-D trace (helix spiral and strand pleat removed) so a renderer
+  // can roll the unwrap back up into the real barrel.
+  const raw3d = calphas.map((c) => ({ x: c.x, y: c.y, z: c.z - membraneCentre }));
+  const isStrand = ssSegments
+    ? calphas.map((c) => ssTypeAt(ssSegments, c.resSeq) === 'strand')
+    : calphas.map(() => false);
+  const smooth3d = projectLocalAxis(projectLocalAxis(raw3d, isHelix, 4), isStrand, 2);
 
   // Split on 3-D chain breaks, carrying the unwrapped points alongside.
   const groups: BreakGroup[] = [];
-  let current: BreakGroup = { calphas: [], pts: [] };
+  let current: BreakGroup = { calphas: [], pts: [], pts3d: [] };
   const thr2 = breakDistance * breakDistance;
   for (let i = 0; i < calphas.length; i++) {
     const c = calphas[i];
@@ -144,6 +177,7 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     if (current.calphas.length === 0) {
       current.calphas.push(c);
       current.pts.push(pt);
+      current.pts3d.push(smooth3d[i]);
       continue;
     }
     const prev = current.calphas[current.calphas.length - 1];
@@ -152,10 +186,11 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     const dz = c.z - prev.z;
     if (dx * dx + dy * dy + dz * dz > thr2) {
       groups.push(current);
-      current = { calphas: [c], pts: [pt] };
+      current = { calphas: [c], pts: [pt], pts3d: [smooth3d[i]] };
     } else {
       current.calphas.push(c);
       current.pts.push(pt);
+      current.pts3d.push(smooth3d[i]);
     }
   }
   if (current.calphas.length) groups.push(current);
@@ -166,9 +201,10 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
   let globalMaxArc = -Infinity;
 
   for (const group of groups) {
-    const { calphas: groupCa, pts } = group;
+    const { calphas: groupCa, pts, pts3d } = group;
     const allSamples: UnrolledPoint[] = [];
     const allResidues: UnrolledResidue[] = [];
+    const allPositions: Vec[] = [];
     let sampleOffset = 0;
 
     // Sub-split by SS type so each run can be smoothed appropriately.
@@ -216,6 +252,9 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
         allSamples.push({ arc: s.x, z: s.y });
         if (s.x > globalMaxArc) globalMaxArc = s.x;
       }
+      allPositions.push(
+        ...samplePositions(pts3d.slice(start, end + 1), controlIndex, splineSamples.length),
+      );
       for (let i = 0; i < subN; i++) {
         const ca = groupCa[start + i];
         const z = ca.z - membraneCentre;
@@ -243,7 +282,7 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     }
     flushRun(runStart, groupCa.length - 1, runType);
 
-    segments.push({ samples: allSamples, residues: allResidues });
+    segments.push({ samples: allSamples, residues: allResidues, positions: allPositions });
   }
 
   if (!Number.isFinite(zMin)) {
@@ -255,12 +294,14 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
   // display expects.
   let minArc = Infinity;
   for (const seg of segments) for (const s of seg.samples) if (s.arc < minArc) minArc = s.arc;
+  let arcOffset = 0;
   if (Number.isFinite(minArc) && minArc !== 0) {
     for (const seg of segments) {
       for (const s of seg.samples) s.arc -= minArc;
       for (const r of seg.residues) r.arc -= minArc;
     }
     globalMaxArc -= minArc;
+    arcOffset = minArc;
   }
 
   return {
@@ -268,5 +309,6 @@ export function unwrapBarrel(calphas: Calpha[], options: UnwrapBarrelOptions): U
     totalArcLength: Number.isFinite(globalMaxArc) ? globalMaxArc : 0,
     zMin,
     zMax,
+    cylinder: { centre: { x: centre.x, y: centre.y }, radius, sign, arcOffset },
   };
 }

@@ -5,6 +5,7 @@ export type {
   UnrolledSegment,
   UnrolledResidue,
   UnrolledPoint,
+  CylinderMapping,
 } from './unroll.js';
 export { evaluate, sampleCurve, catmullRomBezier } from './catmull-rom.js';
 export type { Vec, SampledCurve, CubicBezier, BezierPath } from './catmull-rom.js';
