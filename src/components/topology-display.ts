@@ -17,6 +17,7 @@ import {
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
+import { ScrollBox, SCROLL_BOX_STYLES } from './scroll-box.js';
 import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
 import type { MorphController } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
@@ -31,6 +32,15 @@ const STYLES = `
     padding: 0.5rem;
     max-width: 100%;
   }
+  /* fit="content": as wide as the diagram, never scrolling (it may overflow
+     its parent). The default (fit="width") fills the available width and
+     scrolls the diagram horizontally when it is wider. */
+  :host([fit='content']) {
+    display: inline-block;
+    width: max-content;
+    max-width: none;
+  }
+  :host([fit='content']) .scroll-frame { width: max-content; }
   .protein-id {
     font-size: 1.1rem;
     font-weight: bold;
@@ -138,7 +148,7 @@ const STYLES = `
   .morph-scrub { width: 10rem; accent-color: #1f77b4; }
   .morph-hint { visibility: hidden; }
   .morph-bar.is-3d .morph-hint { visibility: visible; }
-`;
+${SCROLL_BOX_STYLES}`;
 
 const PLOT = {
   width: 1200,
@@ -1877,6 +1887,7 @@ export class TopologyDisplay extends HTMLElement {
   } | null = null;
   private _morph: MorphController | null = null;
   private _morphLoad: Promise<MorphController | null> | null = null;
+  private _scrollBox: ScrollBox | null = null;
   private _selectedChainId: string | null = null;
   private _styleEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
@@ -2067,6 +2078,8 @@ export class TopologyDisplay extends HTMLElement {
     this._morph = null;
     this._morphSource = null;
     this._morphLoad = null;
+    this._scrollBox?.dispose();
+    this._scrollBox = null;
     this._contentEl.replaceChildren();
 
     if (!this._data) {
@@ -2215,8 +2228,10 @@ export class TopologyDisplay extends HTMLElement {
     }
     block.appendChild(label);
 
-    const scroll = document.createElement('div');
-    scroll.className = 'svg-scroll';
+    // Only the diagram scrolls; the chain picker above stays put.
+    const box = new ScrollBox('svg-scroll');
+    this._scrollBox = box;
+    const scroll = box.scroll;
     // renderChainSvg now sizes itself from the smoothed-curve arc length so
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
@@ -2229,6 +2244,7 @@ export class TopologyDisplay extends HTMLElement {
       assembly,
     );
     scroll.appendChild(svg);
+    box.observe(svg);
     const bar = this.renderMorphBar(scene !== null);
     if (scene) {
       this._morphSource = {
@@ -2244,7 +2260,7 @@ export class TopologyDisplay extends HTMLElement {
       };
     }
     block.appendChild(bar);
-    block.appendChild(scroll);
+    block.appendChild(box.frame);
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
@@ -2299,6 +2315,8 @@ export class TopologyDisplay extends HTMLElement {
       scrub.value = String(Math.round(tau * 1000));
       toggle.setAttribute('aria-pressed', goal >= 0.5 ? 'true' : 'false');
       bar.classList.toggle('is-3d', tau > 0);
+      // The morph resizes and scrolls the picture, so the edges change too.
+      this._scrollBox?.update();
     };
   }
 }
