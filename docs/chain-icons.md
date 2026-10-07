@@ -18,9 +18,11 @@ Rows 2–5 are linear in z. Rows 1 and 6 compress everything further out into a
 single row, scaled to the furthest Cα across all chains so icons stay
 comparable.
 
-A chain is drawn as a mirrored violin: a Gaussian kernel density estimate of
-its Cα z positions, cut at the chain's highest and lowest Cα. The violin is
-stacked by secondary structure: helix innermost, strand around
+A chain is drawn as a mirrored violin built from a per-row histogram: its Cα
+are counted in each of the six rows (bin edges at the membrane centre, the two
+leaflet surfaces and ±2h), each row's count is spread evenly over the row, and
+a light Gaussian smoothing is applied on top. The violin is cut at the chain's
+highest and lowest Cα. It is stacked by secondary structure: helix innermost, strand around
 it, and coil as a pale outer halo, so the outer edge is the total density. All
 violins share one width scale, so a larger chain draws a wider violin.
 
@@ -36,9 +38,9 @@ faint layout grid shows on hover and on the selected chain.
 
 ## Attributes
 
-| Attribute        | Default                   | Meaning                          |
-| ---------------- | ------------------------- | -------------------------------- |
-| `icon-bandwidth` | membrane thickness (30 Å) | KDE bandwidth (Gaussian σ) in Å. |
+| Attribute        | Default                                        | Meaning                                                                       |
+| ---------------- | ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| `icon-bandwidth` | quarter membrane thickness (7.5 Å, half a row) | σ in Å of the smoothing over the per-row counts; 0 gives the plain histogram. |
 
 ## Membrane datum
 

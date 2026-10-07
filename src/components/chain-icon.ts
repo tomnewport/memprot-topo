@@ -15,8 +15,9 @@
  * Rows 2–5 are linear in z. Rows 1 and 6 compress everything beyond ±2h out to
  * a shared outer limit, so icons for chains of one protein stay comparable.
  *
- * A chain is drawn as a mirrored violin: a Gaussian KDE of its Cα z positions,
- * cut at the chain's extreme Cα, stacked by secondary structure (helix
+ * A chain is drawn as a mirrored violin of its Cα counted per row (bin edges
+ * at the membrane centre, leaflet surfaces and ±2h), lightly smoothed across
+ * rows and cut at the chain's extreme Cα, stacked by secondary structure (helix
  * innermost, then strand, then coil as a pale outer halo). A chain lying
  * entirely beyond ±2h is drawn instead as a rounded box hanging into the top
  * or bottom row, with the same layering by composition.
@@ -38,8 +39,8 @@ export const ICON = {
   frameRadius: 4,
   /** Columns the protein may occupy (centred). */
   proteinColumns: 3,
-  /** Violin samples per grid row: one keeps the outline to a few smooth curves. */
-  samplesPerRow: 1,
+  /** Violin samples per grid row (at row edges and centres). */
+  samplesPerRow: 2,
   /** Corner radius (px) of the box used for chains entirely outside the membrane. */
   boxRadius: 5,
   /** Inset (px) of each inner layer from the free end of a box. */
@@ -115,23 +116,36 @@ function ssAt(segments: SecondaryStructureSegment[], resSeq: number): SecondaryS
   return 'coil';
 }
 
+/** Standard normal CDF (Abramowitz & Stegun 7.1.26 erf; |error| < 1.5e-7). */
+function phi(x: number): number {
+  const t = 1 / (1 + (0.3275911 * Math.abs(x)) / Math.SQRT2);
+  const poly =
+    t *
+    (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+  const erf = 1 - poly * Math.exp(-(x * x) / 2);
+  return x >= 0 ? (1 + erf) / 2 : (1 - erf) / 2;
+}
+
 /**
- * Icon shape for one chain. `bandwidth` is the Gaussian KDE σ in Å. Density is
- * an unnormalised residue count per Å, so a larger chain draws a wider violin
+ * Icon shape for one chain. Cα are counted per grid row by secondary
+ * structure; each row's count is spread uniformly over the row and then
+ * smoothed with a Gaussian of σ = `smoothing` rows. The width at a point is
+ * therefore a residue count per row, so a larger chain draws a wider violin
  * once all icons share one width scale.
  */
 export function chainIconShape(
   chain: ChainData,
   membrane: IconMembrane,
-  bandwidth: number,
+  smoothing: number,
   zOuter: number,
 ): ChainIconShape | null {
   if (chain.calphas.length === 0) return null;
-  const residues = chain.calphas.map((ca) => ({
-    dz: ca.z - membrane.centre,
-    ss: ssAt(chain.segments, ca.resSeq),
-  }));
   const half = membrane.thickness / 2;
+  const residues = chain.calphas.map((ca) => {
+    const dz = ca.z - membrane.centre;
+    const row = Math.min(ICON.rows - 1, Math.floor(zToGridY(dz, half, zOuter)));
+    return { dz, row, ss: ssAt(chain.segments, ca.resSeq) };
+  });
   const zs = residues.map((r) => r.dz);
   const zMin = Math.min(...zs);
   const zMax = Math.max(...zs);
@@ -149,6 +163,18 @@ export function chainIconShape(
     };
   }
 
+  const bins: SsAmounts[] = Array.from({ length: ICON.rows }, () => ({
+    helix: 0,
+    strand: 0,
+    coil: 0,
+  }));
+  for (const r of residues) bins[r.row][r.ss]++;
+
+  // Fraction of row `r` (spanning [r, r + 1]) that a Gaussian of σ rows
+  // centred on `gy` covers; with σ → 0 this is the plain histogram.
+  const sigma = Math.max(smoothing, 1e-3);
+  const weight = (gy: number, r: number) => phi((gy - r) / sigma) - phi((gy - r - 1) / sigma);
+
   let gyTop = zToGridY(zMax, half, zOuter);
   let gyBot = zToGridY(zMin, half, zOuter);
   // A chain with no z extent still needs a visible sliver.
@@ -158,17 +184,24 @@ export function chainIconShape(
     gyBot = mid + 0.05;
   }
 
-  const n = Math.max(2, Math.ceil((gyBot - gyTop) * ICON.samplesPerRow) + 1);
-  const twoSigmaSq = 2 * bandwidth * bandwidth;
-  const norm = bandwidth * Math.sqrt(2 * Math.PI);
-  const samples: IconSample[] = [];
-  for (let i = 0; i < n; i++) {
-    const gy = gyTop + ((gyBot - gyTop) * i) / (n - 1);
-    const z = gridYToZ(gy, half, zOuter);
-    const d: SsAmounts = { helix: 0, strand: 0, coil: 0 };
-    for (const r of residues) d[r.ss] += Math.exp(-((z - r.dz) * (z - r.dz)) / twoSigmaSq) / norm;
-    samples.push({ gy, ...d, density: d.helix + d.strand + d.coil });
+  // Sample at the chain's extremes and at every row edge and centre between.
+  const step = 1 / ICON.samplesPerRow;
+  const gys = [gyTop];
+  for (let g = Math.floor(gyTop / step + 1) * step; g < gyBot - 1e-6; g += step) {
+    if (g - gys[gys.length - 1] > 1e-6) gys.push(g);
   }
+  gys.push(gyBot);
+
+  const samples: IconSample[] = gys.map((gy) => {
+    const d: SsAmounts = { helix: 0, strand: 0, coil: 0 };
+    for (let r = 0; r < ICON.rows; r++) {
+      const w = weight(gy, r);
+      d.helix += bins[r].helix * w;
+      d.strand += bins[r].strand * w;
+      d.coil += bins[r].coil * w;
+    }
+    return { gy, ...d, density: d.helix + d.strand + d.coil };
+  });
   return { kind: 'violin', samples };
 }
 

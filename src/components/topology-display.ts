@@ -1660,7 +1660,7 @@ function renderChainPicker(
   chains: ChainData[],
   chainLabels: Map<string, ChainLabel>,
   selectedId: string,
-  icon: { membrane: IconMembrane; bandwidth: number },
+  icon: { membrane: IconMembrane; smoothing: number },
   onSelect: (chainId: string) => void,
 ): HTMLDivElement {
   const container = document.createElement('div');
@@ -1668,7 +1668,7 @@ function renderChainPicker(
   container.setAttribute('role', 'group');
 
   const zOuter = iconZOuter(chains, icon.membrane);
-  const shapes = chains.map((c) => chainIconShape(c, icon.membrane, icon.bandwidth, zOuter));
+  const shapes = chains.map((c) => chainIconShape(c, icon.membrane, icon.smoothing, zOuter));
   const maxDensity = maxIconDensity(shapes);
 
   // Copies of the same chain (A(I), A(II), …) share one icon; a dropdown picks
@@ -1987,13 +1987,15 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Gaussian KDE bandwidth (σ, Å) for the chain-picker violins
-   * (`icon-bandwidth`). Defaults to the membrane thickness; invalid or
-   * non-positive values fall back to the default.
+   * Smoothing for the chain-picker violins (`icon-bandwidth`): the σ, in Å, of
+   * the Gaussian applied on top of the per-row residue counts. One row is half
+   * a membrane thickness, so the default of a quarter thickness is half a row.
+   * Invalid or negative values fall back to the default; 0 gives the plain
+   * per-row histogram.
    */
   private get iconBandwidth(): number {
     const v = Number.parseFloat(this.getAttribute('icon-bandwidth') ?? '');
-    return Number.isFinite(v) && v > 0 ? v : this.iconMembrane.thickness;
+    return Number.isFinite(v) && v >= 0 ? v : this.iconMembrane.thickness / 4;
   }
 
   /** Assemble the loop rendering options from the component's attributes. */
@@ -2124,7 +2126,11 @@ export class TopologyDisplay extends HTMLElement {
       pickerLabel.id = labelId;
       pickerLabel.textContent = 'Select chain';
       region.appendChild(pickerLabel);
-      const icon = { membrane: this.iconMembrane, bandwidth: this.iconBandwidth };
+      const icon = {
+        membrane: this.iconMembrane,
+        // Å → rows: one row is half a membrane thickness.
+        smoothing: this.iconBandwidth / (this.iconMembrane.thickness / 2),
+      };
       const picker = renderChainPicker(
         chainsWithCoords,
         displayLabels,
