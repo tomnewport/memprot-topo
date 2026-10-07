@@ -13,7 +13,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
-import { GALLERY_PROTEINS } from './gallery-data.mjs';
+import { GALLERY_PROTEINS, MORPH_VIEWS } from './gallery-data.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -37,32 +37,40 @@ async function main() {
   const hasPrev = existsSync(PREV_DIR);
   const hasNoPrevMarker = existsSync(join(PREV_DIR, 'no-base.txt'));
 
-  const rows = GALLERY_PROTEINS.map((protein) => {
-    const currentFile = `current/${protein.pdbId}.png`;
-    const prevFile = `previous/${protein.pdbId}.png`;
+  // The 2-D figure, then each 3-D morph view, per protein.
+  const variants = [{ suffix: '', label: '' }, ...MORPH_VIEWS];
+  const shots = GALLERY_PROTEINS.flatMap((protein) =>
+    variants.map((view) => ({ protein, name: `${protein.pdbId}${view.suffix}`, view })),
+  );
+  const rows = shots
+    .map(({ protein, name, view }) => {
+      const currentFile = `current/${name}.png`;
+      const prevFile = `previous/${name}.png`;
 
-    const currentExists = existsSync(join(ROOT, 'gallery-output', currentFile));
-    const prevExists =
-      hasPrev && !hasNoPrevMarker && existsSync(join(ROOT, 'gallery-output', prevFile));
+      const currentExists = existsSync(join(ROOT, 'gallery-output', currentFile));
+      const prevExists =
+        hasPrev && !hasNoPrevMarker && existsSync(join(ROOT, 'gallery-output', prevFile));
 
-    const currentCell = currentExists
-      ? imgTag(currentFile, `${protein.pdbId} current`)
-      : placeholder('Not generated');
+      const currentCell = currentExists
+        ? imgTag(currentFile, `${name} current`)
+        : placeholder('Not generated');
 
-    const prevCell = prevExists
-      ? imgTag(prevFile, `${protein.pdbId} previous`)
-      : placeholder(hasNoPrevMarker ? 'No baseline' : 'Not available');
+      const prevCell = prevExists
+        ? imgTag(prevFile, `${name} previous`)
+        : placeholder(hasNoPrevMarker ? 'No baseline' : 'Not available');
 
-    return `
+      return `
     <tr>
       <td style="padding:0.75rem;font-weight:500;vertical-align:top;white-space:nowrap;">
         ${protein.label}<br/>
         <code style="font-size:0.8rem;color:#6c757d;">${protein.pdbId.toUpperCase()}</code>
+        ${view.label ? `<br/><span style="font-size:0.8rem;color:#6c757d;">${view.label}</span>` : ''}
       </td>
       <td style="padding:0.75rem;vertical-align:top;">${prevCell}</td>
       <td style="padding:0.75rem;vertical-align:top;">${currentCell}</td>
     </tr>`;
-  }).join('\n');
+    })
+    .join('\n');
 
   const html = `<!doctype html>
 <html lang="en">

@@ -337,3 +337,12 @@ function toGalleryProtein(protein) {
 }
 
 export const GALLERY_PROTEINS = PROTEINS.map(toGalleryProtein);
+
+/**
+ * Views of the 2-D → 3-D morph captured for each protein besides the 2-D
+ * figure: progress τ and the file-name suffix after the PDB id.
+ */
+export const MORPH_VIEWS = [
+  { tau: 0.5, suffix: '-3d-half', label: '3-D morph, halfway (τ = 0.5)' },
+  { tau: 1, suffix: '-3d', label: '3-D view (τ = 1)' },
+];

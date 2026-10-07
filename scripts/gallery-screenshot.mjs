@@ -5,10 +5,11 @@
  * a self-contained page for each reference protein (using <topology-display>
  * with inline JSON data — no network fetching required).
  *
- * Screenshots are saved to gallery-output/current/{pdb-id}.png.
+ * Screenshots are saved to gallery-output/current/{pdb-id}.png, with the
+ * 3-D morph views (MORPH_VIEWS) alongside as {pdb-id}{suffix}.png.
  */
 import { chromium } from '@playwright/test';
-import { GALLERY_PROTEINS } from './gallery-data.mjs';
+import { GALLERY_PROTEINS, MORPH_VIEWS } from './gallery-data.mjs';
 import { mkdir } from 'fs/promises';
 import { existsSync, readFileSync, statSync, readdirSync } from 'fs';
 import { createServer } from 'http';
@@ -144,6 +145,15 @@ async function main() {
     const outPath = join(OUT_DIR, `${protein.pdbId}.png`);
     await el.screenshot({ path: outPath });
     console.log(`  Saved: ${outPath}`);
+
+    // The 2-D → 3-D morph, halfway and finished.
+    for (const view of MORPH_VIEWS) {
+      await el.evaluate((e, tau) => e.setMorphProgress(tau), view.tau);
+      await page.waitForTimeout(100);
+      const morphPath = join(OUT_DIR, `${protein.pdbId}${view.suffix}.png`);
+      await el.screenshot({ path: morphPath });
+      console.log(`  Saved: ${morphPath}`);
+    }
   }
 
   await browser.close();

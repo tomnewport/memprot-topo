@@ -13,7 +13,7 @@
  *   ARTIFACT_URL  — optional; URL to the uploaded artifact
  */
 import { writeFile } from 'fs/promises';
-import { GALLERY_PROTEINS } from './gallery-data.mjs';
+import { GALLERY_PROTEINS, MORPH_VIEWS } from './gallery-data.mjs';
 
 const { GITHUB_TOKEN, REPO, HEAD_BRANCH, BASE_BRANCH, ARTIFACT_URL } = process.env;
 
@@ -34,8 +34,8 @@ async function pathExists(branch, path) {
   return res.ok;
 }
 
-function imgTag(sanitizedBranch, pdbId, alt) {
-  const url = `https://github.com/${REPO}/raw/gallery-images/${sanitizedBranch}/${pdbId}.png`;
+function imgTag(sanitizedBranch, name, alt) {
+  const url = `https://github.com/${REPO}/raw/gallery-images/${sanitizedBranch}/${name}.png`;
   // Use the comment's full width — the unrolled view is fundamentally
   // wide-and-short and cramping it into a narrow table cell makes β-barrels
   // unreadable.
@@ -56,6 +56,25 @@ async function main() {
       }
     }
     const curr = imgTag(sanitizedHead, protein.pdbId, `${protein.pdbId} on ${HEAD_BRANCH}`);
+    // The 3-D morph views, folded away to keep the comment short.
+    const morph = [];
+    for (const view of MORPH_VIEWS) {
+      const name = `${protein.pdbId}${view.suffix}`;
+      let viewPrev = '<em>(no baseline yet)</em>';
+      if (sanitizedBase && (await pathExists('gallery-images', `${sanitizedBase}/${name}.png`))) {
+        viewPrev = imgTag(sanitizedBase, name, `${name} on ${BASE_BRANCH}`);
+      }
+      morph.push(
+        `**${view.label}, current:**`,
+        '',
+        imgTag(sanitizedHead, name, `${name} on ${HEAD_BRANCH}`),
+        '',
+        `**${view.label}, previous:**`,
+        '',
+        viewPrev,
+        '',
+      );
+    }
     sections.push(
       [
         `### ${protein.label} \`${protein.pdbId.toUpperCase()}\``,
@@ -67,6 +86,11 @@ async function main() {
         `**Previous (\`${BASE_BRANCH || 'n/a'}\`):**`,
         '',
         prev,
+        '',
+        '<details><summary>3-D morph</summary>',
+        '',
+        ...morph,
+        '</details>',
       ].join('\n'),
     );
   }
