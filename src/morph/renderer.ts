@@ -1377,7 +1377,12 @@ export class MorphRenderer {
         this.tmp[4] * LIGHT[0] + this.tmp[5] * LIGHT[1] + this.tmp[6] * LIGHT[2],
       );
       const capC = veil.apply(shade(base, AMBIENT + DIFFUSE * lam, 0, sigma, fog), lv);
-      const sideC = veil.apply(shade(base, AMBIENT + DIFFUSE * 0.05, 0, sigma, fog), lv);
+      // The far end shows only as the rounded end of the cylinder's side, so
+      // it takes the side's own gradient (a flat dark disc read as a second,
+      // detached cap when the helix is seen nearly end-on).
+      const gi = group[end === 0 ? 0 : Math.max(0, m - 2)];
+      const sideSpec: OpSpec = { layer: 1, key: `cyl${gi}`, kind: 'gradient' };
+      const sideGrad = grads[gi] ?? grads[0];
       const xs = ring.filter((_, k) => k % 2 === 0);
       const ys = ring.filter((_, k) => k % 2 === 1);
       prims.push({
@@ -1402,7 +1407,8 @@ export class MorphRenderer {
               1.5,
             );
           } else {
-            run.fill({ layer: 0, key: `cap-back${end}`, kind: 'fill' }, ring, sideC);
+            run.fill(sideSpec, ring, sideGrad.mean);
+            run.setGradient(sideSpec, sideGrad);
             run.stroke(
               { layer: 2, key: `cap-arc${end}`, kind: 'stroke', linecap: 'round' },
               arc,
@@ -1437,6 +1443,21 @@ export class MorphRenderer {
       arrowLength: lerp(el.withArrow ? st.arrowLengthPx : 0, opt.arrowLength * pxA, eW),
     });
     if (sections.length < 2) return;
+    // The arrowhead is one section from its base to the tip, much longer than
+    // a body section: depth-sorted as one piece, it could be painted over a
+    // strand lying in front of part of it. Cut it into pieces as long as body
+    // sections (it also follows the strand's curve round the barrel then).
+    const tip = sections[sections.length - 1];
+    const head = sections[sections.length - 2];
+    if (eW > 0 && tip.hw === 0 && tip.fi > head.fi) {
+      const pieces = Math.max(1, Math.round(opt.arrowLength / 1.3));
+      const inner: OutlineSection[] = [];
+      for (let k = 1; k < pieces; k++) {
+        const f = k / pieces;
+        inner.push({ ...head, fi: lerp(head.fi, tip.fi, f), hw: head.hw * (1 - f) });
+      }
+      sections.splice(sections.length - 1, 0, ...inner);
+    }
     const veil = ctx.veil;
     const kept = this.keepSections(sections, pts, lerp(0.5, 1.3, eW) * pxA);
     /** Membrane sheets in front of the centre line at outline index `fi`. */
