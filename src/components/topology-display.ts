@@ -19,7 +19,7 @@ import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../co
 import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
 import { ScrollBox, SCROLL_BOX_STYLES } from './scroll-box.js';
 import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
-import type { MorphController } from '../morph/controller.js';
+import type { MorphController, MorphView } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
 import { PROJECTIONS } from '../morph/projections.js';
 
@@ -2032,6 +2032,8 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   set proteinData(value: ProteinData | null) {
+    // Re-assigning the same object (e.g. from a framework re-render) is a no-op.
+    if (value === this._data) return;
     this._data = value;
     this._selectedChainId = null;
     this.dropUserSelection();
@@ -2060,7 +2062,7 @@ export class TopologyDisplay extends HTMLElement {
     else this.setAttribute('selection', `${value.chainId}:${value.start}-${value.end}`);
   }
 
-  attributeChangedCallback(name: string, _old: string | null, value: string | null) {
+  attributeChangedCallback(name: string, old: string | null, value: string | null) {
     if (name === 'selection') {
       // The page set its own selection: it is no longer the user's.
       if (value !== this._userSelection) this._userSelection = null;
@@ -2069,11 +2071,25 @@ export class TopologyDisplay extends HTMLElement {
         console.warn(`topology-display: ignoring invalid selection "${value}"`);
       }
       // Same chain on screen: restyle in place so keyboard focus survives.
-      // Otherwise the selected chain changes, which needs a full render.
+      // Otherwise the selected chain changes, which needs a redraw; it keeps
+      // the 2-D / 3-D view.
       if (this._shown && (!parsed || parsed.chainId === this._shown.chain.chainId)) {
         this.applySelection();
       } else {
-        this.render();
+        this.render({ keepView: true });
+      }
+      return;
+    }
+    if (
+      name === 'morph-sweep' ||
+      name === 'morph-projection' ||
+      name === 'morph-strand-width' ||
+      name === 'morph-strand-thickness'
+    ) {
+      // 3-D only: update the morph in place, keeping its view.
+      if (this._morphSource) {
+        this._morphSource.options = this.morphOptions;
+        this._morph?.setOptions(this._morphSource.options);
       }
       return;
     }
@@ -2081,16 +2097,13 @@ export class TopologyDisplay extends HTMLElement {
       name === 'debug-loops' ||
       name === 'loop-extreme-points' ||
       name === 'loop-extreme-threshold' ||
-      name === 'show-contacts' ||
-      name === 'morph-sweep' ||
-      name === 'morph-projection' ||
-      name === 'morph-strand-width' ||
-      name === 'morph-strand-thickness'
+      name === 'show-contacts'
     ) {
-      this.render();
+      // The 2-D drawing changes; keep the scroll position and 3-D view.
+      this.render({ keepView: true });
       return;
     }
-    if (name !== 'protein-data') return;
+    if (name !== 'protein-data' || value === old) return;
     if (value === null) {
       this._data = null;
     } else {
@@ -2163,6 +2176,15 @@ export class TopologyDisplay extends HTMLElement {
     return opts;
   }
 
+  /** Assemble the 3-D morph options from the component's attributes. */
+  private get morphOptions(): Partial<MorphOptions> {
+    return {
+      sweep: this.morphSweep,
+      ...PROJECTIONS[this.morphProjection],
+      ...this.morphStrandOptions,
+    };
+  }
+
   /** Assemble the loop rendering options from the component's attributes. */
   private get loopOptions(): LoopRenderOptions {
     const ext = this.getAttribute('loop-extreme-points');
@@ -2226,7 +2248,25 @@ export class TopologyDisplay extends HTMLElement {
     return this._morphLoad;
   }
 
-  private render() {
+  /**
+   * Rebuild the shadow DOM. With `keepView`, the redraw keeps the 3-D view
+   * (progress and any running animation) and, for the same chain, the 2-D
+   * scroll position and 3-D orbit.
+   */
+  private render({ keepView = false } = {}) {
+    const shownChain = this._shown?.chain.chainId ?? null;
+    const view: MorphView | null = !keepView
+      ? null
+      : (this._morph?.view ??
+        (this._scrollBox
+          ? {
+              tau: 0,
+              goal: 0,
+              animating: false,
+              orbit: { az: 0, el: 0 },
+              scroll0: this._scrollBox.scroll.scrollLeft,
+            }
+          : null));
     this._morph?.dispose();
     this._morph = null;
     this._morphSource = null;
@@ -2410,11 +2450,7 @@ export class TopologyDisplay extends HTMLElement {
         scroll,
         svg,
         scene,
-        options: {
-          sweep: this.morphSweep,
-          ...PROJECTIONS[this.morphProjection],
-          ...this.morphStrandOptions,
-        },
+        options: this.morphOptions,
         bar,
       };
     }
@@ -2423,6 +2459,21 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+
+    if (!view) return;
+    // Another chain keeps only how far it is rolled up into 3-D.
+    if (selectedChain.chainId === shownChain) this.restoreView(view);
+    else this.restoreView({ ...view, orbit: { az: 0, el: 0 }, scroll0: 0 });
+  }
+
+  /** Put the re-rendered chain back in `view`, loading the morph only if needed. */
+  private restoreView(view: MorphView): void {
+    this._scrollBox!.scroll.scrollLeft = view.scroll0;
+    if (view.tau <= 0 && !view.animating) return;
+    const src = this._morphSource;
+    void this.loadMorph().then((m) => {
+      if (m && this._morphSource === src) m.restore(view);
+    });
   }
 
   /** Chains that have Cα coordinates (the ones that can be drawn). */
