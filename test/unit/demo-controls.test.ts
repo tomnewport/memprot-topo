@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { TopologyDisplay } from '../../src/components/topology-display.js';
 import { DEMO_CONTROLS, mountDemoControls } from '../../src/demo-controls.js';
+import { DEFAULT_MORPH_OPTIONS } from '../../src/morph/renderer.js';
 
 function setup(n = 2): { panel: HTMLElement; displays: HTMLElement[]; reset: () => void } {
   const panel = document.createElement('div');
@@ -64,7 +65,7 @@ describe('demo controls', () => {
     for (const d of displays) expect(d.getAttribute('loop-extreme-points')).toBe('off');
 
     const width = input(panel, 'morph-strand-width');
-    expect(width.value).toBe('3.8');
+    expect(width.value).toBe(String(DEFAULT_MORPH_OPTIONS.strandWidth));
     width.value = '5';
     width.dispatchEvent(new Event('input'));
     for (const d of displays) expect(d.getAttribute('morph-strand-width')).toBe('5');
@@ -96,6 +97,6 @@ describe('demo controls', () => {
     expect(displays[0].getAttribute('morph-sweep')).toBe('0');
     reset();
     expect(displays[0].hasAttribute('morph-sweep')).toBe(false);
-    expect(sweep.value).toBe('0.35');
+    expect(sweep.value).toBe(String(DEFAULT_MORPH_OPTIONS.sweep));
   });
 });
