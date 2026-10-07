@@ -274,14 +274,23 @@ const BARREL = {
 
 /**
  * Minimum residue count for a helix/strand to be drawn as a discrete SS
- * element. Shorter assignments (1-2 residues) are folded into the surrounding
- * loop so they don't fragment it into multiple stubs.
+ * element (`min-helix-length`, `min-strand-length`). Shorter assignments are
+ * folded into the surrounding loop so they don't fragment it into stubs.
  */
-const MIN_SS_RESIDUES = 3;
+export const DEFAULT_MIN_HELIX_LENGTH = 4;
+export const DEFAULT_MIN_STRAND_LENGTH = 4;
 
-/** Drop sub-`MIN_SS_RESIDUES` helix/strand assignments so they read as coil. */
-function effectiveSsSegments(segments: SecondaryStructureSegment[]): SecondaryStructureSegment[] {
-  return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= MIN_SS_RESIDUES);
+interface SsMinLengths {
+  helix: number;
+  strand: number;
+}
+
+/** Drop helix/strand assignments shorter than `min` so they read as coil. */
+export function effectiveSsSegments(
+  segments: SecondaryStructureSegment[],
+  min: SsMinLengths,
+): SecondaryStructureSegment[] {
+  return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= min[s.type]);
 }
 
 function isBetaBarrel(chain: ChainData): boolean {
@@ -1246,12 +1255,11 @@ function renderChainSvg(
   // In barrel mode only the wall strands are drawn as strands; any β-strands
   // that fold inside the barrel (e.g. OmpF's L3) sit near the axis where the
   // unwrap angle is meaningless, so they read as part of the connecting loop.
-  const effective = effectiveSsSegments(chain.segments);
   const ssSegments = asm
     ? asm.wallSegments
     : analysis.cylindrical
-      ? barrelWallSegments(analysis, effective)
-      : effective;
+      ? barrelWallSegments(analysis, chain.segments)
+      : chain.segments;
   const unroll: UnrollResult = asm
     ? { segments: asm.segments, totalArcLength: 0, zMin: asm.zMin, zMax: asm.zMax }
     : analysis.cylindrical
@@ -1802,6 +1810,8 @@ export class TopologyDisplay extends HTMLElement {
     'morph-strand-width',
     'morph-strand-thickness',
     'icon-bandwidth',
+    'min-helix-length',
+    'min-strand-length',
     'selection',
   ];
 
@@ -1829,15 +1839,26 @@ export class TopologyDisplay extends HTMLElement {
   private _contentEl: HTMLDivElement;
   // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
   // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
-  private _assemblyCache: { data: ProteinData; analysis: BarrelAnalysis } | null = null;
+  private _assemblyCache: {
+    data: ProteinData;
+    min: SsMinLengths;
+    analysis: BarrelAnalysis;
+  } | null = null;
 
   /** Assembly-barrel analysis for the current proteinData, memoised. */
   private assemblyAnalysis(chains: ChainData[]): BarrelAnalysis {
-    if (this._assemblyCache && this._assemblyCache.data === this._data) {
-      return this._assemblyCache.analysis;
+    const min = this.ssMinLengths;
+    const cached = this._assemblyCache;
+    if (
+      cached &&
+      cached.data === this._data &&
+      cached.min.helix === min.helix &&
+      cached.min.strand === min.strand
+    ) {
+      return cached.analysis;
     }
     const analysis = analyseAssemblyBarrel(chains);
-    if (this._data) this._assemblyCache = { data: this._data, analysis };
+    if (this._data) this._assemblyCache = { data: this._data, min, analysis };
     return analysis;
   }
 
@@ -1909,7 +1930,9 @@ export class TopologyDisplay extends HTMLElement {
       name === 'morph-projection' ||
       name === 'morph-strand-width' ||
       name === 'morph-strand-thickness' ||
-      name === 'icon-bandwidth'
+      name === 'icon-bandwidth' ||
+      name === 'min-helix-length' ||
+      name === 'min-strand-length'
     ) {
       this.render();
       return;
@@ -2006,6 +2029,23 @@ export class TopologyDisplay extends HTMLElement {
   private get iconBandwidth(): number {
     const v = Number.parseFloat(this.getAttribute('icon-bandwidth') ?? '');
     return Number.isFinite(v) && v >= 0 ? v : 0;
+  }
+
+  /**
+   * Shortest helix and strand, in residues, drawn as SS elements
+   * (`min-helix-length`, `min-strand-length`; default 4 each). Shorter
+   * assignments read as coil everywhere, including β-barrel detection and the
+   * chain-picker icons. Invalid or negative values fall back to the default.
+   */
+  private get ssMinLengths(): SsMinLengths {
+    const read = (name: string, fallback: number): number => {
+      const v = Number.parseInt(this.getAttribute(name) ?? '', 10);
+      return Number.isFinite(v) && v >= 0 ? v : fallback;
+    };
+    return {
+      helix: read('min-helix-length', DEFAULT_MIN_HELIX_LENGTH),
+      strand: read('min-strand-length', DEFAULT_MIN_STRAND_LENGTH),
+    };
   }
 
   /** Assemble the loop rendering options from the component's attributes. */
@@ -2191,11 +2231,10 @@ export class TopologyDisplay extends HTMLElement {
 
     const label = document.createElement('div');
     label.className = 'chain-label';
-    const effective = effectiveSsSegments(selectedChain.segments);
-    const helices = effective.filter((s) => s.type === 'helix').length;
+    const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
     // Analyse the β-sheet topology once: it drives both the summary label and
     // the parallel-strand unwrap inside renderChainSvg.
-    const analysis = analyseBarrel(selectedChain.calphas, effective);
+    const analysis = analyseBarrel(selectedChain.calphas, selectedChain.segments);
     // Count physical strands from the analysis (overlapping SHEET records are
     // merged there); raw segment counts over-report on real structures.
     const strands = analysis.strands.length;
@@ -2280,11 +2319,17 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /** Chains that have Cα coordinates (the ones that can be drawn). */
+  /**
+   * Chains with Cα coordinates, their SS segments filtered by
+   * {@link ssMinLengths} so every consumer (barrel detection, the diagram,
+   * the picker icons) sees the same elements.
+   */
   private chainsWithCoords(): ChainData[] {
     // Don't mutate the caller's proteinData — consumers may share or memoise it.
-    return (this._data?.chains ?? []).filter(
-      (c) => Array.isArray(c.calphas) && c.calphas.length > 0,
-    );
+    const min = this.ssMinLengths;
+    return (this._data?.chains ?? [])
+      .filter((c) => Array.isArray(c.calphas) && c.calphas.length > 0)
+      .map((c) => ({ ...c, segments: effectiveSsSegments(c.segments, min) }));
   }
 
   /** Reflect a user's pick or click into the `selection` attribute. */
