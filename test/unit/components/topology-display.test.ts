@@ -321,9 +321,13 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(buttons[0].querySelector('.icon-violin')).not.toBeNull();
     expect(buttons[1].querySelector('.icon-box-top')).not.toBeNull();
     expect(buttons[1].querySelector('.icon-violin')).toBeNull();
-    // 5 × 6 grid of 10 px cells plus 2 px padding.
+    // TM helix chain: helix layer inside the coil halo.
+    expect(buttons[0].querySelector('.icon-helix')).not.toBeNull();
+    // 5 × 6 grid of 12 × 10 px cells plus 1 px padding.
     const svg = buttons[0].querySelector('svg')!;
-    expect(svg.getAttribute('viewBox')).toBe('0 0 54 64');
+    expect(svg.getAttribute('viewBox')).toBe('0 0 62 62');
+    // Chain label sits inside the icon.
+    expect(buttons[0].querySelector('.icon-label')!.textContent).toBe('A');
   });
 
   it('re-renders the chain icons when icon-bandwidth changes', () => {

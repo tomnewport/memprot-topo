@@ -72,13 +72,14 @@ const STYLES = `
     border: 1px solid transparent;
     background: transparent;
     cursor: pointer;
-    padding: 0.25rem 0.4rem 0.3rem;
-    border-radius: 4px;
+    padding: 0.2rem;
+    border-radius: 6px;
     display: flex;
-    flex-direction: column;
-    align-items: center;
     font-family: inherit;
   }
+  .chain-violin .icon-grid { display: none; }
+  .chain-violin:hover .icon-grid,
+  .chain-violin.selected .icon-grid { display: inline; }
   .chain-violin:hover { background: #eef3f8; }
   .chain-violin.selected {
     background: #e6f2ff;
@@ -88,17 +89,6 @@ const STYLES = `
     outline: 2px solid #1f77b4;
     outline-offset: 1px;
   }
-  .violin-label {
-    font-family: monospace;
-    font-size: 0.75rem;
-    color: #333;
-    margin-top: 0.2rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    line-height: 1.1;
-  }
-  .violin-label .residues { color: #777; font-size: 0.7rem; }
   .chain-picker-label {
     font-size: 0.75rem;
     color: #6c757d;
@@ -182,12 +172,16 @@ const COLOURS = {
 };
 
 const ICON_COLOURS: IconColours = {
-  helix: COLOURS.helix,
-  strand: COLOURS.strand,
-  coil: '#b5b5b5',
-  outline: '#5b6f8a',
-  membrane: '#e8edf3',
-  midline: '#bdbdbd',
+  helix: '#5b84d6',
+  strand: '#5cd99a',
+  coil: '#f7f7f7',
+  outline: '#2b2b2b',
+  frame: '#2b2b2b',
+  grid: '#d6d6d6',
+  membraneEdge: '#2b2b2b',
+  membraneDark: '#c4c4c4',
+  membraneLight: '#e9e9e9',
+  label: '#1a1a1a',
 };
 
 const LOOP = {
@@ -1618,16 +1612,8 @@ function renderChainPicker(
     button.className = 'chain-violin' + (chain.chainId === selectedId ? ' selected' : '');
     button.setAttribute('aria-pressed', chain.chainId === selectedId ? 'true' : 'false');
     button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
-    button.appendChild(renderChainIcon(chain, shapes[i], maxDensity, ICON_COLOURS));
-
-    const label = document.createElement('div');
-    label.className = 'violin-label';
-    const idNode = chainLabelNode(lbl);
-    const residues = document.createElement('span');
-    residues.className = 'residues';
-    residues.textContent = `${chain.residueCount} aa`;
-    label.append(idNode, residues);
-    button.appendChild(label);
+    button.title = `Chain ${lbl.text} · ${chain.residueCount} aa`;
+    button.appendChild(renderChainIcon(shapes[i], maxDensity, lbl, ICON_COLOURS));
 
     button.addEventListener('click', () => onSelect(chain.chainId));
     container.appendChild(button);

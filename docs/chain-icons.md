@@ -19,13 +19,18 @@ single row, scaled to the furthest Cα across all chains so icons stay
 comparable.
 
 A chain is drawn as a mirrored violin: a Gaussian kernel density estimate of
-its Cα z positions, cut at the chain's highest and lowest Cα. All violins share
-one width scale, so a larger chain draws a wider violin. The fill follows the
-chain's dominant secondary structure (helix blue, strand green, grey if it has
-neither).
+its Cα z positions, cut at the chain's highest and lowest Cα. The violin is
+stacked by secondary structure: helix (blue) innermost, strand (green) around
+it, and coil as a pale outer halo, so the outer edge is the total density. All
+violins share one width scale, so a larger chain draws a wider violin.
 
 A chain whose Cα all lie more than half a thickness outside the membrane is
-drawn instead as a rounded box filling the top or bottom row.
+drawn instead as a rounded box hanging into the top or bottom row, layered the
+same way by its secondary-structure composition.
+
+The chain label sits in the icon's lower-left corner, with a Roman-numeral
+suffix for copies of the same chain. The residue count is in the tooltip. A
+faint layout grid shows on hover and on the selected chain.
 
 ## Attributes
 

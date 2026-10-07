@@ -63,6 +63,9 @@ describe('chainIconShape', () => {
     expect(chainIconShape(chainAt('A', span(31, 70, 20)), MEMBRANE, 30, 70)).toEqual({
       kind: 'box',
       row: 'top',
+      helix: 1,
+      strand: 0,
+      coil: 0,
     });
   });
 
@@ -70,6 +73,9 @@ describe('chainIconShape', () => {
     expect(chainIconShape(chainAt('A', span(-70, -31, 20)), MEMBRANE, 30, 70)).toEqual({
       kind: 'box',
       row: 'bottom',
+      helix: 1,
+      strand: 0,
+      coil: 0,
     });
   });
 
@@ -90,6 +96,22 @@ describe('chainIconShape', () => {
       return Math.max(...d) / Math.min(...d);
     };
     expect(peakiness(3)).toBeGreaterThan(peakiness(30));
+  });
+
+  it('splits violin density by secondary structure', () => {
+    const chain: ChainData = {
+      ...chainAt('A', span(-15, 15, 20)),
+      segments: [{ start: 1, end: 10, type: 'strand' }],
+    };
+    const shape = chainIconShape(chain, MEMBRANE, 30, 45);
+    if (shape?.kind !== 'violin') throw new Error('expected violin');
+    for (const p of shape.samples) {
+      expect(p.helix).toBe(0);
+      expect(p.strand + p.coil).toBeCloseTo(p.density);
+    }
+    // Strand residues sit low (−15 → 0), coil high: strand dominates the bottom.
+    const bottom = shape.samples.at(-1)!;
+    expect(bottom.strand).toBeGreaterThan(bottom.coil);
   });
 
   it('returns null for a chain without coordinates', () => {
