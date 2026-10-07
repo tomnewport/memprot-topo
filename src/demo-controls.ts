@@ -8,10 +8,34 @@
  * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
  */
 import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
+import { registerTheme } from './theme/index.js';
 import {
   DEFAULT_MIN_HELIX_LENGTH,
   DEFAULT_MIN_STRAND_LENGTH,
 } from './components/topology-display.js';
+
+/** An example of a page's own theme (#26): black on white, heavier lines, square corners. */
+registerTheme('high-contrast', {
+  extends: 'light',
+  helix: '#4477aa',
+  helixEdge: '#000000',
+  strand: '#228833',
+  strandEdge: '#000000',
+  loop: '#000000',
+  membrane: '#dddddd',
+  membraneEdge: '#000000',
+  midplane: '#000000',
+  label: '#000000',
+  text: '#000000',
+  textMuted: '#333333',
+  border: '#000000',
+  outlineWidth: 2,
+  loopWidth: 2.5,
+  cornerRadius: 0,
+  lineJoin: 'miter',
+});
+
+const THEMES = ['light', 'dark', 'high-contrast'];
 
 interface BaseControl {
   attribute: string;
@@ -160,6 +184,30 @@ export const DEMO_CONTROLS: DemoControl[] = [
     step: 0.5,
     scope: 'all',
     description: 'Smoothing σ (Å) of the chain-picker violins; 0 is the plain histogram.',
+  },
+  {
+    attribute: 'theme',
+    kind: 'select',
+    default: 'auto',
+    options: ['auto', ...THEMES],
+    scope: 'all',
+    description: 'Theme to use whatever the colour scheme; auto follows the system.',
+  },
+  {
+    attribute: 'theme-light',
+    kind: 'select',
+    default: 'light',
+    options: THEMES,
+    scope: 'all',
+    description: 'Theme for a light system colour scheme (when theme is auto).',
+  },
+  {
+    attribute: 'theme-dark',
+    kind: 'select',
+    default: 'dark',
+    options: THEMES,
+    scope: 'all',
+    description: 'Theme for a dark system colour scheme (when theme is auto).',
   },
   {
     // CSS-only (`:host([fit])`), so not in observedAttributes.
