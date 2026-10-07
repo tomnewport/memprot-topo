@@ -72,7 +72,7 @@ the other view instead of animating.
 
 Attribute and data changes keep the view. The `morph-*` attributes update the
 3-D picture in place, so it keeps its progress, orbit and any running
-animation. 2-D drawing attributes (`debug-loops`, `loop-*`, `show-contacts`, `min-*-length`),
+animation. 2-D drawing attributes (`debug-loops`, `loop-*`, `show-contacts`, `min-*-length`, residue data and `colour-*`),
 a chain switch and new protein data redraw but restore the scroll position and
 3-D view; new data also keeps the user's chain pick and selection when it has
 that chain. `icon-bandwidth` redraws only the chain picker. Re-assigning the

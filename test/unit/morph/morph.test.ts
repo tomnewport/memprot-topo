@@ -573,6 +573,16 @@ describe('<topology-display> 3-D morph', () => {
     );
   });
 
+  it('keeps the 3-D view when residue data changes', async () => {
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(1);
+    el.residueColours = { A: { 1: 0.2, 2: 0.8 } };
+    el.setAttribute('residue-widths', '{"A":{"1":1.5}}');
+    el.setAttribute('colour-label', 'Conservation');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(el.morphProgress).toBe(1);
+  });
+
   it('ignores re-assigning the same protein data', async () => {
     const el = mount(hairpinChain());
     await el.setMorphProgress(1);
