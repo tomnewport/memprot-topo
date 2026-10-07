@@ -241,14 +241,17 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(fills).toContain('#6e8db6'); // helix
   });
 
-  it('renders a membrane slab rect at z = ±15', () => {
+  it('renders the membrane as a band between the default leaflets at z = ±20', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tmHelixProtein();
-    const rect = el.shadowRoot!.querySelector('.svg-scroll svg rect');
-    expect(rect).not.toBeNull();
-    expect(rect!.getAttribute('y')).toBe('-15');
-    expect(rect!.getAttribute('height')).toBe('30');
+    const band = el.shadowRoot!.querySelector('.svg-scroll svg path.membrane');
+    expect(band).not.toBeNull();
+    const zs = [...band!.getAttribute('d')!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((m) =>
+      Number(m[2]),
+    );
+    expect(Math.max(...zs)).toBeCloseTo(20, 5);
+    expect(Math.min(...zs)).toBeCloseTo(-20, 5);
   });
 
   it('does not render the main unrolled SVG when chain has no Cα', () => {
@@ -310,7 +313,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
         iCode: '',
         x: i,
         y: 0,
-        z: 40 + i,
+        z: 45 + i,
       })),
     };
     const el = new TopologyDisplay();
@@ -536,7 +539,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     // betaBarrelChain has 3 inter-strand loops → 3 path elements.
-    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    const loopPaths = Array.from(svg!.querySelectorAll('path:not(.membrane)'));
     expect(loopPaths.length).toBe(3);
     // Each loop is a smooth cubic-Bézier spline: a moveto followed by multiple
     // `C` segments, with no straight `L` rasterisation.
@@ -554,7 +557,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
-    const loopPaths = svg!.querySelectorAll('path');
+    const loopPaths = svg!.querySelectorAll('path:not(.membrane)');
     expect(loopPaths.length).toBeGreaterThan(0);
     for (const p of loopPaths) {
       expect(p.getAttribute('stroke-dasharray')).toBeNull();
@@ -567,7 +570,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     el.proteinData = discontinuousLoopProtein();
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
-    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    const loopPaths = Array.from(svg!.querySelectorAll('path:not(.membrane)'));
     // One loop with sequence gaps.
     expect(loopPaths.length).toBe(1);
     expect(loopPaths[0].getAttribute('stroke-dasharray')).toBe('3 5');
@@ -586,7 +589,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     el.setAttribute('debug-loops', 'on');
     markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
     expect(markers.length).toBe(12);
-    expect(el.shadowRoot!.querySelectorAll('.svg-scroll svg path').length).toBe(3);
+    expect(el.shadowRoot!.querySelectorAll('.svg-scroll svg path:not(.membrane)').length).toBe(3);
   });
 
   it('adds two vertical-extreme control points when a loop overshoots the tangent range', () => {
@@ -635,7 +638,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     // The spurious 2-residue helix is dropped: only the two real helices are
     // drawn as SS polygons, joined by a single continuous loop path.
     expect(svg!.querySelectorAll('polygon').length).toBe(2);
-    const loopPaths = Array.from(svg!.querySelectorAll('path'));
+    const loopPaths = Array.from(svg!.querySelectorAll('path:not(.membrane)'));
     expect(loopPaths.length).toBe(1);
     expect(loopPaths[0].getAttribute('stroke-dasharray')).toBeNull();
   });
@@ -681,7 +684,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     // No in-segment loops; the only path is the break connector.
-    const paths = Array.from(svg!.querySelectorAll('path'));
+    const paths = Array.from(svg!.querySelectorAll('path:not(.membrane)'));
     expect(paths.length).toBe(1);
     const d = paths[0].getAttribute('d') ?? '';
     expect(d.startsWith('M')).toBe(true);
@@ -699,7 +702,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     // The trailing coil of segment 1 and the leading coil of segment 2 should
     // NOT appear as separate stub paths — only the one cross-break connector.
-    const paths = Array.from(svg!.querySelectorAll('path'));
+    const paths = Array.from(svg!.querySelectorAll('path:not(.membrane)'));
     expect(paths.length).toBe(1);
     expect(paths[0].getAttribute('stroke-dasharray')).toBe('3 5');
   });

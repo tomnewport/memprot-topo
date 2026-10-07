@@ -16,8 +16,19 @@ export interface MorphScene {
   loops: MorphLoop[];
   labels: MorphLabel[];
   ties: MorphTie[];
-  /** Membrane slab as drawn in 2-D, in display Å (x from x0 to x1, z ±half). */
-  slab: { x0: number; x1: number; half: number };
+  /**
+   * Membrane as drawn in 2-D, in display Å: x from x0 to x1, bulk leaflets at
+   * z = upper and lower. `profile`, when given, is the leaflet heights the
+   * 2-D view actually drew along x (bulk at the ends, local in between); the
+   * morph starts from it and flattens it onto the bulk planes.
+   */
+  slab: {
+    x0: number;
+    x1: number;
+    upper: number;
+    lower: number;
+    profile?: { x: number[]; upper: number[]; lower: number[] };
+  };
   /** How display Å map to SVG user units in the 2-D picture. */
   frame: MorphFrame;
   /** Fixed display gap between consecutive elements (Å). */

@@ -16,6 +16,7 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | `src/components/ss-outline.ts` | AI-generated | Helix/strand outline geometry shared by the 2-D view and the morph.               |
 | `src/components/chain-icon.ts` | AI-generated | Chain-picker icons on a 5 × 6 membrane grid (issue #20).                          |
 | `src/components/scroll-box.ts` | AI-generated | Scrolling diagram box with edge gradients and arrows (issue #21).                 |
+| `src/membrane/`                | AI-generated | Leaflet positions, MemProtMD distortions files, membrane profile (issue #24).     |
 
 ## Disclosure Guidelines
 

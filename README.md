@@ -40,3 +40,4 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 - [docs/sizing.md](docs/sizing.md) — `fit` attribute and the scrolling diagram box
 - [docs/selection.md](docs/selection.md) — the `selection` attribute and selection events
 - [docs/secondary-structure.md](docs/secondary-structure.md) — `min-helix-length` and `min-strand-length`
+- [docs/membrane.md](docs/membrane.md) — membrane leaflet positions and MemProtMD distortions files

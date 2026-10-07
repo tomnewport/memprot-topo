@@ -2,6 +2,7 @@ import type { ProteinData } from '../types.js';
 import { parsePdb } from '../parser/pdb.js';
 import { parseDsspMmcif } from '../parser/dssp-mmcif.js';
 import { mergeProteinData } from '../parser/merge.js';
+import { parseDistortions, type MembraneDistortions } from '../membrane/distortions.js';
 import { TopologyDisplay } from './topology-display.js';
 
 const STYLES = `
@@ -12,10 +13,12 @@ const STYLES = `
 `;
 
 export class TopologyLoader extends HTMLElement {
-  static observedAttributes = ['pdb-id', 'sim-id'];
+  static observedAttributes = ['pdb-id', 'sim-id', 'distortions'];
 
   private _pdbId: string | null = null;
   private _simId: string | null = null;
+  /** URL of a MemProtMD bilayer-distortions file for the structure. */
+  private _distortionsUrl: string | null = null;
   private _generation = 0;
   private _abortController: AbortController | null = null;
   private _styleEl: HTMLStyleElement;
@@ -34,6 +37,7 @@ export class TopologyLoader extends HTMLElement {
     if (oldValue === value) return;
     if (name === 'pdb-id') this._pdbId = value;
     else if (name === 'sim-id') this._simId = value;
+    else if (name === 'distortions') this._distortionsUrl = value;
     if (this.isConnected) this.load();
   }
 
@@ -66,8 +70,9 @@ export class TopologyLoader extends HTMLElement {
     this._contentEl.replaceChildren(errDiv, detailDiv);
   }
 
-  private renderData(data: ProteinData) {
+  private renderData(data: ProteinData, distortions: MembraneDistortions | null) {
     const display = document.createElement('topology-display') as TopologyDisplay;
+    if (distortions) display.distortions = distortions;
     display.proteinData = data;
     this._contentEl.replaceChildren(display);
   }
@@ -87,6 +92,24 @@ export class TopologyLoader extends HTMLElement {
     const pdbUrl = `https://memprotmd.bioch.ox.ac.uk/data/memprotmd/simulations/${simId}/files/structures/at.pdb`;
     const dsspUrl = `https://pdb-redo.eu/dssp/get?pdb-id=${pdbId}&format=mmcif`;
 
+    // The distortions file is optional: if it can't be fetched or parsed the
+    // structure is still drawn, against the default membrane.
+    const distortionsUrl = this._distortionsUrl;
+    const distortionsLoad: Promise<MembraneDistortions | null> = distortionsUrl
+      ? fetch(distortionsUrl, { signal: controller.signal })
+          .then(async (resp) => {
+            if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+            return parseDistortions(await resp.text());
+          })
+          .catch((err: unknown) => {
+            if ((err as { name?: string })?.name !== 'AbortError') {
+              const message = err instanceof Error ? err.message : String(err);
+              console.warn(`topology-loader: ignoring distortions file: ${message}`);
+            }
+            return null;
+          })
+      : Promise.resolve(null);
+
     try {
       const [pdbResp, dsspResp] = await Promise.all([
         fetch(pdbUrl, { signal: controller.signal }),
@@ -100,7 +123,11 @@ export class TopologyLoader extends HTMLElement {
         throw new Error(`DSSP fetch failed: ${dsspResp.status} ${dsspResp.statusText}`);
       }
 
-      const [pdbText, dsspText] = await Promise.all([pdbResp.text(), dsspResp.text()]);
+      const [pdbText, dsspText, distortions] = await Promise.all([
+        pdbResp.text(),
+        dsspResp.text(),
+        distortionsLoad,
+      ]);
 
       if (myGen !== this._generation || !this.isConnected) return;
 
@@ -108,7 +135,7 @@ export class TopologyLoader extends HTMLElement {
       const ssSegments = parseDsspMmcif(dsspText);
       const proteinData = mergeProteinData(pdbId, chains, ssSegments);
 
-      this.renderData(proteinData);
+      this.renderData(proteinData, distortions);
     } catch (err) {
       if ((err as { name?: string })?.name === 'AbortError') return;
       if (myGen !== this._generation || !this.isConnected) return;

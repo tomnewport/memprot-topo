@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TopologyLoader } from '../../../src/components/topology-loader.js';
+import { TopologyDisplay } from '../../../src/components/topology-display.js';
+import { syntheticDistortions } from '../fixtures/distortions.js';
 
 // Minimal PDB with 11 CA atoms spanning z = -20 to +20 (simulates a TM helix).
 const MINIMAL_PDB = `\
@@ -150,6 +152,54 @@ describe('TopologyLoader', () => {
 
     const display = el.shadowRoot!.querySelector('topology-display');
     expect(display).not.toBeNull();
+  });
+
+  it('fetches the distortions file named by the distortions attribute and hands it on', async () => {
+    const DIST_URL = 'https://example.org/1abc_default_dppc-distortions.pdb';
+    const distText = syntheticDistortions({
+      midplane: 40,
+      half: 19,
+      centre: { x: 0, y: 0 },
+      radius: 30,
+    });
+    fetchMock.mockImplementation((url: string) => {
+      const text =
+        url === DIST_URL ? distText : url.includes('pdb-redo.eu') ? MINIMAL_MMCIF : MINIMAL_PDB;
+      return Promise.resolve({ ok: true, text: () => Promise.resolve(text) });
+    });
+    const el = attach(new TopologyLoader());
+    el.setAttribute('distortions', DIST_URL);
+    el.setAttribute('pdb-id', '1abc');
+
+    await flushPromises();
+
+    expect(fetchMock.mock.calls.map((c) => c[0])).toContain(DIST_URL);
+    const display = el.shadowRoot!.querySelector('topology-display') as TopologyDisplay;
+    expect(display).toBeInstanceOf(TopologyDisplay);
+    expect(display.distortions?.midplane).toBeCloseTo(40, 6);
+    expect(display.membrane?.bulk.upper).toBeCloseTo(19, 6);
+  });
+
+  it('still draws the structure when the distortions file cannot be fetched', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('missing')) {
+        return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' });
+      }
+      const text = url.includes('pdb-redo.eu') ? MINIMAL_MMCIF : MINIMAL_PDB;
+      return Promise.resolve({ ok: true, text: () => Promise.resolve(text) });
+    });
+    const el = attach(new TopologyLoader());
+    el.setAttribute('distortions', 'https://example.org/missing.pdb');
+    el.setAttribute('pdb-id', '1abc');
+
+    await flushPromises();
+
+    const display = el.shadowRoot!.querySelector('topology-display') as TopologyDisplay;
+    expect(display).not.toBeNull();
+    expect(display.distortions).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/404/));
+    warn.mockRestore();
   });
 
   it('renders an error when the PDB fetch fails', async () => {

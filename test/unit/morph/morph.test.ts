@@ -117,7 +117,7 @@ function sceneFor(
     loops: [],
     labels: [],
     ties: [],
-    slab: { x0: 0, x1: maxArc, half: 15 },
+    slab: { x0: 0, x1: maxArc, upper: 15, lower: -15 },
     frame: {
       originX: 40,
       originY: 100,
@@ -264,6 +264,47 @@ describe('morph pose (arc-length unroll)', () => {
       }
       expect(len).toBeCloseTo(lenD, 6);
     }
+  });
+});
+
+describe('morph membrane', () => {
+  const chain = hairpinChain();
+  const unroll = unrollChain(chain.calphas, { ssSegments: chain.segments });
+  const flat = sceneFor('polyline', unroll, chain.segments);
+  // The same scene with a 2-D profile that dips 6 Å in the middle.
+  const { x0, x1 } = flat.slab;
+  const xs = Array.from({ length: 101 }, (_, i) => x0 + ((x1 - x0) * i) / 100);
+  const dip = (x: number) => -6 * Math.exp(-(((x - (x0 + x1) / 2) / 6) ** 2));
+  const dipped: MorphScene = {
+    ...flat,
+    slab: {
+      ...flat.slab,
+      profile: { x: xs, upper: xs.map((x) => 15 + dip(x)), lower: xs.map((x) => -15 - dip(x)) },
+    },
+  };
+
+  /** The membrane rim's path data (the first path of the back layer). */
+  function rimAt(scene: MorphScene, tau: number): string {
+    const r = new MorphRenderer(buildMorphModel(scene));
+    r.configure(900, 0);
+    r.render(tau);
+    return r.svg.querySelector('path')!.getAttribute('d')!;
+  }
+
+  /** Spread of the rim's projected y coordinates. */
+  function ySpread(d: string): number {
+    const ys = [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((m) => Number(m[2]));
+    return Math.max(...ys) - Math.min(...ys);
+  }
+
+  it('starts from the 2-D membrane profile and flattens it onto the bulk planes', () => {
+    // Near t = 0 the rim follows the dip, so its outline differs from the flat one.
+    expect(rimAt(dipped, 0.001)).not.toBe(rimAt(flat, 0.001));
+    expect(rimAt(dipped, 0.001)).not.toMatch(/NaN|Infinity/);
+    // By t = 0.3 the dip is gone and the rim is the flat bulk band.
+    expect(rimAt(dipped, 0.35)).toBe(rimAt(flat, 0.35));
+    // The flat band edge-on is exactly as tall as the bulk slab.
+    expect(ySpread(rimAt(flat, 0))).toBeCloseTo(30 * flat.frame.pxPerA, 0);
   });
 });
 

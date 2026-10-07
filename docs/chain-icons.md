@@ -44,8 +44,7 @@ faint layout grid shows on hover and on the selected chain.
 
 ## Membrane datum
 
-Rows are measured from the membrane centre. Input coordinates are expected in
-the OPM / MemProtMD membrane frame, where z = 0 is the bulk bilayer midplane,
-so the centre is currently z = 0 and the thickness is 30 Å. Explicit bulk and
-annular leaflet positions are tracked in #24; once they exist, the bulk centre
-and thickness will feed the icons.
+Rows are measured from the centre of the bulk membrane, and h is half the bulk
+thickness: by default the leaflets sit at ±20 Å, so the centre is z = 0 and
+h = 20 Å. Explicit leaflet positions and MemProtMD distortions files change
+both; see [membrane.md](membrane.md).
