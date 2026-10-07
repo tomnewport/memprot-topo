@@ -18,15 +18,18 @@ import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import { ssOutline, outlinePolygon, outlineSlice, type OutlinePoint } from './ss-outline.js';
 import {
-  factorAtSample,
   measure,
+  monotoneCubic,
   parseSeriesAttribute,
   readDataTheme,
   renderLegend,
   resolveColouring,
   residueSpans,
+  ribbon,
+  ribbonSlice,
   slicePolyline,
   widthFactors,
+  widthProfile,
   type Colouring,
   type ResidueColourValues,
   type ResidueWidthValues,
@@ -565,7 +568,7 @@ function drawSsPolygon(
   for (let i = startIdx; i <= endIdx; i++) {
     screen.push({ sx: samples[i].arc * PLOT.arcPxPerA, sy: -samples[i].z * PLOT.zPxPerA });
   }
-  const sections = ssOutline(screen, withArrow, {
+  let sections = ssOutline(screen, withArrow, {
     halfWidth: SS_BODY.halfWidthPx,
     arrowHalfWidth: SS_BODY.arrowHalfWidthPx,
     arrowLength: SS_BODY.arrowLengthPx,
@@ -576,10 +579,18 @@ function drawSsPolygon(
       .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
       .join(' ');
 
-  // Per-residue width: scale each cross-section by the factor interpolated
-  // between the residues either side of it.
+  // Per-residue width: scale the body by a smooth profile through the
+  // residues' factors. Arrow wings keep their flare beyond the body, so a
+  // strand still shows its direction at zero width. A sliver of width is kept
+  // so the outline doesn't collapse; its stroke then draws the bare line.
   if (data && data.widths.size > 0) {
-    for (const s of sections) s.hw *= factorAtSample(residues, data.widths, startIdx + s.fi);
+    const profile = widthProfile(residues, data.widths);
+    const flare = SS_BODY.arrowHalfWidthPx - SS_BODY.halfWidthPx;
+    sections = sections.map((s) => {
+      if (s.hw === 0) return s; // arrow tip
+      const body = Math.max(0.05, SS_BODY.halfWidthPx * profile(startIdx + s.fi));
+      return { ...s, hw: s.hw === SS_BODY.arrowHalfWidthPx ? body + flare : body };
+    });
   }
 
   // Per-residue colour: one fill slice per residue under the outline, which is
@@ -832,12 +843,17 @@ function renderLoopCurve(
 /** Loop stroke width in screen pixels. */
 const LOOP_STROKE_PX = 1.8;
 
+/** Narrowest a loop is drawn (screen px), at a width factor of 0: a hairline. */
+const LOOP_MIN_WIDTH_PX = 0.5;
+
 /**
- * Draw a loop's residues as consecutive stroke pieces over the loop curve,
- * each coloured and sized by its residue's data. Residues share the curve's
- * length equally, in sequence order, since the loop is a smoothed connector
- * rather than a residue-by-residue trace. Returns false when no residue has
- * data (the plain curve then stands alone).
+ * Draw a loop's residues as consecutive pieces over the loop curve, each
+ * coloured and sized by its residue's data. Residues share the curve's length
+ * equally, in sequence order, since the loop is a smoothed connector rather
+ * than a residue-by-residue trace. With width data the loop becomes a filled
+ * ribbon whose width follows a smooth profile through the residue centres;
+ * otherwise (and for dashed loops) each residue is a stroke piece. Returns
+ * false when no residue has data (the plain curve then stands alone).
  */
 function drawLoopData(
   plot: SVGGElement,
@@ -879,6 +895,38 @@ function drawLoopData(
   const group = document.createElementNS(SVG_NS, 'g');
   group.setAttribute('class', 'residue-stroke');
   group.setAttribute('pointer-events', 'none');
+  const widthPx = (f: number): number => Math.max(LOOP_MIN_WIDTH_PX, LOOP_STROKE_PX * f);
+
+  if (!discontinuous && loopResidues.some((r) => data.widths.has(r.resSeq))) {
+    const profile = monotoneCubic(
+      loopResidues.map((_, k) => ((k + 0.5) / n) * total),
+      loopResidues.map((r) => data.widths.get(r.resSeq) ?? 1),
+    );
+    // Plot units are Å; the plot scale is uniform (1:1 aspect).
+    const rib = ribbon(poly, (d) => widthPx(profile(d)) / 2 / PLOT.arcPxPerA);
+    for (let k = 0; k < n; k++) {
+      const resSeq = loopResidues[k].resSeq;
+      const colour = data.colour?.(resSeq) ?? COLOURS.coil;
+      const piece = document.createElementNS(SVG_NS, 'polygon');
+      piece.setAttribute(
+        'points',
+        ribbonSlice(rib, (k / n) * total, ((k + 1) / n) * total)
+          .map((q) => `${q.x.toFixed(3)},${q.y.toFixed(3)}`)
+          .join(' '),
+      );
+      piece.setAttribute('fill', colour);
+      // A hairline of the same colour hides anti-aliasing seams between pieces.
+      piece.setAttribute('stroke', colour);
+      piece.setAttribute('stroke-width', '0.4');
+      piece.setAttribute('stroke-linejoin', 'round');
+      piece.setAttribute('vector-effect', 'non-scaling-stroke');
+      piece.dataset.res = String(resSeq);
+      group.appendChild(piece);
+    }
+    plot.appendChild(group);
+    return true;
+  }
+
   for (let k = 0; k < n; k++) {
     const piece = slicePolyline(poly, (k / n) * total, ((k + 1) / n) * total);
     const resSeq = loopResidues[k].resSeq;
@@ -889,7 +937,7 @@ function drawLoopData(
     );
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', data.colour?.(resSeq) ?? COLOURS.coil);
-    const w = LOOP_STROKE_PX * (data.widths.get(resSeq) ?? 1);
+    const w = widthPx(data.widths.get(resSeq) ?? 1);
     path.setAttribute('stroke-width', w.toFixed(2));
     // Round caps join the pieces without gaps at bends.
     path.setAttribute('stroke-linecap', discontinuous ? 'butt' : 'round');
@@ -2096,8 +2144,9 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Per-residue width change in percent, `{ chainId: { resSeq: percent } }`:
-   * 30 draws the residue 30 % wider, −50 half as wide (floored at −90 %).
+   * Per-residue width relative to the normal width, `{ chainId: { resSeq:
+   * factor } }`: 1 is unchanged, 1.5 half as wide again, 0 a bare line
+   * (negative values count as 0). Widths vary smoothly between residues.
    * Mirrors the `residue-widths` attribute (JSON).
    */
   get residueWidths(): ResidueWidthValues | null {

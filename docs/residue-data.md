@@ -10,7 +10,7 @@ width.
 <script type="module">
   const view = document.querySelector('topology-display');
   view.residueColours = { A: { 45: 0.7, 46: 0.2 } }; // numerical colour scale
-  view.residueWidths = { A: { 45: 30, 46: -20 } }; // +30 %, −20 % width
+  view.residueWidths = { A: { 45: 1.5, 46: 0 } }; // 1.5× width, line only
 </script>
 ```
 
@@ -19,14 +19,17 @@ width.
 Both series are keyed by chain ID, then author residue number (`resSeq`, as in
 the PDB file):
 
-| Property         | Attribute (JSON)  | Values                                    |
-| ---------------- | ----------------- | ----------------------------------------- |
-| `residueColours` | `residue-colours` | category names (strings) or numbers       |
-| `residueWidths`  | `residue-widths`  | percentage width change, floored at −90 % |
+| Property         | Attribute (JSON)  | Values                                |
+| ---------------- | ----------------- | ------------------------------------- |
+| `residueColours` | `residue-colours` | category names (strings) or numbers   |
+| `residueWidths`  | `residue-widths`  | width factor: 1 normal, 0 a bare line |
 
 Set the property with an object, or the attribute with the same object as
 JSON. Residues with no value keep the normal style (helix/strand colour, plain
-loop width). Data for chains other than the one shown is kept, so switching
+loop width). Widths are factors of the normal width: 1.5 is half as wide
+again, 0 draws the element as a bare line (its outline; a hairline for loops),
+and negative values count as 0. To map another quantity, scale it first, e.g.
+`2 × contact fraction`. Data for chains other than the one shown is kept, so switching
 chain shows that chain's values with the same colour mapping.
 
 ## Colour modes
@@ -78,10 +81,13 @@ is exported. Width changes have no legend.
 
 - Helices and strands are filled residue by residue: each residue owns the
   stretch of the element from halfway after the previous residue to halfway
-  before the next. Widths are interpolated between residues, so the outline
-  stays smooth; strand arrowheads scale with their last residue.
+  before the next. Widths follow a smooth curve through the residues' values
+  (monotone cubic, so it never overshoots between them). A strand arrowhead
+  keeps its flare beyond the body, so its direction shows at zero width.
 - Loops are smoothed connectors rather than residue-by-residue traces, so
-  their residues share the loop's length equally, in sequence order.
+  their residues share the loop's length equally, in sequence order. With
+  width data a loop is drawn as a ribbon whose width follows the same kind of
+  smooth curve through the residue centres.
 - Residues absorbed into a dashed chain-break connector, and neighbouring
   protomers in an assembly barrel, are not styled.
 - The 3-D view (`3D` button) does not show residue data yet.

@@ -1,13 +1,13 @@
 /**
  * Per-residue data series drawn along the topology (issue #23): a colour per
  * residue, from a category (categorical colour map) or a number (numerical
- * colour scale), and a percentage change in drawn width per residue.
+ * colour scale), and a drawn width per residue relative to the normal width.
  *
  * Inputs are keyed by chain ID, then by author residue number:
  *
  *   residueColours = { A: { 45: 'K', 46: 'L' } }   // categorical
  *   residueColours = { A: { 45: 0.7, 46: 0.2 } }   // numerical
- *   residueWidths  = { A: { 45: 30, 46: -20 } }    // +30 %, −20 % width
+ *   residueWidths  = { A: { 45: 1.5, 46: 0 } }     // 1.5× width, line only
  *
  * Default colours are theme tokens: CSS custom properties read from the
  * component host, so a page (or the theme from #26) can override them.
@@ -83,9 +83,6 @@ export const AMINO_ACID_COLOURS: Record<string, string> = {
   C: '#f08080',
 };
 
-/** Lower bound on a width change: a residue never shrinks below 10 %. */
-export const MIN_WIDTH_PERCENT = -90;
-
 /** Parse a JSON attribute holding a residue series; null on absence or error. */
 export function parseSeriesAttribute<T>(
   value: string | null,
@@ -126,15 +123,16 @@ const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Num
 const isColourValue = (v: unknown): v is string | number =>
   isFiniteNumber(v) || (typeof v === 'string' && v !== '');
 
-/** Width multiplier per residue of one chain (1 = unchanged). */
+/**
+ * Width multiplier per residue of one chain: 1 is the normal width, 0 a bare
+ * line. Negative values count as 0.
+ */
 export function widthFactors(
   series: ResidueWidthValues | null,
   chainId: string,
 ): Map<number, number> {
   const out = new Map<number, number>();
-  for (const [r, pct] of chainValues(series, chainId, isFiniteNumber)) {
-    out.set(r, 1 + Math.max(MIN_WIDTH_PERCENT, pct) / 100);
-  }
+  for (const [r, f] of chainValues(series, chainId, isFiniteNumber)) out.set(r, Math.max(0, f));
   return out;
 }
 
@@ -493,29 +491,77 @@ export function residueSpans(
 }
 
 /**
- * Piecewise-linear interpolation of per-residue factors over sample index:
- * the factor at each residue's sample, held flat beyond the first and last.
- * Residues with no value count as 1.
+ * Smooth curve through (xs[i], ys[i]) — monotone cubic (Fritsch–Carlson), so
+ * it never overshoots between points: widths stay within the residues' range
+ * and never dip below 0. Held flat beyond the first and last point. `xs` must
+ * be increasing.
  */
-export function factorAtSample(
-  residues: { resSeq: number; sampleIndex: number }[],
-  factors: Map<number, number>,
-  sample: number,
-): number {
-  if (residues.length === 0) return 1;
-  const f = (k: number) => factors.get(residues[k].resSeq) ?? 1;
-  if (sample <= residues[0].sampleIndex) return f(0);
-  const last = residues.length - 1;
-  if (sample >= residues[last].sampleIndex) return f(last);
-  for (let k = 0; k < last; k++) {
-    const a = residues[k].sampleIndex;
-    const b = residues[k + 1].sampleIndex;
-    if (sample >= a && sample <= b) {
-      const t = b > a ? (sample - a) / (b - a) : 0;
-      return f(k) + t * (f(k + 1) - f(k));
+export function monotoneCubic(xs: number[], ys: number[]): (x: number) => number {
+  const n = xs.length;
+  if (n === 0) return () => 1;
+  if (n === 1) return () => ys[0];
+  const h: number[] = [];
+  const delta: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    h.push(xs[i + 1] - xs[i]);
+    delta.push(h[i] > 0 ? (ys[i + 1] - ys[i]) / h[i] : 0);
+  }
+  const m = new Array<number>(n);
+  m[0] = delta[0];
+  m[n - 1] = delta[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    m[i] = delta[i - 1] * delta[i] <= 0 ? 0 : (delta[i - 1] + delta[i]) / 2;
+  }
+  for (let i = 0; i < n - 1; i++) {
+    if (delta[i] === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / delta[i];
+    const b = m[i + 1] / delta[i];
+    const r = a * a + b * b;
+    if (r > 9) {
+      const t = 3 / Math.sqrt(r);
+      m[i] = t * a * delta[i];
+      m[i + 1] = t * b * delta[i];
     }
   }
-  return 1;
+  return (x: number): number => {
+    if (x <= xs[0]) return ys[0];
+    if (x >= xs[n - 1]) return ys[n - 1];
+    let i = 0;
+    while (i < n - 2 && x > xs[i + 1]) i++;
+    if (h[i] <= 0) return ys[i];
+    const t = (x - xs[i]) / h[i];
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (
+      (2 * t3 - 3 * t2 + 1) * ys[i] +
+      (t3 - 2 * t2 + t) * h[i] * m[i] +
+      (-2 * t3 + 3 * t2) * ys[i + 1] +
+      (t3 - t2) * h[i] * m[i + 1]
+    );
+  };
+}
+
+/**
+ * Smooth width-multiplier profile over sample index, through each residue's
+ * factor at its sample (residues with no value count as 1).
+ */
+export function widthProfile(
+  residues: { resSeq: number; sampleIndex: number }[],
+  factors: Map<number, number>,
+): (sample: number) => number {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const r of residues) {
+    // Duplicate sample positions can't carry two values; keep the first.
+    if (xs.length > 0 && r.sampleIndex <= xs[xs.length - 1]) continue;
+    xs.push(r.sampleIndex);
+    ys.push(factors.get(r.resSeq) ?? 1);
+  }
+  return monotoneCubic(xs, ys);
 }
 
 /** A point along a polyline, with its distance from the start. */
@@ -554,4 +600,68 @@ export function slicePolyline(poly: PolyPoint[], a: number, b: number): { x: num
   for (const p of poly) if (p.d > a && p.d < b) out.push({ x: p.x, y: p.y });
   out.push(at(b));
   return out;
+}
+
+/** Left and right edges of a ribbon at one vertex of its centreline. */
+interface RibbonPoint {
+  d: number;
+  l: { x: number; y: number };
+  r: { x: number; y: number };
+}
+
+/**
+ * Offset a measured polyline either side by `halfWidthAt(d)` to give a ribbon
+ * of varying width, with per-vertex normals averaged across the neighbouring
+ * segments so the edges bend smoothly.
+ */
+export function ribbon(poly: PolyPoint[], halfWidthAt: (d: number) => number): RibbonPoint[] {
+  const n = poly.length;
+  return poly.map((p, i) => {
+    const a = poly[Math.max(0, i - 1)];
+    const b = poly[Math.min(n - 1, i + 1)];
+    const tx = b.x - a.x;
+    const ty = b.y - a.y;
+    const len = Math.hypot(tx, ty) || 1;
+    const nx = -ty / len;
+    const ny = tx / len;
+    const hw = halfWidthAt(p.d);
+    return {
+      d: p.d,
+      l: { x: p.x + nx * hw, y: p.y + ny * hw },
+      r: { x: p.x - nx * hw, y: p.y - ny * hw },
+    };
+  });
+}
+
+/**
+ * The closed outline of a ribbon between distances `a` and `b`. Slices of
+ * adjacent ranges share their boundary edge exactly, so they tile the ribbon.
+ */
+export function ribbonSlice(rib: RibbonPoint[], a: number, b: number): { x: number; y: number }[] {
+  const at = (d: number): { l: { x: number; y: number }; r: { x: number; y: number } } => {
+    for (let i = 1; i < rib.length; i++) {
+      if (rib[i].d >= d) {
+        const s = rib[i].d - rib[i - 1].d;
+        const t = s > 0 ? (d - rib[i - 1].d) / s : 0;
+        const lerp = (p: { x: number; y: number }, q: { x: number; y: number }) => ({
+          x: p.x + t * (q.x - p.x),
+          y: p.y + t * (q.y - p.y),
+        });
+        return { l: lerp(rib[i - 1].l, rib[i].l), r: lerp(rib[i - 1].r, rib[i].r) };
+      }
+    }
+    const last = rib[rib.length - 1];
+    return { l: last.l, r: last.r };
+  };
+  const start = at(a);
+  const end = at(b);
+  const inner = rib.filter((p) => p.d > a && p.d < b);
+  return [
+    start.l,
+    ...inner.map((p) => p.l),
+    end.l,
+    end.r,
+    ...inner.reverse().map((p) => p.r),
+    start.r,
+  ];
 }

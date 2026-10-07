@@ -4,14 +4,17 @@ import {
   AMINO_ACID_COLOURS,
   DEFAULT_CATEGORIES,
   DEFAULT_SCALE,
-  factorAtSample,
   formatTick,
   interpolateStops,
+  monotoneCubic,
   parseColour,
   readDataTheme,
   residueSpans,
+  ribbon,
+  ribbonSlice,
   resolveColouring,
   widthFactors,
+  widthProfile,
 } from '../../../src/components/residue-data.js';
 import { outlinePolygon, outlineSlice, ssOutline } from '../../../src/components/ss-outline.js';
 import type { ProteinData } from '../../../src/types.js';
@@ -134,11 +137,39 @@ describe('residue-data helpers', () => {
     ).toBe('#404040');
   });
 
-  it('turns width percentages into factors, floored at −90 %', () => {
-    const f = widthFactors({ A: { 1: 50, 2: -200, 3: 'x' as unknown as number } }, 'A');
+  it('reads width factors, with negative values counting as 0', () => {
+    const f = widthFactors({ A: { 1: 1.5, 2: -2, 3: 'x' as unknown as number } }, 'A');
     expect(f.get(1)).toBe(1.5);
-    expect(f.get(2)).toBeCloseTo(0.1);
+    expect(f.get(2)).toBe(0);
     expect(f.has(3)).toBe(false);
+  });
+
+  it('interpolates widths smoothly without overshooting', () => {
+    const xs = [0, 1, 2, 3, 4];
+    const ys = [0, 1, 0, 1, 0];
+    const f = monotoneCubic(xs, ys);
+    for (let i = 0; i < xs.length; i++) expect(f(xs[i])).toBeCloseTo(ys[i]);
+    for (let x = 0; x <= 4; x += 0.05) {
+      expect(f(x)).toBeGreaterThanOrEqual(-1e-9);
+      expect(f(x)).toBeLessThanOrEqual(1 + 1e-9);
+    }
+    // Flat at a peak (no corner) and held beyond the ends.
+    expect(f(1.01)).toBeCloseTo(1, 3);
+    expect(f(-3)).toBe(0);
+    expect(f(9)).toBe(0);
+  });
+
+  it('builds a ribbon whose slices tile it', () => {
+    const poly = [
+      { x: 0, y: 0, d: 0 },
+      { x: 10, y: 0, d: 10 },
+    ];
+    const rib = ribbon(poly, (d) => 1 + d / 10);
+    expect(rib[1].l).toEqual({ x: 10, y: 2 });
+    expect(rib[1].r).toEqual({ x: 10, y: -2 });
+    const piece = ribbonSlice(rib, 0, 5);
+    expect(piece[0]).toEqual({ x: 0, y: 1 });
+    expect(piece[1]).toEqual({ x: 5, y: 1.5 });
   });
 
   it('splits samples between residues at the midpoints', () => {
@@ -152,8 +183,10 @@ describe('residue-data helpers', () => {
       { resSeq: 2, from: 2, to: 6 },
       { resSeq: 3, from: 6, to: 8 },
     ]);
-    expect(factorAtSample(res, new Map([[2, 2]]), 2)).toBe(1.5);
-    expect(factorAtSample(res, new Map([[3, 2]]), 10)).toBe(2);
+    const profile = widthProfile(res, new Map([[3, 2]]));
+    expect(profile(4)).toBe(1);
+    expect(profile(8)).toBe(2);
+    expect(profile(10)).toBe(2);
   });
 
   it('reads theme tokens from CSS custom properties', () => {
@@ -227,10 +260,10 @@ describe('<topology-display> residue data', () => {
     expect(Number(svg.getAttribute('height'))).toBe(h);
   });
 
-  it('scales helix and loop widths by the residue percentages', () => {
+  it('scales helix and loop widths by the residue factors', () => {
     const el = mount();
     const plain = svgOf(el).querySelector('.ss-element')!.getAttribute('points');
-    el.residueWidths = { A: { 1: 100, 2: 100, 3: 100, 4: 100, 5: 100, 7: -50 } };
+    el.residueWidths = { A: { 1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 7: 0 } };
     const svg = svgOf(el);
     const span = (pts: string | null) => {
       const xs = pts!.split(' ').map((p) => Number(p.split(',')[0]));
@@ -241,13 +274,39 @@ describe('<topology-display> residue data', () => {
       2 * span(plain),
       1,
     );
-    const pieces = [...svg.querySelectorAll('.residue-stroke path')];
-    expect(pieces.map((p) => p.getAttribute('stroke-width'))).toEqual([
-      '1.80',
-      '0.90',
-      '1.80',
-      '1.80',
-    ]);
+    // The loop becomes a filled ribbon, one piece per residue, narrowest at
+    // the zero-width residue.
+    const pieces = [...svg.querySelectorAll<SVGPolygonElement>('.residue-stroke polygon')];
+    expect(pieces.map((p) => p.dataset.res)).toEqual(['6', '7', '8', '9']);
+    const widest = (p: SVGPolygonElement) => {
+      const v = p
+        .getAttribute('points')!
+        .split(' ')
+        .map((q) => q.split(',').map(Number));
+      const half = v.length / 2;
+      // Left edge vertex i pairs with right edge vertex (len − 1 − i).
+      return Math.max(
+        ...v
+          .slice(0, half)
+          .map((l, i) => Math.hypot(l[0] - v[v.length - 1 - i][0], l[1] - v[v.length - 1 - i][1])),
+      );
+    };
+    const w = pieces.map(widest);
+    expect(w[1]).toBeLessThan(w[0]);
+    expect(w[1]).toBeLessThan(w[2]);
+    // The zero-width residue narrows to the hairline minimum (in Å: px / 2.5).
+    const minW = Math.min(
+      ...pieces.flatMap((p) => {
+        const v = p
+          .getAttribute('points')!
+          .split(' ')
+          .map((q) => q.split(',').map(Number));
+        return v.map((l, i) =>
+          Math.hypot(l[0] - v[v.length - 1 - i][0], l[1] - v[v.length - 1 - i][1]),
+        );
+      }),
+    );
+    expect(minW).toBeLessThan(0.5);
     // Width alone draws no fill slices and no legend.
     expect(svg.querySelector('.residue-fill')).toBeNull();
     expect(svg.querySelector('.colour-legend')).toBeNull();
