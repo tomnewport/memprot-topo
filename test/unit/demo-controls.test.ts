@@ -76,6 +76,21 @@ describe('demo controls', () => {
     for (const d of displays) expect(d.getAttribute('morph-projection')).toBe('perspective');
   });
 
+  it('picks a theme for every display; auto removes it', () => {
+    const { panel, displays } = setup();
+    const theme = input(panel, 'theme');
+    expect(theme.value).toBe('auto');
+    theme.value = 'high-contrast';
+    theme.dispatchEvent(new Event('input'));
+    for (const d of displays) {
+      expect(d.getAttribute('theme')).toBe('high-contrast');
+      expect((d as TopologyDisplay).activeThemeName).toBe('high-contrast');
+    }
+    theme.value = 'auto';
+    theme.dispatchEvent(new Event('input'));
+    for (const d of displays) expect(d.hasAttribute('theme')).toBe(false);
+  });
+
   it('sets selection per display and reflects changes the display makes', async () => {
     const { displays } = setup();
     const field = input(displays[0].previousElementSibling!, 'selection');

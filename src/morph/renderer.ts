@@ -68,8 +68,11 @@ function fmt(v: number, scale: number): string {
   return String(Math.round(v * scale) / scale);
 }
 
+/** `#rgb`, `#rrggbb` or `rgb(r, g, b)` as an RGB triple. */
 function hexRgb(hex: string): RGB {
-  const h = hex.replace('#', '');
+  const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(hex.trim());
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  const h = hex.trim().replace('#', '');
   const f =
     h.length === 3 ? h.split('').map((c) => c + c) : [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6)];
   return [parseInt(f[0], 16), parseInt(f[1], 16), parseInt(f[2], 16)];
@@ -131,7 +134,7 @@ const HALF = ((): [number, number, number] => {
 })();
 const AMBIENT = 0.58;
 const DIFFUSE = 0.55;
-/** Maximum fog (mix towards white) at the far end of the scene. */
+/** Maximum fog (mix towards the background) at the far end of the scene. */
 const FOG = 0.38;
 
 /** A drawable piece of the scene, depth-sorted as a unit. */
@@ -595,7 +598,7 @@ export class MorphRenderer {
   /**
    * Opacity of faded (neighbouring-chain) elements this frame. They start at
    * the 2-D figure's translucency and become opaque — with colours lightened
-   * so they look the same over white — as the protein rolls up: translucent
+   * so they look the same over the background — as the protein rolls up: translucent
    * pieces of one element that overlap where it is split for depth sorting
    * would otherwise show darker lines.
    */
@@ -614,6 +617,8 @@ export class MorphRenderer {
     strandEdge: string;
     coil: RGB;
   };
+  /** The background: fog and faded elements mix towards it. */
+  private readonly ground: RGB;
 
   constructor(
     readonly model: MorphModel,
@@ -628,6 +633,7 @@ export class MorphRenderer {
       strandEdge: st.strandStroke,
       coil: hexRgb(st.coil),
     };
+    this.ground = hexRgb(st.background);
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('xmlns', SVG_NS);
     svg.setAttribute('class', 'morph-svg');
@@ -647,7 +653,7 @@ export class MorphRenderer {
     };
     this.runsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG = document.createElementNS(SVG_NS, 'g');
-    this.labelsG.setAttribute('font-family', 'sans-serif');
+    this.labelsG.setAttribute('font-family', st.labelFontFamily);
     svg.append(this.defs, backG, this.runsG, this.labelsG);
   }
 
@@ -1290,7 +1296,7 @@ export class MorphRenderer {
     // Outline colour per element, not per section (see strandPrims).
     let depthSum = 0;
     for (let i = 0; i < m0; i++) depthSum += dep0[i];
-    const edgeC = shadeEdge(edge, sigma, ctx.fogAt(depthSum / Math.max(1, m0)));
+    const edgeC = shadeEdge(edge, sigma, ctx.fogAt(depthSum / Math.max(1, m0)), this.ground);
     const grads: GradientDef[] = [];
     for (let k = 0, i = 0; k <= gid; k++) {
       let j = i;
@@ -1399,8 +1405,11 @@ export class MorphRenderer {
         0,
         this.tmp[4] * LIGHT[0] + this.tmp[5] * LIGHT[1] + this.tmp[6] * LIGHT[2],
       );
-      const capC = veil.apply(shade(base, AMBIENT + DIFFUSE * lam, 0, sigma, fog), lv);
-      const sideC = veil.apply(shade(base, AMBIENT + DIFFUSE * 0.05, 0, sigma, fog), lv);
+      const capC = veil.apply(shade(base, AMBIENT + DIFFUSE * lam, 0, sigma, fog, this.ground), lv);
+      const sideC = veil.apply(
+        shade(base, AMBIENT + DIFFUSE * 0.05, 0, sigma, fog, this.ground),
+        lv,
+      );
       const xs = ring.filter((_, k) => k % 2 === 0);
       const ys = ring.filter((_, k) => k % 2 === 1);
       prims.push({
@@ -1547,8 +1556,8 @@ export class MorphRenderer {
     let depthSum = 0;
     for (let i = 0; i < m; i++) if (!added[i]) depthSum += corners[i * 16 + 2];
     const elFog = ctx.fogAt(depthSum / Math.max(1, kept.length));
-    const sideC = shade(base, AMBIENT * 0.82, 0, sigma, elFog);
-    const edgeC = shadeEdge(edge, sigma, elFog);
+    const sideC = shade(base, AMBIENT * 0.82, 0, sigma, elFog, this.ground);
+    const edgeC = shadeEdge(edge, sigma, elFog, this.ground);
     // Face shading does vary along the strand: one gradient per stretch that
     // runs straight on screen, built from every section's own colour.
     const groupStops: { x: number; y: number; c: RGB }[][] = [[]];
@@ -1654,7 +1663,14 @@ export class MorphRenderer {
         cam.toCam(n0, n1, n2, tmp, 4);
         const lam = Math.max(0, tmp[4] * LIGHT[0] + tmp[5] * LIGHT[1] + tmp[6] * LIGHT[2]);
         const hv = Math.max(0, tmp[4] * HALF[0] + tmp[5] * HALF[1] + tmp[6] * HALF[2]);
-        return shade(base, AMBIENT + DIFFUSE * lam, Math.pow(hv, 30) * 0.3, sigma, fog);
+        return shade(
+          base,
+          AMBIENT + DIFFUSE * lam,
+          Math.pow(hv, 30) * 0.3,
+          sigma,
+          fog,
+          this.ground,
+        );
       };
       const lv = veil.level(mx, my, mz);
       // Two-sided Lambert on the ribbon face.
@@ -1898,8 +1914,8 @@ export class MorphRenderer {
     // Pieces closer than this along the loop overlap anyway (see Prim.reach).
     const reach =
       3 + 2 * Math.max(2 * this.options.coilRadius, outer / Math.max(1e-6, scale * kAvg));
-    const coreC = fogged(mixRgb(coil, [150, 150, 150], sigma), fog);
-    const outC = fogged(mixRgb(coil, [52, 52, 52], sigma), fog);
+    const coreC = fogged(mixRgb(coil, [150, 150, 150], sigma), fog, this.ground);
+    const outC = fogged(mixRgb(coil, [52, 52, 52], sigma), fog, this.ground);
     const shineC = mixRgb(coreC, WHITE, 0.45);
 
     // In 3-D a solid loop is drawn as a filled tube with edge lines and a
@@ -2446,13 +2462,14 @@ export class MorphRenderer {
   private emitRuns(runs: Run[]): void {
     const fadedOpacity = this.model.scene.style.fadedOpacity;
     const fadeA = this.fadeOpacity;
-    // Lighten faded colours so that, drawn at `fadeA`, they look as they did
-    // at the 2-D opacity over a white ground.
+    // Mix faded colours towards the background so that, drawn at `fadeA`,
+    // they look as they did at the 2-D opacity over it.
     const k = fadedOpacity / fadeA;
+    const bg = this.ground;
     const lighten = (c: RGB): RGB => [
-      255 - k * (255 - c[0]),
-      255 - k * (255 - c[1]),
-      255 - k * (255 - c[2]),
+      bg[0] - k * (bg[0] - c[0]),
+      bg[1] - k * (bg[1] - c[1]),
+      bg[2] - k * (bg[2] - c[2]),
     ];
     let gi = 0;
     for (let i = 0; i < runs.length; i++) {
@@ -2538,7 +2555,14 @@ export class MorphRenderer {
       const nz = -q;
       const lam = Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
       const hv = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]);
-      const c = shade(base, AMBIENT + DIFFUSE * lam, 0.35 * Math.pow(hv, 24), sigma, fog);
+      const c = shade(
+        base,
+        AMBIENT + DIFFUSE * lam,
+        0.35 * Math.pow(hv, 24),
+        sigma,
+        fog,
+        this.ground,
+      );
       stops.push({ o: (f + 1) / 2, c });
       sum = [sum[0] + c[0] / K, sum[1] + c[1] / K, sum[2] + c[2] / K];
     }
@@ -2694,18 +2718,26 @@ const SEAM_BR: OpSpec = { layer: 1, key: 's-br', kind: 'stroke', linecap: 'butt'
 const SEAM_X: OpSpec = { layer: 1, key: 's-x', kind: 'stroke', linecap: 'butt' };
 
 /** Lit colour, blended in by `sigma` (0 = flat 2-D colour), then fogged. */
-function shade(base: RGB, intensity: number, spec: number, sigma: number, fog: number): RGB {
+function shade(
+  base: RGB,
+  intensity: number,
+  spec: number,
+  sigma: number,
+  fog: number,
+  ground: RGB,
+): RGB {
   let lit: RGB = [base[0] * intensity, base[1] * intensity, base[2] * intensity];
   if (spec > 0) lit = mixRgb(lit, WHITE, spec);
-  return fogged(mixRgb(base, lit, sigma), fog);
+  return fogged(mixRgb(base, lit, sigma), fog, ground);
 }
 
-function shadeEdge(edge: RGB, sigma: number, fog: number): RGB {
-  return fogged(mixRgb(edge, [edge[0] * 0.8, edge[1] * 0.8, edge[2] * 0.8], sigma), fog);
+function shadeEdge(edge: RGB, sigma: number, fog: number, ground: RGB): RGB {
+  return fogged(mixRgb(edge, [edge[0] * 0.8, edge[1] * 0.8, edge[2] * 0.8], sigma), fog, ground);
 }
 
-function fogged(c: RGB, fog: number): RGB {
-  return fog > 0 ? mixRgb(c, WHITE, fog) : c;
+/** Mix towards the background (the theme's ground) with depth. */
+function fogged(c: RGB, fog: number, ground: RGB): RGB {
+  return fog > 0 ? mixRgb(c, ground, fog) : c;
 }
 
 /** Distance (Å) over which a loop eases from a moved element end to its own path. */

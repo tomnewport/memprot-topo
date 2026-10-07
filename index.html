@@ -151,6 +151,20 @@
         text-decoration: underline;
       }
 
+      /* The page follows the diagrams' theme (set by the theme control). */
+      :root[data-theme='dark'] body {
+        background: #121316;
+        color: #e4e6e8;
+      }
+      :root[data-theme='dark'] section {
+        background: #1c1d20;
+        border-color: #3a3d42;
+      }
+      :root[data-theme='dark'] section h2 {
+        color: #c9cbce;
+        border-bottom-color: #3a3d42;
+      }
+
       @media (max-width: 640px) {
         header {
           padding: 1rem;

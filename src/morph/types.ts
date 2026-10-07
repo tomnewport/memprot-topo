@@ -114,7 +114,10 @@ export interface MorphStyle {
   membraneEdge: string;
   midplane: string;
   contact: string;
+  /** Diagram background: the 3-D view fogs towards it. */
+  background: string;
   labelFill: string;
+  labelFontFamily: string;
   labelFontSize: number;
   labelGap: number;
   labelTangentStep: number;

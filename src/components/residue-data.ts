@@ -9,9 +9,12 @@
  *   residueColours = { A: { 45: 0.7, 46: 0.2 } }   // numerical
  *   residueWidths  = { A: { 45: 1.5, 46: 0 } }     // 1.5× width, line only
  *
- * Default colours are theme tokens: CSS custom properties read from the
- * component host, so a page (or the theme from #26) can override them.
+ * Default colours are theme tokens (#26): the theme's `dataScale` and
+ * `dataCategories`, exposed on the component host as CSS custom properties so
+ * a page can also override them there.
  */
+
+import { paint, TABLEAU_10, VIRIDIS } from '../theme/index.js';
 
 /** Values keyed by chain ID, then author residue number. */
 export type ResidueSeries<T> = Record<string, Record<string | number, T>>;
@@ -27,32 +30,11 @@ export const DATA_THEME_TOKENS = {
   categories: '--mp-data-categories',
 } as const;
 
-/** Viridis, sampled at 9 stops. */
-export const DEFAULT_SCALE = [
-  '#440154',
-  '#472d7b',
-  '#3b528b',
-  '#2c728e',
-  '#21918c',
-  '#28ae80',
-  '#5ec962',
-  '#addc30',
-  '#fde725',
-];
+/** Viridis, sampled at 9 stops: the built-in themes' numerical scale. */
+export const DEFAULT_SCALE: readonly string[] = VIRIDIS;
 
-/** Tableau 10. */
-export const DEFAULT_CATEGORIES = [
-  '#4e79a7',
-  '#f28e2b',
-  '#e15759',
-  '#76b7b2',
-  '#59a14f',
-  '#edc948',
-  '#b07aa1',
-  '#ff9da7',
-  '#9c755f',
-  '#bab0ac',
-];
+/** Tableau 10: the built-in themes' categorical palette. */
+export const DEFAULT_CATEGORIES: readonly string[] = TABLEAU_10;
 
 /**
  * Colours for one-letter amino-acid codes, grouped by side-chain chemistry
@@ -192,25 +174,31 @@ function splitList(value: string): string[] {
 
 /** Theme defaults, already read from the host's CSS custom properties. */
 export interface DataTheme {
-  scale: string[];
-  categories: string[];
+  scale: readonly string[];
+  categories: readonly string[];
 }
 
-/** Read the data-colour tokens from `host`, falling back to the defaults. */
-export function readDataTheme(host: Element): DataTheme {
+/**
+ * Read the data-colour tokens from `host`, falling back to `fallback` (the
+ * component's theme; the built-in palettes by default).
+ */
+export function readDataTheme(
+  host: Element,
+  fallback: DataTheme = { scale: DEFAULT_SCALE, categories: DEFAULT_CATEGORIES },
+): DataTheme {
   let style: CSSStyleDeclaration | null = null;
   try {
     style = getComputedStyle(host);
   } catch {
     style = null;
   }
-  const token = (name: string, fallback: string[]): string[] => {
+  const token = (name: string, fallback: readonly string[]): readonly string[] => {
     const list = splitList(style?.getPropertyValue(name) ?? '');
     return list.length > 0 ? list : fallback;
   };
   return {
-    scale: token(DATA_THEME_TOKENS.scale, DEFAULT_SCALE),
-    categories: token(DATA_THEME_TOKENS.categories, DEFAULT_CATEGORIES),
+    scale: token(DATA_THEME_TOKENS.scale, fallback.scale),
+    categories: token(DATA_THEME_TOKENS.categories, fallback.categories),
   };
 }
 
@@ -384,12 +372,11 @@ export function renderLegend(
   colouring: Colouring,
   maxWidth: number,
   idPrefix: string,
-  textFill: string,
 ): { group: SVGGElement; height: number } {
   const g = document.createElementNS(SVG_NS, 'g');
   g.setAttribute('class', 'colour-legend');
-  g.setAttribute('font-family', 'sans-serif');
-  g.setAttribute('fill', textFill);
+  // Painted when the diagram is themed (see paint / repaint).
+  paint(g, { fill: 'label', 'font-family': 'fontFamily' });
   g.setAttribute('role', 'img');
   const fs = LEGEND.fontSizePx;
   let y = 0;
@@ -421,7 +408,7 @@ export function renderLegend(
     bar.setAttribute('width', String(w));
     bar.setAttribute('height', String(LEGEND.barHeightPx));
     bar.setAttribute('fill', `url(#${id})`);
-    bar.setAttribute('stroke', textFill);
+    paint(bar, { stroke: 'label' });
     bar.setAttribute('stroke-width', '0.5');
     g.appendChild(bar);
     y += LEGEND.barHeightPx + 3;
@@ -452,7 +439,7 @@ export function renderLegend(
     sw.setAttribute('width', String(LEGEND.swatchPx));
     sw.setAttribute('height', String(LEGEND.swatchPx));
     sw.setAttribute('fill', colouring.colourOf.get(cat)!);
-    sw.setAttribute('stroke', textFill);
+    paint(sw, { stroke: 'label' });
     sw.setAttribute('stroke-width', '0.5');
     g.append(sw, text(x + LEGEND.swatchPx + 4, y, cat));
     x += w + LEGEND.itemGapPx;
