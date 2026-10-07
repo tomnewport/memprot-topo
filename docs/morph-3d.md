@@ -24,6 +24,15 @@ sits exactly where it is in the structure (unit tests check this is a rigid
 motion of the real coordinates). Strands slide along the barrel curtain from
 their laid-out 2-D spacing to their true spacing as it closes.
 
+On the barrel curtain, each sample's position along it is its real angle round
+the barrel, not the 2-D unwrap's. The unwrap holds its angle while the chain
+dips inside the barrel (OmpF/OmpC's L3 loop), so the plot doesn't fan out, and
+so drops however far the chain turned in there. Using that angle put every
+later strand up to half a turn away from its curtain point: positions still
+came out right through large offsets, but the curtain's heading (which orients
+the strand ribbons and their lighting) belonged to the wrong side of the
+barrel, and the strands rendered as twisted, edge-on slivers.
+
 Things the 2-D layout invents are blended out as the curtain rolls:
 
 - loop gaps are a fixed width in 2-D — the curtain stretches them to their real

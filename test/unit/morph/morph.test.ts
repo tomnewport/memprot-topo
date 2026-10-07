@@ -326,6 +326,59 @@ describe('morph pose (β-barrel unwrap)', () => {
     expect(h.flips).toBe(0);
   });
 
+  it('keeps strands on the curtain after a loop that dips inside the barrel', () => {
+    // Like OmpF/OmpC's L3: the loop after strand 2 runs along the rim for
+    // ~150°, dives in past the axis and comes back out beside strand 3. The
+    // 2-D unwrap holds its angle inside the barrel, so it drops the 150°;
+    // the curtain must not, or every later strand sits on the wrong side of
+    // it and is oriented (lit, turned edge-on) as if it were there.
+    const base = syntheticBarrel({ n: 16 });
+    const R = (16 * 4.8) / (2 * Math.PI);
+    const strands = base.segments.filter((s) => s.type === 'strand');
+    const after = strands[2].end;
+    const last = base.calphas.find((c) => c.resSeq === after)!;
+    const next = base.calphas.find((c) => c.resSeq === strands[3].start)!;
+    const th0 = Math.atan2(last.y, last.x);
+    const th1 = Math.atan2(next.y, next.x);
+    const zTop = last.z > 0 ? Math.max(last.z, next.z) + 3 : Math.min(last.z, next.z) - 3;
+    const loop: { x: number; y: number; z: number }[] = [];
+    for (let k = 1; k <= 10; k++) {
+      const th = th0 + (k / 10) * ((150 * Math.PI) / 180);
+      loop.push({ x: R * Math.cos(th), y: R * Math.sin(th), z: zTop });
+    }
+    const turn = th0 + (150 * Math.PI) / 180;
+    for (const r of [0.75, 0.5, 0.25, 0]) {
+      loop.push({ x: r * R * Math.cos(turn), y: r * R * Math.sin(turn), z: zTop });
+    }
+    for (const r of [0.25, 0.5, 0.75]) {
+      loop.push({ x: r * R * Math.cos(th1), y: r * R * Math.sin(th1), z: zTop });
+    }
+    // Drop the original loop and renumber everything after it.
+    const kept = base.calphas.filter((c) => c.resSeq <= after || c.resSeq >= next.resSeq);
+    const shift = loop.length - (next.resSeq - after - 1);
+    const calphas: Calpha[] = [];
+    for (const c of kept) {
+      if (c.resSeq === next.resSeq)
+        loop.forEach((p, i) => calphas.push({ resSeq: after + 1 + i, iCode: '', ...p }));
+      calphas.push(c.resSeq > after ? { ...c, resSeq: c.resSeq + shift } : c);
+    }
+    const segments = strands.map((s) =>
+      s.start > after ? { ...s, start: s.start + shift, end: s.end + shift } : s,
+    );
+    const a = analyseBarrel(calphas, segments);
+    const u = unwrapBarrel(calphas, { ssSegments: segments, centre: a.centre });
+    expect(u.segments).toHaveLength(1);
+    const sc = sceneFor('cylinder', u, segments);
+    const m = buildMorphModel(sc);
+    let worst = 0;
+    for (const el of m.elements) {
+      for (let g = el.g0; g <= el.g1; g++) worst = Math.max(worst, Math.hypot(m.nr[g], m.br[g]));
+    }
+    expect(worst).toBeLessThan(3);
+    const { got, want } = elementPoints(m, sc, computePose(m, 1, 0.7));
+    expect(rigidError(got, want)).toBeLessThan(0.05);
+  });
+
   it('curls the curtain under each sample by that sample’s own progress mid-roll', () => {
     // With the display stretched, samples slide along the curtain as it rolls;
     // a sample that has finished rolling must still sit on a fully curved
