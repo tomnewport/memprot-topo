@@ -369,6 +369,22 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(el.shadowRoot!.querySelector<HTMLSelectElement>('.chain-copy')!.value).toBe('B');
   });
 
+  it('scrolls only the diagram, with edge arrows, and keeps the chain picker outside it', () => {
+    const tm = tmHelixProtein().chains[0];
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'dimer', chains: [tm, { ...tm, chainId: 'B' }] };
+
+    const root = el.shadowRoot!;
+    const frame = root.querySelector('.scroll-frame')!;
+    const scroll = frame.querySelector('.svg-scroll')!;
+    expect(scroll.querySelector('svg')).not.toBeNull();
+    expect(frame.querySelectorAll('.scroll-arrow')).toHaveLength(2);
+    expect(frame.querySelectorAll('.scroll-fade')).toHaveLength(2);
+    expect(root.querySelector('.chain-picker')).not.toBeNull();
+    expect(frame.querySelector('.chain-picker')).toBeNull();
+  });
+
   it('renders one strand polygon per strand run for a beta barrel chain, all with arrowhead vertices', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
