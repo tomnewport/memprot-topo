@@ -1999,14 +1999,13 @@ export class TopologyDisplay extends HTMLElement {
 
   /**
    * Smoothing for the chain-picker violins (`icon-bandwidth`): the σ, in Å, of
-   * the Gaussian applied on top of the per-row residue counts. One row is half
-   * a membrane thickness, so the default of a quarter thickness is half a row.
-   * Invalid or negative values fall back to the default; 0 gives the plain
-   * per-row histogram.
+   * the Gaussian applied on top of the per-row residue counts (one row is half
+   * a membrane thickness). Defaults to 0, the plain per-row histogram; invalid
+   * or negative values fall back to the default.
    */
   private get iconBandwidth(): number {
     const v = Number.parseFloat(this.getAttribute('icon-bandwidth') ?? '');
-    return Number.isFinite(v) && v >= 0 ? v : this.iconMembrane.thickness / 4;
+    return Number.isFinite(v) && v >= 0 ? v : 0;
   }
 
   /** Assemble the loop rendering options from the component's attributes. */

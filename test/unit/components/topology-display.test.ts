@@ -339,8 +339,8 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     const path = () => el.shadowRoot!.querySelector('.icon-violin')!.getAttribute('d');
 
     const byDefault = path();
-    el.setAttribute('icon-bandwidth', '7.5');
-    expect(path()).toBe(byDefault); // default = quarter membrane thickness (7.5 Å)
+    el.setAttribute('icon-bandwidth', '0');
+    expect(path()).toBe(byDefault); // default = no smoothing (plain row histogram)
     el.setAttribute('icon-bandwidth', '20');
     expect(path()).not.toBe(byDefault);
     el.setAttribute('icon-bandwidth', 'nonsense');
