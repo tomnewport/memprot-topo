@@ -13,7 +13,7 @@
  *   ARTIFACT_URL  — optional; URL to the uploaded artifact
  */
 import { writeFile } from 'fs/promises';
-import { GALLERY_PROTEINS, MORPH_VIEWS } from './gallery-data.mjs';
+import { GALLERY_PROTEINS, MORPH_ANIM, MORPH_VIEWS } from './gallery-data.mjs';
 
 const { GITHUB_TOKEN, REPO, HEAD_BRANCH, BASE_BRANCH, ARTIFACT_URL } = process.env;
 
@@ -34,8 +34,8 @@ async function pathExists(branch, path) {
   return res.ok;
 }
 
-function imgTag(sanitizedBranch, name, alt) {
-  const url = `https://github.com/${REPO}/raw/gallery-images/${sanitizedBranch}/${name}.png`;
+function imgTag(sanitizedBranch, name, alt, file = `${name}.png`) {
+  const url = `https://github.com/${REPO}/raw/gallery-images/${sanitizedBranch}/${file}`;
   // Use the comment's full width — the unrolled view is fundamentally
   // wide-and-short and cramping it into a narrow table cell makes β-barrels
   // unreadable.
@@ -56,6 +56,32 @@ async function main() {
       }
     }
     const curr = imgTag(sanitizedHead, protein.pdbId, `${protein.pdbId} on ${HEAD_BRANCH}`);
+    // The animated transition, base branch and this branch side by side.
+    const anim = `${protein.pdbId}${MORPH_ANIM.suffix}`;
+    let transition = [];
+    if (await pathExists('gallery-images', `${sanitizedHead}/${anim}`)) {
+      const animTag = (branch, label) =>
+        imgTag(branch, anim, `${anim} on ${label}`, anim).replace(
+          'style="max-width:100%;"',
+          'width="420"',
+        );
+      let animPrev = '<em>(no baseline yet)</em>';
+      if (sanitizedBase && (await pathExists('gallery-images', `${sanitizedBase}/${anim}`))) {
+        animPrev = animTag(sanitizedBase, BASE_BRANCH);
+      }
+      transition = [
+        '',
+        `**${MORPH_ANIM.label}:**`,
+        '',
+        '<table><tr>',
+        `<th>Previous (<code>${BASE_BRANCH || 'n/a'}</code>)</th>`,
+        `<th>Current (<code>${HEAD_BRANCH}</code>)</th>`,
+        '</tr><tr>',
+        `<td>${animPrev}</td>`,
+        `<td>${animTag(sanitizedHead, HEAD_BRANCH)}</td>`,
+        '</tr></table>',
+      ];
+    }
     // The 3-D morph views, folded away to keep the comment short.
     const morph = [];
     for (const view of MORPH_VIEWS) {
@@ -86,6 +112,7 @@ async function main() {
         `**Previous (\`${BASE_BRANCH || 'n/a'}\`):**`,
         '',
         prev,
+        ...transition,
         '',
         '<details><summary>3-D morph</summary>',
         '',

@@ -346,3 +346,11 @@ export const MORPH_VIEWS = [
   { tau: 0.5, suffix: '-3d-half', label: '3-D morph, halfway (τ = 0.5)' },
   { tau: 1, suffix: '-3d', label: '3-D view (τ = 1)' },
 ];
+
+/**
+ * The animated 2-D → 3-D transition recorded for each protein, compared side
+ * by side with the base branch's: file name after the PDB id, and label. An
+ * animated WebP: it plays inline wherever an image does (a PR comment can't
+ * embed a video player from a URL), in full colour and far smaller than a GIF.
+ */
+export const MORPH_ANIM = { suffix: '-morph.webp', label: '2-D → 3-D transition' };

@@ -13,7 +13,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
-import { GALLERY_PROTEINS, MORPH_VIEWS } from './gallery-data.mjs';
+import { GALLERY_PROTEINS, MORPH_ANIM, MORPH_VIEWS } from './gallery-data.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -37,15 +37,19 @@ async function main() {
   const hasPrev = existsSync(PREV_DIR);
   const hasNoPrevMarker = existsSync(join(PREV_DIR, 'no-base.txt'));
 
-  // The 2-D figure, then each 3-D morph view, per protein.
-  const variants = [{ suffix: '', label: '' }, ...MORPH_VIEWS];
+  // The 2-D figure, each 3-D morph view, then the animated transition, per protein.
+  const variants = [
+    { suffix: '.png', label: '' },
+    ...MORPH_VIEWS.map((v) => ({ ...v, suffix: `${v.suffix}.png` })),
+    MORPH_ANIM,
+  ];
   const shots = GALLERY_PROTEINS.flatMap((protein) =>
     variants.map((view) => ({ protein, name: `${protein.pdbId}${view.suffix}`, view })),
   );
   const rows = shots
     .map(({ protein, name, view }) => {
-      const currentFile = `current/${name}.png`;
-      const prevFile = `previous/${name}.png`;
+      const currentFile = `current/${name}`;
+      const prevFile = `previous/${name}`;
 
       const currentExists = existsSync(join(ROOT, 'gallery-output', currentFile));
       const prevExists =
