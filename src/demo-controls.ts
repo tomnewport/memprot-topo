@@ -299,6 +299,7 @@ export function mountDemoControls(panel: HTMLElement, displays: HTMLElement[]): 
     for (const control of DEMO_CONTROLS) {
       for (const d of displays) d.removeAttribute(control.attribute);
     }
+    for (const d of displays) (d as { resetView?: () => void }).resetView?.();
     for (const sync of syncs) sync();
   };
 }

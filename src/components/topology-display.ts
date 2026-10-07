@@ -1859,10 +1859,7 @@ export class TopologyDisplay extends HTMLElement {
   set proteinData(value: ProteinData | null) {
     // Re-assigning the same object (e.g. from a framework re-render) is a no-op.
     if (value === this._data) return;
-    this._data = value;
-    this._selectedChainId = null;
-    this.dropUserSelection();
-    this.render();
+    this.loadData(value);
   }
 
   /**
@@ -1934,15 +1931,37 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
     if (name !== 'protein-data' || value === old) return;
-    if (value === null) {
-      this._data = null;
-    } else {
+    let data: ProteinData | null = null;
+    if (value !== null) {
       try {
-        this._data = JSON.parse(value) as ProteinData;
+        data = JSON.parse(value) as ProteinData;
       } catch {
-        this._data = null;
+        data = null;
       }
     }
+    this.loadData(data);
+  }
+
+  /**
+   * Show a new protein, changing as little as possible: the 2-D / 3-D view,
+   * orbit and scroll carry over, as do the user's chain pick and selection
+   * when the new protein has that chain. `resetView()` starts afresh.
+   */
+  private loadData(data: ProteinData | null): void {
+    this._data = data;
+    const has = (id: string): boolean => this.chainsWithCoords().some((c) => c.chainId === id);
+    if (this._selectedChainId && !has(this._selectedChainId)) this._selectedChainId = null;
+    const mine = parseSelection(this._userSelection);
+    if (mine && !has(mine.chainId)) this.dropUserSelection();
+    this.render({ keepView: true });
+  }
+
+  /**
+   * Reset what the user has changed: back to the 2-D view at the start of the
+   * default chain, forgetting their chain pick, selection and 3-D orbit.
+   * Attributes the page set (including its own `selection`) are kept.
+   */
+  resetView(): void {
     this._selectedChainId = null;
     this.dropUserSelection();
     this.render();
@@ -2100,12 +2119,10 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Rebuild the shadow DOM. With `keepView`, the redraw keeps the 3-D view
-   * (progress and any running animation) and, for the same chain, the 2-D
-   * scroll position and 3-D orbit.
+   * Rebuild the shadow DOM. With `keepView`, the redraw keeps the 2-D scroll
+   * position and the 3-D view (progress, orbit and any running animation).
    */
   private render({ keepView = false } = {}) {
-    const shownChain = this._shown?.chain.chainId ?? null;
     const view: MorphView | null = !keepView
       ? null
       : (this._morph?.view ??
@@ -2309,10 +2326,7 @@ export class TopologyDisplay extends HTMLElement {
 
     this._contentEl.appendChild(region);
 
-    if (!view) return;
-    // Another chain keeps only how far it is rolled up into 3-D.
-    if (selectedChain.chainId === shownChain) this.restoreView(view);
-    else this.restoreView({ ...view, orbit: { az: 0, el: 0 }, scroll0: 0 });
+    if (view) this.restoreView(view);
   }
 
   /** Put the re-rendered chain back in `view`, loading the morph only if needed. */
@@ -2372,8 +2386,8 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * A new protein forgets what the user picked in the old one, but keeps a
-   * `selection` the page set, so it can be set before the data loads.
+   * Forget the selection the user picked, but keep a `selection` the page
+   * set, so it can be set before the data loads.
    */
   private dropUserSelection(): void {
     const mine = this._userSelection;

@@ -560,6 +560,19 @@ describe('<topology-display> 3-D morph', () => {
     expect(root.activeElement).toBe(root.querySelector('.chain-picker button'));
   });
 
+  it('keeps the 3-D view for a new protein until resetView()', async () => {
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(1);
+    el.proteinData = { pdbId: 'tst2', chains: [hairpinChain()] };
+    await new Promise((r) => setTimeout(r, 0));
+    expect(el.morphProgress).toBe(1);
+    el.resetView();
+    expect(el.morphProgress).toBe(0);
+    expect(el.shadowRoot!.querySelector('.svg-scroll svg')?.classList.contains('morph-svg')).toBe(
+      false,
+    );
+  });
+
   it('ignores re-assigning the same protein data', async () => {
     const el = mount(hairpinChain());
     await el.setMorphProgress(1);
