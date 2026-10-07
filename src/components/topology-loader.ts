@@ -11,8 +11,11 @@ const STYLES = `
   .error-detail { font-size: 0.85rem; color: #800; margin-top: 0.25rem; }
 `;
 
+/** Attributes passed through to the inner `<topology-display>`. */
+const FORWARDED = ['theme', 'theme-light', 'theme-dark'];
+
 export class TopologyLoader extends HTMLElement {
-  static observedAttributes = ['pdb-id', 'sim-id'];
+  static observedAttributes = ['pdb-id', 'sim-id', ...FORWARDED];
 
   private _pdbId: string | null = null;
   private _simId: string | null = null;
@@ -32,6 +35,11 @@ export class TopologyLoader extends HTMLElement {
 
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
     if (oldValue === value) return;
+    if (FORWARDED.includes(name)) {
+      const display = this._contentEl.querySelector('topology-display');
+      if (display) forward(this, display, name);
+      return;
+    }
     if (name === 'pdb-id') this._pdbId = value;
     else if (name === 'sim-id') this._simId = value;
     if (this.isConnected) this.load();
@@ -68,6 +76,7 @@ export class TopologyLoader extends HTMLElement {
 
   private renderData(data: ProteinData) {
     const display = document.createElement('topology-display') as TopologyDisplay;
+    for (const name of FORWARDED) forward(this, display, name);
     display.proteinData = data;
     this._contentEl.replaceChildren(display);
   }
@@ -116,6 +125,12 @@ export class TopologyLoader extends HTMLElement {
       this.renderError(message);
     }
   }
+}
+
+function forward(from: Element, to: Element, name: string): void {
+  const value = from.getAttribute(name);
+  if (value === null) to.removeAttribute(name);
+  else to.setAttribute(name, value);
 }
 
 if (!customElements.get('topology-loader')) {

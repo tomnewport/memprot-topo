@@ -626,7 +626,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(markers.length).toBe(4);
   });
 
-  it('folds sub-3-residue SS elements into the surrounding loop', () => {
+  it('folds SS elements shorter than the default minimum into the surrounding loop', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tinySsLoopProtein();
@@ -640,13 +640,38 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(loopPaths[0].getAttribute('stroke-dasharray')).toBeNull();
   });
 
-  it('reports SS counts excluding sub-3-residue elements', () => {
+  it('reports SS counts excluding elements shorter than the minimum', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = tinySsLoopProtein();
 
     const label = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
     expect(label).toContain('2 helices');
+  });
+
+  it('draws 4-residue helices by default and drops them when min-helix-length exceeds that', () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = discontinuousLoopProtein();
+    const helices = () => el.shadowRoot!.querySelectorAll('polygon[data-type="helix"]').length;
+    expect(helices()).toBe(2);
+
+    el.setAttribute('min-helix-length', '5');
+    expect(helices()).toBe(0);
+    expect(el.shadowRoot!.querySelector('.chain-label')!.textContent).toContain('0 helices');
+
+    // Invalid values fall back to the default.
+    el.setAttribute('min-helix-length', 'nope');
+    expect(helices()).toBe(2);
+  });
+
+  it('keeps the spurious 2-residue helix when min-helix-length is lowered to 2', () => {
+    const el = new TopologyDisplay();
+    el.setAttribute('min-helix-length', '2');
+    document.body.appendChild(el);
+    el.proteinData = tinySsLoopProtein();
+
+    expect(el.shadowRoot!.querySelector('.chain-label')!.textContent).toContain('3 helices');
   });
 
   it('renders the chain-break connector as a dashed Catmull-Rom curve', () => {
@@ -757,7 +782,7 @@ describe('TopologyDisplay live attribute updates', () => {
     expect(el.shadowRoot!.querySelector('.svg-scroll')).toBeNull();
   });
 
-  it('resets chain selection when protein-data attribute changes', () => {
+  it('keeps the chain pick when protein-data changes; resetView() returns to default', () => {
     const tm = tmHelixProtein().chains[0];
     const tmB = { ...tm, chainId: 'B' };
     const el = attach(new TopologyDisplay());
@@ -771,8 +796,14 @@ describe('TopologyDisplay live attribute updates', () => {
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(II)');
 
-    // Changing the attribute (different JSON — pdbId updated) resets selection back to default
+    // New data with the same chain keeps the user's pick.
     el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer-v2', chains: [tm, tmB] }));
+    expect(
+      el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
+    ).toContain('A(II)');
+
+    // resetView() goes back to the default chain.
+    el.resetView();
     expect(
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(I)');
@@ -818,6 +849,18 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
     const label = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
     expect(label).toContain('β-barrel');
     expect(label).toContain('8 strands');
+  });
+
+  it('filters short strands before β-barrel detection (min-strand-length)', () => {
+    // The fixture's strands are 10 residues; a higher minimum leaves no strands,
+    // so no barrel is detected.
+    const el = mount(barrelProtein(), { 'min-strand-length': '11' });
+    const label = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
+    expect(label).toContain('0 strands');
+    expect(label).not.toContain('β-barrel');
+
+    el.setAttribute('min-strand-length', '10');
+    expect(el.shadowRoot!.querySelector('.chain-label')!.textContent).toContain('β-barrel');
   });
 
   it('draws one arrowed strand polygon per strand of the barrel', () => {

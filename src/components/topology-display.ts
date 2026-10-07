@@ -16,7 +16,24 @@ import {
 } from '../unroll/index.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
-import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
+import { ssOutline, outlinePolygon, outlineSlice, type OutlinePoint } from './ss-outline.js';
+import {
+  measure,
+  monotoneCubic,
+  parseSeriesAttribute,
+  readDataTheme,
+  renderLegend,
+  resolveColouring,
+  residueSpans,
+  ribbon,
+  ribbonSlice,
+  slicePolyline,
+  widthFactors,
+  widthProfile,
+  type Colouring,
+  type ResidueColourValues,
+  type ResidueWidthValues,
+} from './residue-data.js';
 import {
   chainIconShape,
   iconZOuter,
@@ -26,17 +43,38 @@ import {
   type IconMembrane,
 } from './chain-icon.js';
 import { ScrollBox, SCROLL_BOX_STYLES } from './scroll-box.js';
-import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
-import type { MorphController } from '../morph/controller.js';
+import type {
+  MorphScene,
+  MorphElement,
+  MorphLoop,
+  MorphLabel,
+  MorphStyle,
+  MorphTie,
+} from '../morph/types.js';
+import type { MorphController, MorphView } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
 import { PROJECTIONS } from '../morph/projections.js';
+import {
+  getTheme,
+  onThemeRegistered,
+  paint,
+  registerTheme,
+  repaint,
+  resolveThemeName,
+  themeCss,
+  type Theme,
+  type ThemeInput,
+  type ThemeName,
+} from '../theme/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const STYLES = `
   :host {
     display: block;
-    font-family: sans-serif;
+    font-family: var(--mp-font-family);
+    color: var(--mp-text);
+    background: var(--mp-background);
     padding: 0.5rem;
     max-width: 100%;
   }
@@ -57,14 +95,14 @@ const STYLES = `
   }
   .chain-block { margin-top: 0.75rem; }
   .chain-label {
-    font-family: monospace;
+    font-family: var(--mp-mono-font-family);
     font-size: 0.85rem;
-    color: #444;
+    color: var(--mp-text);
     margin-bottom: 0.25rem;
   }
   .chain-note {
     font-size: 0.8rem;
-    color: #6c757d;
+    color: var(--mp-text-muted);
     font-style: italic;
     margin-top: 0.25rem;
   }
@@ -74,16 +112,16 @@ const STYLES = `
     gap: 0.5rem;
     margin: 0.5rem 0;
     padding: 0.5rem;
-    background: #fafafa;
-    border-radius: 4px;
-    border: 1px solid #efefef;
+    background: var(--mp-surface);
+    border-radius: var(--mp-corner-radius);
+    border: 1px solid var(--mp-border);
   }
   .chain-violin {
     border: 1px solid transparent;
     background: transparent;
     cursor: pointer;
     padding: 0.2rem;
-    border-radius: 6px;
+    border-radius: calc(var(--mp-corner-radius) + 2px);
     display: flex;
     font-family: inherit;
   }
@@ -94,27 +132,29 @@ const STYLES = `
     gap: 0.15rem;
   }
   .chain-copy {
-    font: 0.75rem Georgia, 'Times New Roman', serif;
+    font-family: var(--mp-serif-font-family);
+    font-size: 0.75rem;
     padding: 0 0.15rem;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    background: #fff;
+    border: 1px solid var(--mp-border);
+    border-radius: max(0px, calc(var(--mp-corner-radius) - 1px));
+    background: var(--mp-background);
+    color: var(--mp-text);
   }
   .chain-violin .icon-grid { display: none; }
   .chain-violin:hover .icon-grid,
   .chain-violin.selected .icon-grid { display: inline; }
-  .chain-violin:hover { background: #eef3f8; }
+  .chain-violin:hover { background: color-mix(in srgb, var(--mp-accent) 8%, transparent); }
   .chain-violin.selected {
-    background: #e6f2ff;
-    border-color: #1f77b4;
+    background: color-mix(in srgb, var(--mp-accent) 14%, transparent);
+    border-color: var(--mp-accent);
   }
   .chain-violin:focus-visible {
-    outline: 2px solid #1f77b4;
+    outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
   .chain-picker-label {
     font-size: 0.75rem;
-    color: #6c757d;
+    color: var(--mp-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 0.25rem;
@@ -122,9 +162,9 @@ const STYLES = `
   .svg-scroll {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    background: var(--mp-background);
+    border: 1px solid var(--mp-border);
+    border-radius: var(--mp-corner-radius);
   }
   svg {
     display: block;
@@ -132,43 +172,51 @@ const STYLES = `
     /* no height: auto — inside overflow-x:auto containers it causes the browser
        to compute height from container width, producing a huge whitespace gap */
   }
-  .placeholder { font-style: italic; color: #888; }
+  .placeholder { font-style: italic; color: var(--mp-text-muted); }
   .morph-bar {
     display: flex;
     align-items: center;
     gap: 0.6rem;
     margin-bottom: 0.35rem;
     font-size: 0.75rem;
-    color: #6c757d;
+    color: var(--mp-text-muted);
   }
   .morph-toggle {
     font: inherit;
     font-weight: 600;
     padding: 0.15rem 0.6rem;
-    border: 1px solid #1f77b4;
-    border-radius: 4px;
-    background: #fff;
-    color: #1f77b4;
+    border: 1px solid var(--mp-accent);
+    border-radius: var(--mp-corner-radius);
+    background: var(--mp-background);
+    color: var(--mp-accent);
     cursor: pointer;
   }
-  .morph-toggle[aria-pressed='true'] { background: #1f77b4; color: #fff; }
+  .morph-toggle[aria-pressed='true'] { background: var(--mp-accent); color: var(--mp-accent-text); }
   .morph-toggle:focus-visible, .morph-scrub:focus-visible {
-    outline: 2px solid #1f77b4;
+    outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
-  .morph-scrub { width: 10rem; accent-color: #1f77b4; }
+  .morph-scrub { width: 10rem; accent-color: var(--mp-accent); }
   .morph-hint { visibility: hidden; }
   .morph-bar.is-3d .morph-hint { visibility: visible; }
   .ss-element { cursor: pointer; outline: none; }
   .ss-element:hover, .ss-element:focus-visible {
     filter: brightness(1.15);
-    stroke: #111;
-    stroke-width: 2.5px;
+    stroke: var(--mp-hover);
+    stroke-width: var(--mp-hover-width);
   }
-  .ss-element.selected, .loop.selected { stroke: #e6550d; }
-  .ss-element.selected { stroke-width: 2.5px; }
-  .ss-element.selected:hover, .ss-element.selected:focus-visible { stroke-width: 3.5px; }
-  .loop.selected { stroke-width: 3px; }
+  .ss-element.selected, .loop.selected { stroke: var(--mp-selection); }
+  .ss-element.selected { stroke-width: var(--mp-selection-width); }
+  .ss-element.selected:hover, .ss-element.selected:focus-visible {
+    stroke-width: calc(var(--mp-selection-width) + 1px);
+  }
+  .loop.selected { stroke-width: calc(var(--mp-selection-width) + 0.5px); }
+  /* A loop drawn residue by residue shows its plain curve only as the halo. */
+  .loop.has-data { stroke-opacity: 0; }
+  .loop.has-data.selected {
+    stroke-opacity: 1;
+    stroke-width: calc(var(--mp-selection-width) + 2.5px);
+  }
 ${SCROLL_BOX_STYLES}`;
 
 const PLOT = {
@@ -190,31 +238,6 @@ const PLOT = {
   arcPxPerA: 2.5,
   /** Å per pixel on the y-axis (real z).  Equal to arcPxPerA for 1:1 aspect ratio. */
   zPxPerA: 2.5,
-};
-
-const COLOURS = {
-  membraneFill: '#eaeaea',
-  membraneEdge: '#bdbdbd',
-  zAxis: '#666',
-  coil: '#666',
-  helix: '#6e8db6',
-  helixEdge: '#3e587a',
-  strand: '#6ea76d',
-  strandEdge: '#3d6d3d',
-  contact: '#c98a3b',
-};
-
-const ICON_COLOURS: IconColours = {
-  helix: COLOURS.helix,
-  strand: COLOURS.strand,
-  coil: '#f7f7f7',
-  outline: '#2b2b2b',
-  frame: '#2b2b2b',
-  grid: '#d6d6d6',
-  membraneEdge: '#2b2b2b',
-  membraneDark: '#c4c4c4',
-  membraneLight: '#e9e9e9',
-  label: '#1a1a1a',
 };
 
 const LOOP = {
@@ -274,14 +297,23 @@ const BARREL = {
 
 /**
  * Minimum residue count for a helix/strand to be drawn as a discrete SS
- * element. Shorter assignments (1-2 residues) are folded into the surrounding
- * loop so they don't fragment it into multiple stubs.
+ * element (`min-helix-length`, `min-strand-length`). Shorter assignments are
+ * folded into the surrounding loop so they don't fragment it into stubs.
  */
-const MIN_SS_RESIDUES = 3;
+export const DEFAULT_MIN_HELIX_LENGTH = 4;
+export const DEFAULT_MIN_STRAND_LENGTH = 4;
 
-/** Drop sub-`MIN_SS_RESIDUES` helix/strand assignments so they read as coil. */
-function effectiveSsSegments(segments: SecondaryStructureSegment[]): SecondaryStructureSegment[] {
-  return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= MIN_SS_RESIDUES);
+interface SsMinLengths {
+  helix: number;
+  strand: number;
+}
+
+/** Drop helix/strand assignments shorter than `min` so they read as coil. */
+export function effectiveSsSegments(
+  segments: SecondaryStructureSegment[],
+  min: SsMinLengths,
+): SecondaryStructureSegment[] {
+  return segments.filter((s) => s.type === 'coil' || s.end - s.start + 1 >= min[s.type]);
 }
 
 function isBetaBarrel(chain: ChainData): boolean {
@@ -370,11 +402,6 @@ const SS_BODY = {
   arrowLengthPx: 12,
 };
 
-const SS_STYLE: Record<'helix' | 'strand', { fill: string; stroke: string }> = {
-  helix: { fill: COLOURS.helix, stroke: COLOURS.helixEdge },
-  strand: { fill: COLOURS.strand, stroke: COLOURS.strandEdge },
-};
-
 const LABEL = {
   fontSizePx: 11,
   /** Gap (screen pixels) between the polygon tip and the nearest label edge. */
@@ -383,7 +410,6 @@ const LABEL = {
    * Stepping > 1 averages out the helix curl that makes single-sample
    * tangents jitter at the ends. */
   tangentStepSamples: 3,
-  fill: '#333',
 };
 
 interface LabelBox {
@@ -460,7 +486,7 @@ function placeResidueLabel(
   textEl.setAttribute('text-anchor', 'middle');
   textEl.setAttribute('dominant-baseline', 'central');
   textEl.setAttribute('font-size', `${fontSize}`);
-  textEl.setAttribute('fill', LABEL.fill);
+  paint(textEl, { fill: 'label' });
   textEl.textContent = text;
   labelsGroup.appendChild(textEl);
 }
@@ -503,6 +529,14 @@ function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: numbe
   return endIdx;
 }
 
+/** Per-residue data styling for the displayed chain (issue #23). */
+interface ResidueStyle {
+  /** Colour of a residue, or undefined where it has no value; null when not colouring. */
+  colour: ((resSeq: number) => string | undefined) | null;
+  /** Width multiplier per residue (absent = 1). */
+  widths: Map<number, number>;
+}
+
 /**
  * Render a helix or strand run as one filled+stroked polygon: a uniform-width
  * body with butt ends, terminated at the C-terminal end by an integrated
@@ -522,6 +556,8 @@ function drawSsPolygon(
   type: 'helix' | 'strand',
   withArrow: boolean,
   faded = false,
+  data?: ResidueStyle,
+  residues: { resSeq: number; sampleIndex: number }[] = [],
 ): SVGPolygonElement | null {
   if (endIdx <= startIdx) return null;
 
@@ -529,23 +565,72 @@ function drawSsPolygon(
   for (let i = startIdx; i <= endIdx; i++) {
     screen.push({ sx: samples[i].arc * PLOT.arcPxPerA, sy: -samples[i].z * PLOT.zPxPerA });
   }
-  const sections = ssOutline(screen, withArrow, {
+  let sections = ssOutline(screen, withArrow, {
     halfWidth: SS_BODY.halfWidthPx,
     arrowHalfWidth: SS_BODY.arrowHalfWidthPx,
     arrowLength: SS_BODY.arrowLengthPx,
   });
   if (sections.length === 0) return null;
+  const toPoints = (verts: OutlinePoint[]): string =>
+    verts
+      .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
+      .join(' ');
 
-  const points = outlinePolygon(screen, sections)
-    .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
-    .join(' ');
+  // Per-residue width: scale the body by a smooth profile through the
+  // residues' factors. Arrow wings keep their flare beyond the body, so a
+  // strand still shows its direction at zero width. A sliver of width is kept
+  // so the outline doesn't collapse; its stroke then draws the bare line.
+  if (data && data.widths.size > 0) {
+    const profile = widthProfile(residues, data.widths);
+    const flare = SS_BODY.arrowHalfWidthPx - SS_BODY.halfWidthPx;
+    sections = sections.map((s) => {
+      if (s.hw === 0) return s; // arrow tip
+      const body = Math.max(0.05, SS_BODY.halfWidthPx * profile(startIdx + s.fi));
+      return { ...s, hw: s.hw === SS_BODY.arrowHalfWidthPx ? body + flare : body };
+    });
+  }
+
+  // Per-residue colour: one fill slice per residue under the outline, which is
+  // then drawn unfilled on top so the edge and hit area stay one shape.
+  const coloured = !!data?.colour && residues.some((r) => data.colour!(r.resSeq) !== undefined);
+  if (coloured) {
+    const slices = document.createElementNS(SVG_NS, 'g');
+    slices.setAttribute('class', 'residue-fill');
+    slices.setAttribute('pointer-events', 'none');
+    if (faded) slices.setAttribute('opacity', '0.32');
+    for (const span of residueSpans(residues, startIdx, endIdx)) {
+      const verts = outlineSlice(screen, sections, span.from - startIdx, span.to - startIdx);
+      if (verts.length < 3) continue;
+      const fill = data!.colour!(span.resSeq);
+      const slice = document.createElementNS(SVG_NS, 'polygon');
+      slice.setAttribute('points', toPoints(verts));
+      // A hairline of the same colour hides anti-aliasing seams between slices.
+      if (fill) {
+        slice.setAttribute('fill', fill);
+        slice.setAttribute('stroke', fill);
+      } else {
+        paint(slice, { fill: type, stroke: type });
+      }
+      slice.setAttribute('stroke-width', '0.5');
+      slice.setAttribute('vector-effect', 'non-scaling-stroke');
+      slice.dataset.res = String(span.resSeq);
+      slices.appendChild(slice);
+    }
+    plot.appendChild(slices);
+  }
+
+  const points = toPoints(outlinePolygon(screen, sections));
 
   const poly = document.createElementNS(SVG_NS, 'polygon');
   poly.setAttribute('points', points);
-  poly.setAttribute('fill', SS_STYLE[type].fill);
-  poly.setAttribute('stroke', SS_STYLE[type].stroke);
-  poly.setAttribute('stroke-width', '1.5');
-  poly.setAttribute('stroke-linejoin', 'round');
+  paint(poly, {
+    fill: type,
+    stroke: type === 'helix' ? 'helixEdge' : 'strandEdge',
+    'stroke-width': 'outlineWidth',
+    'stroke-linejoin': 'lineJoin',
+  });
+  // Still painted (so the interior is clickable) but see-through to the slices.
+  if (coloured) poly.setAttribute('fill-opacity', '0');
   poly.setAttribute('vector-effect', 'non-scaling-stroke');
   // Neighbouring-chain elements (assembly barrels) are desaturated so the focal
   // protomer reads as the subject.
@@ -733,10 +818,8 @@ function renderLoopCurve(
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('d', d);
   path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', COLOURS.coil);
-  path.setAttribute('stroke-width', '1.8');
+  paint(path, { stroke: 'loop', 'stroke-width': 'loopWidth', 'stroke-linejoin': 'lineJoin' });
   path.setAttribute('stroke-linecap', 'round');
-  path.setAttribute('stroke-linejoin', 'round');
   path.setAttribute('vector-effect', 'non-scaling-stroke');
   if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
   if (faded) path.setAttribute('opacity', '0.32');
@@ -750,12 +833,129 @@ function renderLoopCurve(
       dot.setAttribute('cy', (-p.z * PLOT.zPxPerA).toFixed(2));
       dot.setAttribute('r', '2.5');
       dot.setAttribute('fill', LOOP_DEBUG_FILL[p.kind]);
-      dot.setAttribute('stroke', '#fff');
+      paint(dot, { stroke: 'background' });
       dot.setAttribute('stroke-width', '0.5');
       markers.appendChild(dot);
     }
   }
   return path;
+}
+
+/** Loop stroke width in screen pixels. */
+const LOOP_STROKE_PX = 1.8;
+
+/** Narrowest a loop is drawn (screen px), at a width factor of 0: a hairline. */
+const LOOP_MIN_WIDTH_PX = 0.5;
+
+/**
+ * Draw a loop's residues as consecutive pieces over the loop curve, each
+ * coloured and sized by its residue's data. Residues share the curve's length
+ * equally, in sequence order, since the loop is a smoothed connector rather
+ * than a residue-by-residue trace. With width data the loop becomes a filled
+ * ribbon whose width follows a smooth profile through the residue centres;
+ * otherwise (and for dashed loops) each residue is a stroke piece. Returns
+ * false when no residue has data (the plain curve then stands alone).
+ */
+function drawLoopData(
+  plot: SVGGElement,
+  points: LoopControlPoint[],
+  loopResidues: { resSeq: number }[],
+  data: ResidueStyle,
+  discontinuous: boolean,
+): boolean {
+  const n = loopResidues.length;
+  if (n === 0 || points.length < 2) return false;
+  const hasData = loopResidues.some(
+    (r) => data.widths.has(r.resSeq) || data.colour?.(r.resSeq) !== undefined,
+  );
+  if (!hasData) return false;
+
+  // Flatten the curve's Bézier pieces into a dense polyline to measure along.
+  const bez = catmullRomBezier(points.map((p) => ({ x: p.arc, y: p.z, z: 0 })));
+  const flat: { x: number; y: number }[] = [{ x: bez.start.x, y: bez.start.y }];
+  let p0 = bez.start;
+  for (const seg of bez.segments) {
+    for (let i = 1; i <= 16; i++) {
+      const t = i / 16;
+      const u = 1 - t;
+      const b0 = u * u * u;
+      const b1 = 3 * u * u * t;
+      const b2 = 3 * u * t * t;
+      const b3 = t * t * t;
+      flat.push({
+        x: b0 * p0.x + b1 * seg.c1.x + b2 * seg.c2.x + b3 * seg.end.x,
+        y: b0 * p0.y + b1 * seg.c1.y + b2 * seg.c2.y + b3 * seg.end.y,
+      });
+    }
+    p0 = seg.end;
+  }
+  const poly = measure(flat);
+  const total = poly[poly.length - 1].d;
+  if (total <= 0) return false;
+
+  const group = document.createElementNS(SVG_NS, 'g');
+  group.setAttribute('class', 'residue-stroke');
+  group.setAttribute('pointer-events', 'none');
+  const widthPx = (f: number): number => Math.max(LOOP_MIN_WIDTH_PX, LOOP_STROKE_PX * f);
+
+  if (!discontinuous && loopResidues.some((r) => data.widths.has(r.resSeq))) {
+    const profile = monotoneCubic(
+      loopResidues.map((_, k) => ((k + 0.5) / n) * total),
+      loopResidues.map((r) => data.widths.get(r.resSeq) ?? 1),
+    );
+    // Plot units are Å; the plot scale is uniform (1:1 aspect).
+    const rib = ribbon(poly, (d) => widthPx(profile(d)) / 2 / PLOT.arcPxPerA);
+    for (let k = 0; k < n; k++) {
+      const resSeq = loopResidues[k].resSeq;
+      const colour = data.colour?.(resSeq);
+      const piece = document.createElementNS(SVG_NS, 'polygon');
+      piece.setAttribute(
+        'points',
+        ribbonSlice(rib, (k / n) * total, ((k + 1) / n) * total)
+          .map((q) => `${q.x.toFixed(3)},${q.y.toFixed(3)}`)
+          .join(' '),
+      );
+      // A hairline of the same colour hides anti-aliasing seams between pieces.
+      if (colour) {
+        piece.setAttribute('fill', colour);
+        piece.setAttribute('stroke', colour);
+      } else {
+        paint(piece, { fill: 'loop', stroke: 'loop' });
+      }
+      piece.setAttribute('stroke-width', '0.4');
+      piece.setAttribute('stroke-linejoin', 'round');
+      piece.setAttribute('vector-effect', 'non-scaling-stroke');
+      piece.dataset.res = String(resSeq);
+      group.appendChild(piece);
+    }
+    plot.appendChild(group);
+    return true;
+  }
+
+  for (let k = 0; k < n; k++) {
+    const piece = slicePolyline(poly, (k / n) * total, ((k + 1) / n) * total);
+    const resSeq = loopResidues[k].resSeq;
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute(
+      'd',
+      piece.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(''),
+    );
+    path.setAttribute('fill', 'none');
+    const colour = data.colour?.(resSeq);
+    if (colour) path.setAttribute('stroke', colour);
+    else paint(path, { stroke: 'loop' });
+    const w = widthPx(data.widths.get(resSeq) ?? 1);
+    path.setAttribute('stroke-width', w.toFixed(2));
+    // Round caps join the pieces without gaps at bends.
+    path.setAttribute('stroke-linecap', discontinuous ? 'butt' : 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
+    path.dataset.res = String(resSeq);
+    group.appendChild(path);
+  }
+  plot.appendChild(group);
+  return true;
 }
 
 /** Tag a loop path with the residue range it stands for, for selection styling. */
@@ -797,6 +997,7 @@ function drawLoop(
   opts: LoopRenderOptions,
   faded = false,
   rec?: { recorder: SceneRecorder; seg: number },
+  data?: ResidueStyle,
 ): void {
   const prev: LoopEnd | null = prevRun ? { samples, index: prevRun.endResSampleIdx } : null;
   const next: LoopEnd | null = nextRun ? { samples, index: nextRun.startSample } : null;
@@ -817,6 +1018,11 @@ function drawLoop(
   }
 
   const path = renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints, faded);
+  // Residue data is drawn over the curve, which stays as the hit area and the
+  // selection halo (hidden otherwise; see `.loop.has-data`).
+  if (path && data && drawLoopData(plot, points, loopResidues, data, discontinuous)) {
+    path.classList.add('has-data');
+  }
   // Neighbouring protomers are context only, so only the focal chain's loops
   // take part in the selection.
   if (path && !faded && loopResidues.length > 0) {
@@ -1129,8 +1335,7 @@ function drawContacts(
       line.setAttribute('y1', a.z.toFixed(3));
       line.setAttribute('x2', b.arc.toFixed(3));
       line.setAttribute('y2', b.z.toFixed(3));
-      line.setAttribute('stroke', COLOURS.contact);
-      line.setAttribute('stroke-width', '1');
+      paint(line, { stroke: 'contact', 'stroke-width': 'contactWidth' });
       line.setAttribute('stroke-opacity', '0.5');
       line.setAttribute('vector-effect', 'non-scaling-stroke');
       group.appendChild(line);
@@ -1234,7 +1439,9 @@ function renderChainSvg(
   opts: LoopRenderOptions,
   analysis: BarrelAnalysis,
   showContacts: boolean,
+  theme: Theme,
   assembly?: AssemblyContext,
+  display?: ChainDisplayData,
 ): { svg: SVGSVGElement; scene: MorphScene | null } {
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
@@ -1246,12 +1453,11 @@ function renderChainSvg(
   // In barrel mode only the wall strands are drawn as strands; any β-strands
   // that fold inside the barrel (e.g. OmpF's L3) sit near the axis where the
   // unwrap angle is meaningless, so they read as part of the connecting loop.
-  const effective = effectiveSsSegments(chain.segments);
   const ssSegments = asm
     ? asm.wallSegments
     : analysis.cylindrical
-      ? barrelWallSegments(analysis, effective)
-      : effective;
+      ? barrelWallSegments(analysis, chain.segments)
+      : chain.segments;
   const unroll: UnrollResult = asm
     ? { segments: asm.segments, totalArcLength: 0, zMin: asm.zMin, zMax: asm.zMax }
     : analysis.cylindrical
@@ -1315,9 +1521,8 @@ function renderChainSvg(
   slab.setAttribute('y', `${-PLOT.membraneHalf}`);
   slab.setAttribute('width', `${totalArc.toFixed(2)}`);
   slab.setAttribute('height', `${PLOT.membraneHalf * 2}`);
-  slab.setAttribute('fill', COLOURS.membraneFill);
+  paint(slab, { fill: 'membrane', stroke: 'membraneEdge', 'stroke-width': 'membraneEdgeWidth' });
   slab.setAttribute('fill-opacity', '0.55');
-  slab.setAttribute('stroke', COLOURS.membraneEdge);
   // Stroke gets multiplied by the (non-uniform) scale, so use vector-effect to
   // keep it 1px regardless of zoom.
   slab.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -1329,7 +1534,7 @@ function renderChainSvg(
   mid.setAttribute('x2', `${totalArc.toFixed(2)}`);
   mid.setAttribute('y1', '0');
   mid.setAttribute('y2', '0');
-  mid.setAttribute('stroke', COLOURS.zAxis);
+  paint(mid, { stroke: 'midplane', 'stroke-width': 'midplaneWidth' });
   mid.setAttribute('stroke-dasharray', '4 4');
   mid.setAttribute('vector-effect', 'non-scaling-stroke');
   plot.appendChild(mid);
@@ -1347,7 +1552,7 @@ function renderChainSvg(
   // group below so labels render on top of polygons.
   const labelsGroup = document.createElementNS(SVG_NS, 'g');
   labelsGroup.setAttribute('transform', `translate(${cx}, ${cy})`);
-  labelsGroup.setAttribute('font-family', 'sans-serif');
+  paint(labelsGroup, { 'font-family': 'fontFamily' });
   const placedBoxes: LabelBox[] = [];
 
   // Debug markers for loop control points. Non-scaled (translate only) so the
@@ -1376,6 +1581,8 @@ function renderChainSvg(
       hasBreakAfter,
       focalFlags ? !focalFlags[s] : false,
       { recorder, seg: s },
+      // Data is keyed by chain, so it styles only the focal chain's segments.
+      focalFlags && !focalFlags[s] ? undefined : display?.style,
     );
     // Dashed connector across a chain break. Anchor at the nearest SS endpoint
     // on each side so that any trailing/leading coil in the adjacent segments is
@@ -1472,16 +1679,7 @@ function renderChainSvg(
         },
         gapA: LOOP.elementGapPx / PLOT.arcPxPerA,
         style: {
-          helixFill: COLOURS.helix,
-          helixStroke: COLOURS.helixEdge,
-          strandFill: COLOURS.strand,
-          strandStroke: COLOURS.strandEdge,
-          coil: COLOURS.coil,
-          membraneFill: COLOURS.membraneFill,
-          membraneEdge: COLOURS.membraneEdge,
-          midplane: COLOURS.zAxis,
-          contact: COLOURS.contact,
-          labelFill: LABEL.fill,
+          ...morphColours(theme),
           labelFontSize: LABEL.fontSizePx,
           labelGap: LABEL.gapPx,
           labelTangentStep: LABEL.tangentStepSamples,
@@ -1492,7 +1690,35 @@ function renderChainSvg(
         },
       };
 
+  // Colour legend under the plot. Added after the 3-D scene's frame is fixed:
+  // the 3-D view replaces the whole picture, legend included.
+  if (display?.colouring) {
+    const vb = svg.getAttribute('viewBox')!.split(' ').map(Number);
+    const legendX = vb[0] + PLOT.margin.left;
+    const legendY = vb[1] + vb[3] + 4;
+    const { group, height } = renderLegend(
+      display.colouring,
+      vb[2] - PLOT.margin.left - PLOT.margin.right,
+      display.idPrefix,
+    );
+    group.setAttribute('transform', `translate(${legendX}, ${legendY})`);
+    svg.appendChild(group);
+    const h = vb[3] + 4 + height + 12;
+    svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${h}`);
+    svg.setAttribute('height', `${h}`);
+  }
+
+  repaint(svg, theme);
   return { svg, scene };
+}
+
+/** Residue data for the chain being drawn: its styling and the legend to show. */
+interface ChainDisplayData {
+  style: ResidueStyle;
+  /** Colour scale for the legend; null when the chain isn't coloured. */
+  colouring: Colouring | null;
+  /** Unique prefix for ids inside the svg (legend gradient). */
+  idPrefix: string;
 }
 
 function isSs(run: SsRun | undefined): run is SsRun {
@@ -1525,6 +1751,7 @@ function drawSegment(
   hasBreakAfter = false,
   faded = false,
   rec?: { recorder: SceneRecorder; seg: number },
+  data?: ResidueStyle,
 ): void {
   const { samples, residues } = layout;
   // For barrel strand arrows, trim C-terminal samples that curl away from the
@@ -1550,6 +1777,8 @@ function drawSegment(
         run.type,
         withArrow,
         faded,
+        data,
+        residues.slice(run.residueStart, run.residueEnd + 1),
       );
       // Focal-chain elements act as buttons (see TopologyDisplay.bindElements).
       if (poly && !faded) markSsElement(poly, run.type, run.startResSeq, run.endResSeq);
@@ -1598,7 +1827,19 @@ function drawSegment(
     // break — the cross-break connector will cover it to the next SS start.
     if (nextRun === null && hasBreakAfter) continue;
     const loopResidues = residues.slice(run.residueStart, run.residueEnd + 1);
-    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts, faded, rec);
+    drawLoop(
+      plot,
+      markersGroup,
+      samples,
+      run,
+      prevRun,
+      nextRun,
+      loopResidues,
+      opts,
+      faded,
+      rec,
+      data,
+    );
   }
 }
 
@@ -1671,6 +1912,7 @@ function renderChainPicker(
   chainLabels: Map<string, ChainLabel>,
   selectedId: string,
   icon: { membrane: IconMembrane; smoothing: number },
+  colours: IconColours,
   onSelect: (chainId: string) => void,
 ): HTMLDivElement {
   const container = document.createElement('div');
@@ -1705,7 +1947,7 @@ function renderChainPicker(
     button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
     button.title = `Chain ${lbl.text} · ${chain.residueCount} aa`;
     button.appendChild(
-      renderChainIcon(shapes[shownIdx], maxDensity, { base, suffix: null }, ICON_COLOURS),
+      renderChainIcon(shapes[shownIdx], maxDensity, { base, suffix: null }, colours),
     );
     button.addEventListener('click', () => onSelect(chain.chainId));
     group.appendChild(button);
@@ -1730,6 +1972,60 @@ function renderChainPicker(
   return container;
 }
 
+/** The chain-picker icon colours of a theme. */
+function iconColours(theme: Theme): IconColours {
+  return {
+    helix: theme.helix,
+    strand: theme.strand,
+    coil: theme.iconCoil,
+    outline: theme.iconOutline,
+    frame: theme.iconOutline,
+    grid: theme.iconGrid,
+    membraneEdge: theme.iconOutline,
+    membraneDark: theme.iconMembraneDark,
+    membraneLight: theme.iconMembraneLight,
+    label: theme.text,
+    background: theme.iconBackground,
+    fontFamily: theme.serifFontFamily,
+    frameRadius: theme.cornerRadius,
+  };
+}
+
+/** Theme-dependent parts of the 3-D morph's style: its colours and label typeface. */
+type MorphThemeStyle = Pick<
+  MorphStyle,
+  | 'helixFill'
+  | 'helixStroke'
+  | 'strandFill'
+  | 'strandStroke'
+  | 'coil'
+  | 'membraneFill'
+  | 'membraneEdge'
+  | 'midplane'
+  | 'contact'
+  | 'background'
+  | 'labelFill'
+  | 'labelFontFamily'
+>;
+
+/** The 3-D morph's colours from a theme: its shading is built from the same tokens. */
+function morphColours(theme: Theme): MorphThemeStyle {
+  return {
+    helixFill: theme.helix,
+    helixStroke: theme.helixEdge,
+    strandFill: theme.strand,
+    strandStroke: theme.strandEdge,
+    coil: theme.loop,
+    membraneFill: theme.membrane,
+    membraneEdge: theme.membraneEdge,
+    midplane: theme.midplane,
+    contact: theme.contact,
+    background: theme.background,
+    labelFill: theme.label,
+    labelFontFamily: theme.fontFamily,
+  };
+}
+
 /** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
 const DEFAULT_MORPH_SWEEP = 0.35;
 
@@ -1737,6 +2033,17 @@ const DEFAULT_MORPH_SWEEP = 0.35;
 const STRAND_ARROW_RATIO = 4.65 / 2.85;
 
 let _instanceCounter = 0;
+
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/** Whether the system asks for a dark colour scheme. */
+function prefersDark(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(DARK_QUERY).matches
+  );
+}
 
 /**
  * A residue range on one chain: the value of the `selection` attribute once
@@ -1802,11 +2109,28 @@ export class TopologyDisplay extends HTMLElement {
     'morph-strand-width',
     'morph-strand-thickness',
     'icon-bandwidth',
+    'min-helix-length',
+    'min-strand-length',
     'selection',
+    'residue-colours',
+    'residue-widths',
+    'colour-scale',
+    'colour-domain',
+    'colour-label',
+    'theme',
+    'theme-light',
+    'theme-dark',
   ];
+
+  /** Add or replace a named theme (see {@link registerTheme}). */
+  static registerTheme(name: ThemeName, theme: ThemeInput): Readonly<Theme> {
+    return registerTheme(name, theme);
+  }
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
+  private _residueColours: ResidueColourValues | null = null;
+  private _residueWidths: ResidueWidthValues | null = null;
   /** What the displayed chain's 3-D morph is built from, until it is needed. */
   private _morphSource: {
     scroll: HTMLElement;
@@ -1817,8 +2141,12 @@ export class TopologyDisplay extends HTMLElement {
   } | null = null;
   private _morph: MorphController | null = null;
   private _morphLoad: Promise<MorphController | null> | null = null;
+  /** A view a redraw is restoring while the morph code loads. */
+  private _pendingView: MorphView | null = null;
   private _scrollBox: ScrollBox | null = null;
   private _selectedChainId: string | null = null;
+  /** The chain picker, when the protein has more than one chain. */
+  private _picker: HTMLElement | null = null;
   /** Chain and 2-D svg currently on screen, for in-place selection updates. */
   private _shown: { chain: ChainData; svg: SVGSVGElement } | null = null;
   /** SS element under the pointer or focus, so hover events fire once each. */
@@ -1826,28 +2154,114 @@ export class TopologyDisplay extends HTMLElement {
   /** `selection` value last written by a user pick or click, not the page. */
   private _userSelection: string | null = null;
   private _styleEl: HTMLStyleElement;
+  /** The theme's tokens as `--mp-*` custom properties on the host. */
+  private _themeEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
+  private _themeName: ThemeName = 'light';
+  private _theme: Readonly<Theme> = getTheme('light')!;
+  /** Undo the colour-scheme and theme-registry listeners while connected. */
+  private _unlisten: (() => void) | null = null;
   // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
   // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
-  private _assemblyCache: { data: ProteinData; analysis: BarrelAnalysis } | null = null;
+  private _assemblyCache: {
+    data: ProteinData;
+    min: SsMinLengths;
+    analysis: BarrelAnalysis;
+  } | null = null;
 
   /** Assembly-barrel analysis for the current proteinData, memoised. */
   private assemblyAnalysis(chains: ChainData[]): BarrelAnalysis {
-    if (this._assemblyCache && this._assemblyCache.data === this._data) {
-      return this._assemblyCache.analysis;
+    const min = this.ssMinLengths;
+    const cached = this._assemblyCache;
+    if (
+      cached &&
+      cached.data === this._data &&
+      cached.min.helix === min.helix &&
+      cached.min.strand === min.strand
+    ) {
+      return cached.analysis;
     }
     const analysis = analyseAssemblyBarrel(chains);
-    if (this._data) this._assemblyCache = { data: this._data, analysis };
+    if (this._data) this._assemblyCache = { data: this._data, min, analysis };
     return analysis;
   }
 
   constructor() {
     super();
     const shadow = this.attachShadow({ mode: 'open' });
+    this._themeEl = document.createElement('style');
     this._styleEl = document.createElement('style');
     this._styleEl.textContent = STYLES;
     this._contentEl = document.createElement('div');
-    shadow.append(this._styleEl, this._contentEl);
+    shadow.append(this._themeEl, this._styleEl, this._contentEl);
+    this._themeName = this.resolveTheme();
+    this._theme = getTheme(this._themeName)!;
+    this._themeEl.textContent = themeCss(this._theme);
+  }
+
+  /** Name of the theme in use: from `theme`, else `theme-light` / `theme-dark` by colour scheme. */
+  get activeThemeName(): ThemeName {
+    return this._themeName;
+  }
+
+  /** The tokens of the theme in use. */
+  get activeTheme(): Readonly<Theme> {
+    return this._theme;
+  }
+
+  private resolveTheme(): ThemeName {
+    for (const attr of ['theme', 'theme-light', 'theme-dark']) {
+      const name = this.getAttribute(attr);
+      if (name !== null && !getTheme(name)) {
+        console.warn(`topology-display: unknown theme "${name}" in ${attr}`);
+      }
+    }
+    return resolveThemeName(
+      {
+        theme: this.getAttribute('theme'),
+        light: this.getAttribute('theme-light'),
+        dark: this.getAttribute('theme-dark'),
+      },
+      prefersDark(),
+    );
+  }
+
+  /**
+   * Show the theme the attributes and colour scheme now call for. Restyles in
+   * place: the chain, 2-D scroll position, 3-D view and focus are kept.
+   * `force` re-applies a theme whose tokens were re-registered.
+   */
+  private applyTheme(force = false): void {
+    const name = this.resolveTheme();
+    const theme = getTheme(name)!;
+    if (!force && name === this._themeName && theme === this._theme) return;
+    const old = this._theme;
+    this._themeName = name;
+    this._theme = theme;
+    this._themeEl.textContent = themeCss(theme);
+    this.restyle(old);
+    this.emit('theme-change', { name });
+  }
+
+  /** Bring what is on screen into the current theme. */
+  private restyle(old: Theme): void {
+    const theme = this._theme;
+    if (!this._shown) return;
+    // Per-residue colours come from the data palettes; a new palette means
+    // recolouring the data, which is a redraw.
+    const palettesChanged =
+      old.dataScale.join() !== theme.dataScale.join() ||
+      old.dataCategories.join() !== theme.dataCategories.join();
+    if (palettesChanged && this._residueColours) {
+      this.render({ keepView: true });
+      return;
+    }
+    repaint(this._shown.svg, theme);
+    if (this._morphSource) {
+      Object.assign(this._morphSource.scene.style, morphColours(theme));
+      this._morph?.restyle();
+    }
+    this.redrawPicker();
   }
 
   get proteinData(): ProteinData | null {
@@ -1855,10 +2269,43 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   set proteinData(value: ProteinData | null) {
-    this._data = value;
-    this._selectedChainId = null;
-    this.dropUserSelection();
-    this.render();
+    // Re-assigning the same object (e.g. from a framework re-render) is a no-op.
+    if (value === this._data) return;
+    this.loadData(value);
+  }
+
+  /**
+   * Per-residue colour data, `{ chainId: { resSeq: value } }` (issue #23).
+   * All-number values are mapped through a numerical colour scale
+   * (`colour-scale`, `colour-domain`); otherwise values are categories with a
+   * colour each (`colour-scale` as `key:colour` pairs, else the theme
+   * palette, or amino-acid colours when every category is a one-letter code).
+   * Mirrors the `residue-colours` attribute (JSON).
+   */
+  get residueColours(): ResidueColourValues | null {
+    return this._residueColours;
+  }
+
+  set residueColours(value: ResidueColourValues | null) {
+    if (value === this._residueColours) return;
+    this._residueColours = value;
+    this.render({ keepView: true });
+  }
+
+  /**
+   * Per-residue width relative to the normal width, `{ chainId: { resSeq:
+   * factor } }`: 1 is unchanged, 1.5 half as wide again, 0 a bare line
+   * (negative values count as 0). Widths vary smoothly between residues.
+   * Mirrors the `residue-widths` attribute (JSON).
+   */
+  get residueWidths(): ResidueWidthValues | null {
+    return this._residueWidths;
+  }
+
+  set residueWidths(value: ResidueWidthValues | null) {
+    if (value === this._residueWidths) return;
+    this._residueWidths = value;
+    this.render({ keepView: true });
   }
 
   /**
@@ -1883,7 +2330,12 @@ export class TopologyDisplay extends HTMLElement {
     else this.setAttribute('selection', `${value.chainId}:${value.start}-${value.end}`);
   }
 
-  attributeChangedCallback(name: string, _old: string | null, value: string | null) {
+  attributeChangedCallback(name: string, old: string | null, value: string | null) {
+    if (name === 'theme' || name === 'theme-light' || name === 'theme-dark') {
+      // Restyled in place: the view is kept.
+      this.applyTheme();
+      return;
+    }
     if (name === 'selection') {
       // The page set its own selection: it is no longer the user's.
       if (value !== this._userSelection) this._userSelection = null;
@@ -1892,12 +2344,31 @@ export class TopologyDisplay extends HTMLElement {
         console.warn(`topology-display: ignoring invalid selection "${value}"`);
       }
       // Same chain on screen: restyle in place so keyboard focus survives.
-      // Otherwise the selected chain changes, which needs a full render.
+      // Otherwise the selected chain changes, which needs a redraw; it keeps
+      // the 2-D / 3-D view.
       if (this._shown && (!parsed || parsed.chainId === this._shown.chain.chainId)) {
         this.applySelection();
       } else {
-        this.render();
+        this.render({ keepView: true });
       }
+      return;
+    }
+    if (
+      name === 'morph-sweep' ||
+      name === 'morph-projection' ||
+      name === 'morph-strand-width' ||
+      name === 'morph-strand-thickness'
+    ) {
+      // 3-D only: update the morph in place, keeping its view.
+      if (this._morphSource) {
+        this._morphSource.options = this.morphOptions;
+        this._morph?.setOptions(this._morphSource.options);
+      }
+      return;
+    }
+    if (name === 'icon-bandwidth') {
+      // Only the chain-picker icons change.
+      this.redrawPicker();
       return;
     }
     if (
@@ -1905,25 +2376,56 @@ export class TopologyDisplay extends HTMLElement {
       name === 'loop-extreme-points' ||
       name === 'loop-extreme-threshold' ||
       name === 'show-contacts' ||
-      name === 'morph-sweep' ||
-      name === 'morph-projection' ||
-      name === 'morph-strand-width' ||
-      name === 'morph-strand-thickness' ||
-      name === 'icon-bandwidth'
+      name === 'min-helix-length' ||
+      name === 'min-strand-length'
     ) {
-      this.render();
+      // The 2-D drawing changes; keep the scroll position and 3-D view.
+      this.render({ keepView: true });
       return;
     }
-    if (name !== 'protein-data') return;
-    if (value === null) {
-      this._data = null;
-    } else {
+    if (name === 'residue-colours' || name === 'residue-widths') {
+      if (value === old) return;
+      if (name === 'residue-colours') this._residueColours = parseSeriesAttribute(value, name);
+      else this._residueWidths = parseSeriesAttribute(value, name);
+      this.render({ keepView: true });
+      return;
+    }
+    if (name === 'colour-scale' || name === 'colour-domain' || name === 'colour-label') {
+      this.render({ keepView: true });
+      return;
+    }
+    if (name !== 'protein-data' || value === old) return;
+    let data: ProteinData | null = null;
+    if (value !== null) {
       try {
-        this._data = JSON.parse(value) as ProteinData;
+        data = JSON.parse(value) as ProteinData;
       } catch {
-        this._data = null;
+        data = null;
       }
     }
+    this.loadData(data);
+  }
+
+  /**
+   * Show a new protein, changing as little as possible: the 2-D / 3-D view,
+   * orbit and scroll carry over, as do the user's chain pick and selection
+   * when the new protein has that chain. `resetView()` starts afresh.
+   */
+  private loadData(data: ProteinData | null): void {
+    this._data = data;
+    const has = (id: string): boolean => this.chainsWithCoords().some((c) => c.chainId === id);
+    if (this._selectedChainId && !has(this._selectedChainId)) this._selectedChainId = null;
+    const mine = parseSelection(this._userSelection);
+    if (mine && !has(mine.chainId)) this.dropUserSelection();
+    this.render({ keepView: true });
+  }
+
+  /**
+   * Reset what the user has changed: back to the 2-D view at the start of the
+   * default chain, forgetting their chain pick, selection and 3-D orbit.
+   * Attributes the page set (including its own `selection`) are kept.
+   */
+  resetView(): void {
     this._selectedChainId = null;
     this.dropUserSelection();
     this.render();
@@ -1987,6 +2489,15 @@ export class TopologyDisplay extends HTMLElement {
     return opts;
   }
 
+  /** Assemble the 3-D morph options from the component's attributes. */
+  private get morphOptions(): Partial<MorphOptions> {
+    return {
+      sweep: this.morphSweep,
+      ...PROJECTIONS[this.morphProjection],
+      ...this.morphStrandOptions,
+    };
+  }
+
   /**
    * Membrane the chain-picker icons are drawn against. The centre is the z = 0
    * datum of the input frame (OPM / MemProtMD place it at the bulk bilayer
@@ -2008,6 +2519,23 @@ export class TopologyDisplay extends HTMLElement {
     return Number.isFinite(v) && v >= 0 ? v : 0;
   }
 
+  /**
+   * Shortest helix and strand, in residues, drawn as SS elements
+   * (`min-helix-length`, `min-strand-length`; default 4 each). Shorter
+   * assignments read as coil everywhere, including β-barrel detection and the
+   * chain-picker icons. Invalid or negative values fall back to the default.
+   */
+  private get ssMinLengths(): SsMinLengths {
+    const read = (name: string, fallback: number): number => {
+      const v = Number.parseInt(this.getAttribute(name) ?? '', 10);
+      return Number.isFinite(v) && v >= 0 ? v : fallback;
+    };
+    return {
+      helix: read('min-helix-length', DEFAULT_MIN_HELIX_LENGTH),
+      strand: read('min-strand-length', DEFAULT_MIN_STRAND_LENGTH),
+    };
+  }
+
   /** Assemble the loop rendering options from the component's attributes. */
   private get loopOptions(): LoopRenderOptions {
     const ext = this.getAttribute('loop-extreme-points');
@@ -2019,7 +2547,33 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   connectedCallback() {
+    this.listenForThemes();
+    // The colour scheme may have changed while disconnected.
+    this.applyTheme();
     this.render();
+  }
+
+  disconnectedCallback() {
+    this._unlisten?.();
+    this._unlisten = null;
+  }
+
+  /** Follow the system colour scheme, and themes (re-)registered by name. */
+  private listenForThemes(): void {
+    if (this._unlisten) return;
+    const offRegistry = onThemeRegistered((name) => {
+      if (name === this._themeName || name === this.resolveTheme()) this.applyTheme(true);
+    });
+    const query =
+      typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia(DARK_QUERY)
+        : null;
+    const onScheme = (): void => this.applyTheme();
+    query?.addEventListener?.('change', onScheme);
+    this._unlisten = () => {
+      offRegistry();
+      query?.removeEventListener?.('change', onScheme);
+    };
   }
 
   /** 2-D ↔ 3-D morph progress of the displayed chain: 0 = 2-D, 1 = 3-D. */
@@ -2071,7 +2625,25 @@ export class TopologyDisplay extends HTMLElement {
     return this._morphLoad;
   }
 
-  private render() {
+  /**
+   * Rebuild the shadow DOM. With `keepView`, the redraw keeps the 2-D scroll
+   * position and the 3-D view (progress, orbit and any running animation).
+   */
+  private render({ keepView = false } = {}) {
+    const view: MorphView | null = !keepView
+      ? null
+      : (this._morph?.view ??
+        this._pendingView ??
+        (this._scrollBox
+          ? {
+              tau: 0,
+              goal: 0,
+              animating: false,
+              orbit: { az: 0, el: 0 },
+              scroll0: this._scrollBox.scroll.scrollLeft,
+            }
+          : null));
+    this._pendingView = null;
     this._morph?.dispose();
     this._morph = null;
     this._morphSource = null;
@@ -2079,6 +2651,7 @@ export class TopologyDisplay extends HTMLElement {
     this._scrollBox?.dispose();
     this._scrollBox = null;
     this._shown = null;
+    this._picker = null;
     this._hovered = null;
     this._contentEl.replaceChildren();
 
@@ -2138,20 +2711,8 @@ export class TopologyDisplay extends HTMLElement {
       pickerLabel.id = labelId;
       pickerLabel.textContent = 'Select chain';
       region.appendChild(pickerLabel);
-      const icon = {
-        membrane: this.iconMembrane,
-        // Å → rows: one row is half a membrane thickness.
-        smoothing: this.iconBandwidth / (this.iconMembrane.thickness / 2),
-      };
-      const picker = renderChainPicker(
-        chainsWithCoords,
-        displayLabels,
-        selectedId,
-        icon,
-        (chainId) => this.pickChain(chainId),
-      );
-      picker.setAttribute('aria-labelledby', labelId);
-      region.appendChild(picker);
+      this._picker = this.buildPicker(chainsWithCoords, displayLabels, selectedId);
+      region.appendChild(this._picker);
     }
 
     const selectedChain =
@@ -2191,11 +2752,10 @@ export class TopologyDisplay extends HTMLElement {
 
     const label = document.createElement('div');
     label.className = 'chain-label';
-    const effective = effectiveSsSegments(selectedChain.segments);
-    const helices = effective.filter((s) => s.type === 'helix').length;
+    const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
     // Analyse the β-sheet topology once: it drives both the summary label and
     // the parallel-strand unwrap inside renderChainSvg.
-    const analysis = analyseBarrel(selectedChain.calphas, effective);
+    const analysis = analyseBarrel(selectedChain.calphas, selectedChain.segments);
     // Count physical strands from the analysis (overlapping SHEET records are
     // merged there); raw segment counts over-report on real structures.
     const strands = analysis.strands.length;
@@ -2251,7 +2811,9 @@ export class TopologyDisplay extends HTMLElement {
       this.loopOptions,
       analysis,
       this.showContacts,
+      this._theme,
       assembly,
+      this.chainDisplayData(selectedChain.chainId),
     );
     scroll.appendChild(svg);
     box.observe(svg);
@@ -2264,11 +2826,7 @@ export class TopologyDisplay extends HTMLElement {
         scroll,
         svg,
         scene,
-        options: {
-          sweep: this.morphSweep,
-          ...PROJECTIONS[this.morphProjection],
-          ...this.morphStrandOptions,
-        },
+        options: this.morphOptions,
         bar,
       };
     }
@@ -2277,14 +2835,101 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+
+    if (view) this.restoreView(view);
+  }
+
+  /** Put the re-rendered chain back in `view`, loading the morph only if needed. */
+  private restoreView(view: MorphView): void {
+    this._scrollBox!.scroll.scrollLeft = view.scroll0;
+    if (view.tau <= 0 && !view.animating) return;
+    const src = this._morphSource;
+    if (!src) return;
+    // Until the morph is restored, a further redraw carries this view on.
+    this._pendingView = view;
+    void this.loadMorph().then((m) => {
+      if (this._morphSource !== src) return;
+      this._pendingView = null;
+      m?.restore(view);
+    });
+  }
+
+  /** The chain picker, labelled by the "Select chain" heading. */
+  private buildPicker(
+    chains: ChainData[],
+    labels: Map<string, ChainLabel>,
+    selectedId: string,
+  ): HTMLElement {
+    const icon = {
+      membrane: this.iconMembrane,
+      // Å → rows: one row is half a membrane thickness.
+      smoothing: this.iconBandwidth / (this.iconMembrane.thickness / 2),
+    };
+    const picker = renderChainPicker(
+      chains,
+      labels,
+      selectedId,
+      icon,
+      iconColours(this._theme),
+      (chainId) => this.pickChain(chainId),
+    );
+    picker.setAttribute('aria-labelledby', `chain-picker-label-${this._instanceId}`);
+    return picker;
+  }
+
+  /** Redraw just the chain picker (new icon settings or theme), keeping keyboard focus. */
+  private redrawPicker(): void {
+    const old = this._picker;
+    const shown = this._shown?.chain.chainId;
+    if (!old || !shown) return;
+    const chains = this.chainsWithCoords();
+    const controls = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('button, select')];
+    const focused = controls(old).indexOf(this.shadowRoot!.activeElement as HTMLElement);
+    const picker = this.buildPicker(chains, buildChainLabels(chains), shown);
+    old.replaceWith(picker);
+    this._picker = picker;
+    if (focused >= 0) controls(picker)[focused]?.focus();
+  }
+
+  /** Residue data styling for `chainId`, or undefined when there is none. */
+  private chainDisplayData(chainId: string): ChainDisplayData | undefined {
+    const colouring = resolveColouring(
+      this._residueColours,
+      {
+        scale: this.getAttribute('colour-scale'),
+        domain: this.getAttribute('colour-domain'),
+        label: this.getAttribute('colour-label'),
+      },
+      readDataTheme(this, {
+        scale: this._theme.dataScale,
+        categories: this._theme.dataCategories,
+      }),
+    );
+    const widths = widthFactors(this._residueWidths, chainId);
+    const chainColoured = !!this._residueColours?.[chainId] && colouring !== null;
+    if (!chainColoured && widths.size === 0) return undefined;
+    return {
+      style: {
+        colour: chainColoured ? (r) => colouring!.residueColour(chainId, r) : null,
+        widths,
+      },
+      colouring: chainColoured ? colouring : null,
+      idPrefix: `mp${this._instanceId}`,
+    };
   }
 
   /** Chains that have Cα coordinates (the ones that can be drawn). */
+  /**
+   * Chains with Cα coordinates, their SS segments filtered by
+   * {@link ssMinLengths} so every consumer (barrel detection, the diagram,
+   * the picker icons) sees the same elements.
+   */
   private chainsWithCoords(): ChainData[] {
     // Don't mutate the caller's proteinData — consumers may share or memoise it.
-    return (this._data?.chains ?? []).filter(
-      (c) => Array.isArray(c.calphas) && c.calphas.length > 0,
-    );
+    const min = this.ssMinLengths;
+    return (this._data?.chains ?? [])
+      .filter((c) => Array.isArray(c.calphas) && c.calphas.length > 0)
+      .map((c) => ({ ...c, segments: effectiveSsSegments(c.segments, min) }));
   }
 
   /** Reflect a user's pick or click into the `selection` attribute. */
@@ -2294,8 +2939,8 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * A new protein forgets what the user picked in the old one, but keeps a
-   * `selection` the page set, so it can be set before the data loads.
+   * Forget the selection the user picked, but keep a `selection` the page
+   * set, so it can be set before the data loads.
    */
   private dropUserSelection(): void {
     const mine = this._userSelection;

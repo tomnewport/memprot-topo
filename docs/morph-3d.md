@@ -77,8 +77,17 @@ touch screens a horizontal drag turns the view and a vertical swipe still
 scrolls the page (the diagram can fill most of a phone screen), so tilting is
 mouse/pen/keyboard only. The framing is refitted when the container changes
 width. With `prefers-reduced-motion: reduce` the 3D button jumps straight to
-the other view instead of animating. Changing an attribute or the chain
-re-renders the component and returns it to the 2-D view.
+the other view instead of animating.
+
+Attribute and data changes keep the view. The `morph-*` attributes update the
+3-D picture in place, so it keeps its progress, orbit and any running
+animation. 2-D drawing attributes (`debug-loops`, `loop-*`, `show-contacts`, `min-*-length`, residue data and `colour-*`),
+a chain switch and new protein data redraw but restore the scroll position and
+3-D view; new data also keeps the user's chain pick and selection when it has
+that chain. `icon-bandwidth` redraws only the chain picker. Re-assigning the
+same `proteinData` object does nothing. To start afresh, call `resetView()`:
+it returns to the 2-D view of the default chain and forgets the user's chain
+pick, selection and orbit (attributes the page set are kept).
 
 `morph-strand-width` and `morph-strand-thickness` set the strand ribbon size
 in Å (defaults 2.85 × 1.0; the arrowhead, 4.65 Å, scales with the width).

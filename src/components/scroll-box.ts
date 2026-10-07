@@ -40,7 +40,11 @@ function prefersReducedMotion(): boolean {
 }
 
 export const SCROLL_BOX_STYLES = `
-  .scroll-frame { position: relative; }
+  .scroll-frame {
+    position: relative;
+    /* Edge shading: the text colour, so it shows on light and dark grounds. */
+    --scroll-shade: color-mix(in srgb, var(--mp-text, #000) 16%, transparent);
+  }
   .scroll-fade {
     position: absolute;
     top: 1px;
@@ -53,12 +57,12 @@ export const SCROLL_BOX_STYLES = `
   .scroll-fade-left {
     left: 1px;
     border-radius: 3px 0 0 3px;
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0));
+    background: linear-gradient(to right, var(--scroll-shade), transparent);
   }
   .scroll-fade-right {
     right: 1px;
     border-radius: 0 3px 3px 0;
-    background: linear-gradient(to left, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0));
+    background: linear-gradient(to left, var(--scroll-shade), transparent);
   }
   .scroll-frame.hidden-left .scroll-fade-left,
   .scroll-frame.hidden-right .scroll-fade-right { opacity: 1; }
@@ -69,18 +73,24 @@ export const SCROLL_BOX_STYLES = `
     width: 2rem;
     height: 2rem;
     padding: 0;
-    border: 1px solid #c8c8c8;
+    border: 1px solid var(--mp-border, #c8c8c8);
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.92);
-    color: #333;
+    background: color-mix(in srgb, var(--mp-background, #fff) 92%, transparent);
+    color: var(--mp-text, #333);
     font: inherit;
     font-size: 1.1rem;
     line-height: 1;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   }
-  .scroll-arrow:hover { background: #fff; color: #1f77b4; }
-  .scroll-arrow:focus-visible { outline: 2px solid #1f77b4; outline-offset: 1px; }
+  .scroll-arrow:hover {
+    background: var(--mp-background, #fff);
+    color: var(--mp-accent, #1f77b4);
+  }
+  .scroll-arrow:focus-visible {
+    outline: 2px solid var(--mp-accent, #1f77b4);
+    outline-offset: 1px;
+  }
   .scroll-arrow-left { left: 0.35rem; }
   .scroll-arrow-right { right: 0.35rem; }
   .scroll-arrow[hidden] { display: none; }

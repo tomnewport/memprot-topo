@@ -39,3 +39,6 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 - [docs/chain-icons.md](docs/chain-icons.md) — chain-picker icons and `icon-bandwidth`
 - [docs/sizing.md](docs/sizing.md) — `fit` attribute and the scrolling diagram box
 - [docs/selection.md](docs/selection.md) — the `selection` attribute and selection events
+- [docs/secondary-structure.md](docs/secondary-structure.md) — `min-helix-length` and `min-strand-length`
+- [docs/residue-data.md](docs/residue-data.md) — per-residue colours, widths and the colour legend
+- [docs/theming.md](docs/theming.md) — light/dark and custom themes: `theme`, `theme-light`, `theme-dark`, `registerTheme`
