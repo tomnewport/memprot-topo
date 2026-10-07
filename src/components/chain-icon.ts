@@ -38,8 +38,8 @@ export const ICON = {
   frameRadius: 4,
   /** Columns the protein may occupy (centred). */
   proteinColumns: 3,
-  /** Violin samples per grid row. */
-  samplesPerRow: 6,
+  /** Violin samples per grid row: one keeps the outline to a few smooth curves. */
+  samplesPerRow: 1,
   /** Corner radius (px) of the box used for chains entirely outside the membrane. */
   boxRadius: 5,
   /** Inset (px) of each inner layer from the free end of a box. */
