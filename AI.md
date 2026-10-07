@@ -14,6 +14,7 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | `src/unroll/barrel.ts`         | AI-generated | Cylindrical unwrap so barrel strands render parallel (issue #12). Human-reviewed. |
 | `src/morph/`                   | AI-generated | 2-D → 3-D morph into a Richardson-style diagram (issue #22). Human-reviewed.      |
 | `src/components/ss-outline.ts` | AI-generated | Helix/strand outline geometry shared by the 2-D view and the morph.               |
+| `src/components/scroll-box.ts` | AI-generated | Scrolling diagram box with edge gradients and arrows (issue #21).                 |
 
 ## Disclosure Guidelines
 
