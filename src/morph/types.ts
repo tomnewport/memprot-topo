@@ -21,6 +21,11 @@ export interface MorphScene {
    * z = upper and lower. `profile`, when given, is the leaflet heights the
    * 2-D view actually drew along x (bulk at the ends, local in between); the
    * morph starts from it and flattens it onto the bulk planes.
+   *
+   * In 3-D each leaflet is a fishnet that holds `annular` (default: the bulk)
+   * next to the protein, or follows `surface` when given: the local leaflet
+   * height (Å) under a point of the segments' `positions` frame, averaged
+   * over `radius` Å, or null where there is no lipid within it.
    */
   slab: {
     x0: number;
@@ -28,6 +33,11 @@ export interface MorphScene {
     upper: number;
     lower: number;
     profile?: { x: number[]; upper: number[]; lower: number[] };
+    annular?: { upper: number; lower: number };
+    surface?: {
+      upper: (x: number, y: number, radius: number) => number | null;
+      lower: (x: number, y: number, radius: number) => number | null;
+    };
   };
   /** How display Å map to SVG user units in the 2-D picture. */
   frame: MorphFrame;

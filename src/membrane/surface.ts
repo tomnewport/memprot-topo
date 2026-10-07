@@ -49,11 +49,12 @@ export class LeafletSurface {
    * Height of the surface under (x, y): the distance-weighted mean z of the
    * surface points within a few Å, weighted (1 − (d/R)²)² so the result
    * varies smoothly as (x, y) moves. Tries 3, 6 then 12 Å; null when no
-   * surface point lies within 12 Å (off the analysed patch).
+   * surface point lies within 12 Å (off the analysed patch). Given a
+   * `radius`, only that radius is tried, so holes wider than it stay holes.
    */
-  heightAt(x: number, y: number): number | null {
+  heightAt(x: number, y: number, radius?: number): number | null {
     const C = LeafletSurface.CELL;
-    for (const R of LeafletSurface.RADII) {
+    for (const R of radius === undefined ? LeafletSurface.RADII : [radius]) {
       const r2 = R * R;
       const i0 = Math.floor((x - R) / C);
       const i1 = Math.floor((x + R) / C);

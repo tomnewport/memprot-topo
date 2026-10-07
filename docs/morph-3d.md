@@ -111,6 +111,15 @@ finished 3-D view stays vector (and exportable).
   across the element. The rims are depth-sorted with the protein, so the near
   rim passes in front of whatever lies behind it and marks the edge of the
   tint.
+- Each leaflet also carries a fishnet: a square grid of thin lines (4–8 Å
+  apart) over its disc, depth-sorted with the protein like the rims, so the
+  membrane stays visible without hiding the protein. The net follows the
+  leaflet's height: the local surface from a distortions file (averaged over
+  at least 6 Å, with pores left open), or else the annular height next to the
+  protein easing to the bulk 4–14 Å away. It eases to the bulk over the outer
+  fifth of the disc to meet the rim, and grows out of the flat planes as the
+  sheets fade in. The tinted sheets stay at the bulk planes. See
+  [membrane.md](membrane.md).
 - Consecutive sections of the same element are merged into one path whenever
   nothing drawn in between overlaps them on screen (convex-footprint test).
   This keeps the DOM small and avoids anti-aliasing seams; contiguous sections

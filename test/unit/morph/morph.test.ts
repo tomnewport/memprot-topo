@@ -308,6 +308,55 @@ describe('morph membrane', () => {
     // The flat band edge-on is exactly as tall as the bulk slab.
     expect(ySpread(rimAt(flat, 0))).toBeCloseTo(30 * flat.frame.pxPerA, 0);
   });
+
+  /** The renderer's fishnet heights (upper leaflet) for a scene. */
+  function netHeights(scene: MorphScene): number[] {
+    const r = new MorphRenderer(buildMorphModel(scene));
+    r.configure(900, 0);
+    const net = (r as unknown as { net: { upper: Float64Array[] } }).net;
+    return net.upper.flatMap((l) => [...l].filter((_, i) => i % 3 === 2));
+  }
+
+  /** Stroke paths drawn in the frame at `tau`. */
+  function strokeCount(scene: MorphScene, tau: number): number {
+    const r = new MorphRenderer(buildMorphModel(scene));
+    r.configure(900, 0);
+    r.render(tau);
+    return [...r.svg.querySelectorAll('path')].filter((p) => p.getAttribute('fill') === 'none')
+      .length;
+  }
+
+  it('draws a fishnet over each leaflet in 3-D, following the local surface', () => {
+    expect(new Set(netHeights(flat))).toEqual(new Set([15]));
+    // A 4 Å rise, in the frame of the scene's sample positions.
+    const raised: MorphScene = {
+      ...flat,
+      slab: { ...flat.slab, surface: { upper: () => 19, lower: () => -19 } },
+    };
+    const zs = netHeights(raised);
+    expect(Math.max(...zs)).toBeCloseTo(19, 6);
+    expect(Math.min(...zs)).toBeCloseTo(15, 6);
+    // Only once the leaflet sheets appear.
+    expect(strokeCount(flat, 1)).toBeGreaterThan(strokeCount(flat, 0.2));
+  });
+
+  it('finds the local surface under a rolled-up β-barrel too', () => {
+    const chain = syntheticBarrel({ n: 8 });
+    const analysis = analyseBarrel(chain.calphas, chain.segments);
+    const unroll = unwrapBarrel(chain.calphas, {
+      ssSegments: chain.segments,
+      centre: analysis.centre,
+    });
+    const barrel = sceneFor('cylinder', unroll, chain.segments, 1.3);
+    // Thicker on the +x side of the structure's own frame.
+    const surface = {
+      upper: (x: number) => (x > analysis.centre.x ? 19 : 15),
+      lower: () => -15,
+    };
+    const zs = netHeights({ ...barrel, slab: { ...barrel.slab, surface } });
+    expect(zs.filter((z) => z > 18.9).length).toBeGreaterThan(zs.length / 4);
+    expect(zs.filter((z) => z < 15.1).length).toBeGreaterThan(zs.length / 4);
+  });
 });
 
 describe('morph pose (β-barrel unwrap)', () => {

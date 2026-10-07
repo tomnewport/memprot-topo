@@ -1759,6 +1759,7 @@ function renderChainSvg(
   const morphable = layouts.every(
     (layout, s) => unroll.segments[s]?.positions?.length === layout.samples.length,
   );
+  const leaflets = membrane.surfaces;
   const scene: MorphScene | null = !morphable
     ? null
     : {
@@ -1779,6 +1780,13 @@ function renderChainSvg(
           upper: membrane.bulk.upper,
           lower: membrane.bulk.lower,
           profile,
+          annular: membrane.annular,
+          surface: leaflets
+            ? {
+                upper: (x, y, radius) => leaflets.upper.heightAt(x, y, radius),
+                lower: (x, y, radius) => leaflets.lower.heightAt(x, y, radius),
+              }
+            : undefined,
         },
         frame: {
           originX: cx,

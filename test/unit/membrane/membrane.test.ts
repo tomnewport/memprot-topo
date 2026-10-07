@@ -105,6 +105,9 @@ describe('LeafletSurface.heightAt', () => {
     const s = new LeafletSurface(pts);
     expect(s.heightAt(20, 20)).toBeCloseTo(3, 9);
     expect(s.heightAt(100, 100)).toBeNull();
+    // With a fixed radius smaller than the hole, the hole stays open.
+    expect(s.heightAt(20, 20, 4)).toBeNull();
+    expect(s.heightAt(20, 20, 6)).toBeCloseTo(3, 9);
   });
 
   it('changes smoothly as the query point moves', () => {

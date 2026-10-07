@@ -2,6 +2,7 @@ import { ssOutline, type OutlinePoint, type OutlineSection } from '../components
 import { Camera } from './camera.js';
 import { computePose, type Pose, type Rigid } from './curtain.js';
 import type { MorphModel, ModelElement, ModelLoop } from './model.js';
+import { buildFishnet, fishnetSpacing, fitRigid2d, type Fishnet, type HeightAt } from './net.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -595,6 +596,8 @@ export class MorphRenderer {
   }[] = [];
   private readonly texts: Pooled<SVGTextElement>[] = [];
   private framing: Framing | null = null;
+  /** The leaflets' fishnets at τ = 1, about the final disc centre. */
+  private net: Fishnet | null = null;
   /**
    * Opacity of faded (neighbouring-chain) elements this frame. They start at
    * the 2-D figure's translucency and become opaque — with colours lightened
@@ -817,6 +820,7 @@ export class MorphRenderer {
       zoomTrack: new Array<number>(ZOOM_STEPS + 1).fill(1),
     };
     this.framing.zoomTrack = this.fitZoomTrack();
+    this.net = this.buildNet(pose, dcx, dcy, dr);
   }
 
   /**
@@ -1072,7 +1076,10 @@ export class MorphRenderer {
     }
     for (const loop of model.loops) this.loopPrims(ctx, loop);
     if (tieAlpha > 0.001) this.tiePrims(ctx, tieAlpha * 0.5);
-    if (planesOn) this.rimPrims(ctx, discX, discY, discR, upper, lower, eDisc);
+    if (planesOn) {
+      this.rimPrims(ctx, discX, discY, discR, upper, lower, eDisc);
+      this.netPrims(ctx, discX, discY, discR / F.disc1.r, upper, lower, eDisc);
+    }
 
     // Near t = 0 everything is (almost) level, so depths are snapped to keep
     // the 2-D drawing order; the snap fades out as depth becomes meaningful,
@@ -2380,6 +2387,120 @@ export class MorphRenderer {
     }
   }
 
+  /**
+   * The leaflets' fishnets for the finished view (see net.ts). Local heights
+   * are looked up in the frame of the scene's sample positions, which the
+   * finished pose holds up to a turn about z and a shift; that motion is
+   * fitted from the helix and strand samples.
+   */
+  private buildNet(pose: Pose, dcx: number, dcy: number, dr: number): Fishnet {
+    const { model } = this;
+    const slab = model.scene.slab;
+    const segOf: number[] = [];
+    const sampleOf: number[] = [];
+    model.scene.segments.forEach((seg, s) => {
+      for (let i = 0; i < seg.display.length; i++) {
+        segOf.push(s);
+        sampleOf.push(i);
+      }
+    });
+    const protein: number[] = [];
+    const real: number[] = [];
+    const world: number[] = [];
+    for (const el of model.elements) {
+      for (let k = el.g0; k <= el.g1; k++) {
+        const x = pose.w[k * 4];
+        const y = pose.w[k * 4 + 1];
+        const z = pose.w[k * 4 + 2];
+        if (z <= slab.upper + 2 && z >= slab.lower - 2) protein.push(x, y);
+        const p = model.scene.segments[segOf[k]]?.positions[sampleOf[k]];
+        if (!p) continue;
+        real.push(p.x, p.y);
+        world.push(x, y);
+      }
+    }
+    let local: { upper: HeightAt; lower: HeightAt } | undefined;
+    const surface = slab.surface;
+    const fit = surface ? fitRigid2d(real, world) : null;
+    // A misfit means the sample positions aren't the structure's own frame.
+    if (surface && fit && fit.rms < NET_FIT_RMS) {
+      // Averaged over about a grid cell, so single-frame noise doesn't
+      // show as spikes; holes wider than that (pores) stay open.
+      const R = Math.max(NET_SMOOTHING, 1.5 * fishnetSpacing(dr));
+      local = {
+        upper: (x, y) => surface.upper(...fit.invert(x, y), R),
+        lower: (x, y) => surface.lower(...fit.invert(x, y), R),
+      };
+    }
+    return buildFishnet({
+      centre: { x: dcx, y: dcy },
+      radius: dr,
+      bulk: { upper: slab.upper, lower: slab.lower },
+      annular: slab.annular ?? { upper: slab.upper, lower: slab.lower },
+      protein,
+      local,
+    });
+  }
+
+  /**
+   * The leaflets' fishnets, depth-sorted with the protein. They grow out of
+   * the bulk planes as the sheets fade in (`alpha`); `k` scales the final
+   * disc onto the current one.
+   */
+  private netPrims(
+    ctx: FrameCtx,
+    cxw: number,
+    cyw: number,
+    k: number,
+    upper: number,
+    lower: number,
+    alpha: number,
+  ): void {
+    const net = this.net;
+    if (!net) return;
+    const { cam, prims, fogAt } = ctx;
+    const st = this.model.scene.style;
+    const edge = mixRgb(hexRgb(st.membraneEdge), hexRgb(st.midplane), NET_DARKEN);
+    const ground = this.ground;
+    let sub = 0;
+    for (const [leaf, bulk, id] of [
+      ['upper', upper, -13],
+      ['lower', lower, -14],
+    ] as const) {
+      const opacity = NET_ALPHA[leaf] * alpha;
+      for (const line of net[leaf]) {
+        const m = line.length / 3;
+        const p = new Float64Array(m * 3);
+        for (let i = 0; i < m; i++) {
+          const z = bulk + alpha * (line[i * 3 + 2] - bulk);
+          cam.project(cxw + k * line[i * 3], cyw + k * line[i * 3 + 1], z, this.tmp);
+          p[i * 3] = this.tmp[0];
+          p[i * 3 + 1] = this.tmp[1];
+          p[i * 3 + 2] = this.tmp[2];
+        }
+        for (let i = 0; i < m - 1; i++) {
+          const pts = [p[i * 3], p[i * 3 + 1], p[i * 3 + 3], p[i * 3 + 4]];
+          const depth = (p[i * 3 + 2] + p[i * 3 + 5]) / 2;
+          const c = fogged(edge, fogAt(depth), ground);
+          prims.push({
+            id,
+            order: -1,
+            sub: sub++,
+            depth,
+            x0: Math.min(pts[0], pts[2]) - 1,
+            y0: Math.min(pts[1], pts[3]) - 1,
+            x1: Math.max(pts[0], pts[2]) + 1,
+            y1: Math.max(pts[1], pts[3]) + 1,
+            faded: false,
+            pts,
+            pad: 0.5,
+            emit: (run) => run.stroke(NET, pts, c, NET_WIDTH, opacity),
+          });
+        }
+      }
+    }
+  }
+
   private mergeRuns(prims: Prim[], width: number, height: number): Run[] {
     // A primitive joins its element's latest run only if nothing drawn since
     // that run started overlaps it on screen, and no piece of the run from
@@ -2697,6 +2818,15 @@ interface FrameCtx {
 }
 
 const RIM: OpSpec = { layer: 0, key: 'rim', kind: 'stroke', linecap: 'round' };
+const NET: OpSpec = { layer: 0, key: 'net', kind: 'stroke', linecap: 'round' };
+/** Fishnet line width (px), opacity per leaflet, and how far its colour leans from the membrane edge towards the midplane's. */
+const NET_WIDTH = 0.75;
+const NET_ALPHA = { upper: 0.9, lower: 0.6 };
+const NET_DARKEN = 0.5;
+/** Smallest radius (Å) the fishnet's local heights are averaged over. */
+const NET_SMOOTHING = 6;
+/** Largest RMS misfit (Å) between the scene's sample positions and the finished pose for local heights to be used. */
+const NET_FIT_RMS = 1.5;
 const SILHOUETTE: OpSpec = { layer: 2, key: 'sil-l', kind: 'stroke', linecap: 'round' };
 const SILHOUETTE_R: OpSpec = { layer: 2, key: 'sil-r', kind: 'stroke', linecap: 'round' };
 const TUBE_BODY: OpSpec = { layer: 1, key: 'tube-body', kind: 'fill' };
