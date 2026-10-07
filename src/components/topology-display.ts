@@ -138,6 +138,16 @@ const STYLES = `
   .morph-scrub { width: 10rem; accent-color: #1f77b4; }
   .morph-hint { visibility: hidden; }
   .morph-bar.is-3d .morph-hint { visibility: visible; }
+  .ss-element { cursor: pointer; outline: none; }
+  .ss-element:hover, .ss-element:focus-visible {
+    filter: brightness(1.15);
+    stroke: #111;
+    stroke-width: 2.5px;
+  }
+  .ss-element.selected, .loop.selected { stroke: #e6550d; }
+  .ss-element.selected { stroke-width: 2.5px; }
+  .ss-element.selected:hover, .ss-element.selected:focus-visible { stroke-width: 3.5px; }
+  .loop.selected { stroke-width: 3px; }
 `;
 
 const PLOT = {
@@ -478,8 +488,8 @@ function drawSsPolygon(
   type: 'helix' | 'strand',
   withArrow: boolean,
   faded = false,
-): void {
-  if (endIdx <= startIdx) return;
+): SVGPolygonElement | null {
+  if (endIdx <= startIdx) return null;
 
   const screen: OutlinePoint[] = [];
   for (let i = startIdx; i <= endIdx; i++) {
@@ -490,7 +500,7 @@ function drawSsPolygon(
     arrowHalfWidth: SS_BODY.arrowHalfWidthPx,
     arrowLength: SS_BODY.arrowLengthPx,
   });
-  if (sections.length === 0) return;
+  if (sections.length === 0) return null;
 
   const points = outlinePolygon(screen, sections)
     .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
@@ -507,6 +517,7 @@ function drawSsPolygon(
   // protomer reads as the subject.
   if (faded) poly.setAttribute('opacity', '0.32');
   plot.appendChild(poly);
+  return poly;
 }
 
 /** A loop control point in plot (arc, z) Ångström coordinates, tagged for debug colouring. */
@@ -670,8 +681,8 @@ function renderLoopCurve(
   discontinuous: boolean,
   showPoints: boolean,
   faded = false,
-): void {
-  if (points.length < 2) return;
+): SVGPathElement | null {
+  if (points.length < 2) return null;
 
   // Express the centripetal Catmull-Rom curve as native cubic Bézier segments
   // so the SVG path stays smooth and compact (one `C` per segment).
@@ -710,6 +721,34 @@ function renderLoopCurve(
       markers.appendChild(dot);
     }
   }
+  return path;
+}
+
+/** Tag a loop path with the residue range it stands for, for selection styling. */
+function markLoop(path: SVGPathElement, start: number, end: number): void {
+  path.classList.add('loop');
+  path.dataset.start = String(start);
+  path.dataset.end = String(end);
+}
+
+/**
+ * Make a helix/strand polygon behave as a button: focusable, labelled, and
+ * tagged with its residue range. Events are wired by the component.
+ */
+function markSsElement(
+  poly: SVGPolygonElement,
+  type: 'helix' | 'strand',
+  start: number,
+  end: number,
+): void {
+  poly.classList.add('ss-element');
+  poly.dataset.type = type;
+  poly.dataset.start = String(start);
+  poly.dataset.end = String(end);
+  poly.setAttribute('role', 'button');
+  poly.setAttribute('tabindex', '0');
+  poly.setAttribute('aria-pressed', 'false');
+  poly.setAttribute('aria-label', `${type === 'helix' ? 'Helix' : 'Strand'} ${start}–${end}`);
 }
 
 /** Render a single in-segment loop (coil run) between two SS elements. */
@@ -743,7 +782,12 @@ function drawLoop(
     }
   }
 
-  renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints, faded);
+  const path = renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints, faded);
+  // Neighbouring protomers are context only, so only the focal chain's loops
+  // take part in the selection.
+  if (path && !faded && loopResidues.length > 0) {
+    markLoop(path, loopResidues[0].resSeq, loopResidues[loopResidues.length - 1].resSeq);
+  }
   rec?.recorder.loops.push({
     points: points.map((p) => ({ arc: p.arc, z: p.z })),
     discontinuous,
@@ -1314,7 +1358,15 @@ function renderChainSvg(
         ? { samples: layout.samples, index: firstSs.startSample }
         : { samples: layout.samples, index: 0 };
       const points = buildLoopPoints(prev, next, null, loopOpts);
-      renderLoopCurve(plot, markersGroup, points, true, loopOpts.showPoints);
+      const connector = renderLoopCurve(plot, markersGroup, points, true, loopOpts.showPoints);
+      // The connector stands for the residues between the two SS ends.
+      const from = lastSs
+        ? lastSs.endResSeq + 1
+        : prevLayout.residues[prevLayout.residues.length - 1]?.resSeq;
+      const to = firstSs ? firstSs.startResSeq - 1 : layout.residues[0]?.resSeq;
+      if (connector && from !== undefined && to !== undefined && from <= to) {
+        markLoop(connector, from, to);
+      }
       recorder.loops.push({
         points: points.map((p) => ({ arc: p.arc, z: p.z })),
         discontinuous: true,
@@ -1456,7 +1508,7 @@ function drawSegment(
     const run = runs[j];
     if (run.type === 'helix' || run.type === 'strand') {
       const withArrow = isBarrel && run.type === 'strand';
-      drawSsPolygon(
+      const poly = drawSsPolygon(
         plot,
         samples,
         run.startSample,
@@ -1465,6 +1517,8 @@ function drawSegment(
         withArrow,
         faded,
       );
+      // Focal-chain elements act as buttons (see TopologyDisplay.bindElements).
+      if (poly && !faded) markSsElement(poly, run.type, run.startResSeq, run.endResSeq);
       if (rec && run.endResSampleIdx > run.startSample) {
         rec.recorder.elements.push({
           type: run.type,
@@ -1852,6 +1906,58 @@ const STRAND_ARROW_RATIO = 6.2 / 3.8;
 
 let _instanceCounter = 0;
 
+/**
+ * A residue range on one chain: the value of the `selection` attribute once
+ * resolved, and the `detail` of `chain-select` events. `start`/`end` are
+ * inclusive author residue numbers (`resSeq`).
+ */
+export interface TopologySelection {
+  chainId: string;
+  start: number;
+  end: number;
+}
+
+/** `detail` of `element-click` and `element-hover` events. */
+export interface TopologyElementDetail extends TopologySelection {
+  type: 'helix' | 'strand';
+}
+
+/** A parsed `selection` attribute; `start`/`end` are null for a whole chain. */
+interface ParsedSelection {
+  chainId: string;
+  start: number | null;
+  end: number | null;
+}
+
+const SELECTION_RE = /^([A-Za-z0-9_]+)(?::(-?\d+)(?:-(-?\d+))?)?$/;
+
+/**
+ * Parse a `selection` attribute: `A` (whole chain), `A:45` (one residue) or
+ * `A:45-60` (inclusive range; negative residue numbers allowed, e.g. `A:-3-10`).
+ * A reversed range is swapped. Returns null for anything else, including a
+ * range that names a second chain (`A:45-B:60`) or a list (`A:1-5,B:1-5`).
+ */
+export function parseSelection(value: string | null): ParsedSelection | null {
+  if (value === null) return null;
+  const m = SELECTION_RE.exec(value.replace(/\s+/g, ''));
+  if (!m) return null;
+  if (m[2] === undefined) return { chainId: m[1], start: null, end: null };
+  const a = Number(m[2]);
+  const b = m[3] === undefined ? a : Number(m[3]);
+  return { chainId: m[1], start: Math.min(a, b), end: Math.max(a, b) };
+}
+
+/** Lowest and highest residue number of a chain's Cα trace. */
+function chainBounds(chain: ChainData): { start: number; end: number } {
+  let start = Infinity;
+  let end = -Infinity;
+  for (const ca of chain.calphas) {
+    if (ca.resSeq < start) start = ca.resSeq;
+    if (ca.resSeq > end) end = ca.resSeq;
+  }
+  return { start, end };
+}
+
 export class TopologyDisplay extends HTMLElement {
   static observedAttributes = [
     'protein-data',
@@ -1863,6 +1969,7 @@ export class TopologyDisplay extends HTMLElement {
     'morph-projection',
     'morph-strand-width',
     'morph-strand-thickness',
+    'selection',
   ];
 
   private readonly _instanceId = ++_instanceCounter;
@@ -1878,6 +1985,12 @@ export class TopologyDisplay extends HTMLElement {
   private _morph: MorphController | null = null;
   private _morphLoad: Promise<MorphController | null> | null = null;
   private _selectedChainId: string | null = null;
+  /** Chain and 2-D svg currently on screen, for in-place selection updates. */
+  private _shown: { chain: ChainData; svg: SVGSVGElement } | null = null;
+  /** SS element under the pointer or focus, so hover events fire once each. */
+  private _hovered: Element | null = null;
+  /** `selection` value last written by a user pick or click, not the page. */
+  private _userSelection: string | null = null;
   private _styleEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
   // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
@@ -1910,10 +2023,49 @@ export class TopologyDisplay extends HTMLElement {
   set proteinData(value: ProteinData | null) {
     this._data = value;
     this._selectedChainId = null;
+    this.dropUserSelection();
     this.render();
   }
 
+  /**
+   * The current selection resolved against the loaded protein, or null when
+   * there is none, the attribute is invalid, or its chain isn't in the
+   * protein. A whole-chain selection resolves to the chain's residue bounds.
+   */
+  get selection(): TopologySelection | null {
+    const parsed = parseSelection(this.getAttribute('selection'));
+    const chain = parsed && this.chainsWithCoords().find((c) => c.chainId === parsed.chainId);
+    if (!parsed || !chain) return null;
+    if (parsed.start === null || parsed.end === null) {
+      return { chainId: chain.chainId, ...chainBounds(chain) };
+    }
+    return { chainId: chain.chainId, start: parsed.start, end: parsed.end };
+  }
+
+  /** Set the selection; writes the `selection` attribute (null removes it). */
+  set selection(value: TopologySelection | string | null) {
+    if (value === null) this.removeAttribute('selection');
+    else if (typeof value === 'string') this.setAttribute('selection', value);
+    else this.setAttribute('selection', `${value.chainId}:${value.start}-${value.end}`);
+  }
+
   attributeChangedCallback(name: string, _old: string | null, value: string | null) {
+    if (name === 'selection') {
+      // The page set its own selection: it is no longer the user's.
+      if (value !== this._userSelection) this._userSelection = null;
+      const parsed = parseSelection(value);
+      if (value !== null && !parsed) {
+        console.warn(`topology-display: ignoring invalid selection "${value}"`);
+      }
+      // Same chain on screen: restyle in place so keyboard focus survives.
+      // Otherwise the selected chain changes, which needs a full render.
+      if (this._shown && (!parsed || parsed.chainId === this._shown.chain.chainId)) {
+        this.applySelection();
+      } else {
+        this.render();
+      }
+      return;
+    }
     if (
       name === 'debug-loops' ||
       name === 'loop-extreme-points' ||
@@ -1938,6 +2090,7 @@ export class TopologyDisplay extends HTMLElement {
       }
     }
     this._selectedChainId = null;
+    this.dropUserSelection();
     this.render();
   }
 
@@ -2067,6 +2220,8 @@ export class TopologyDisplay extends HTMLElement {
     this._morph = null;
     this._morphSource = null;
     this._morphLoad = null;
+    this._shown = null;
+    this._hovered = null;
     this._contentEl.replaceChildren();
 
     if (!this._data) {
@@ -2089,9 +2244,7 @@ export class TopologyDisplay extends HTMLElement {
     // Don't mutate the caller's proteinData — build a normalised local view
     // so consumers can safely share or memoise the input. Drops chains whose
     // `calphas` field is missing or empty.
-    const chainsWithCoords = this._data.chains.filter(
-      (c) => Array.isArray(c.calphas) && c.calphas.length > 0,
-    );
+    const chainsWithCoords = this.chainsWithCoords();
 
     if (chainsWithCoords.length === 0) {
       const placeholder = document.createElement('div');
@@ -2106,10 +2259,14 @@ export class TopologyDisplay extends HTMLElement {
     // largest chain overall if nothing crosses the bilayer.
     const autoPick = selectTransmembraneChains(chainsWithCoords, { max: 1 });
     const defaultId = autoPick.selected[0]?.chainId ?? chainsWithCoords[0]?.chainId ?? null;
+    // A `selection` naming a chain in this protein shows that chain; otherwise
+    // the last chain picked, then the default.
+    const selectionChainId = parseSelection(this.getAttribute('selection'))?.chainId;
     const selectedId =
-      (this._selectedChainId &&
+      chainsWithCoords.find((c) => c.chainId === selectionChainId)?.chainId ??
+      ((this._selectedChainId &&
         chainsWithCoords.find((c) => c.chainId === this._selectedChainId)?.chainId) ||
-      defaultId;
+        defaultId);
 
     const displayLabels = buildChainLabels(chainsWithCoords);
 
@@ -2123,10 +2280,9 @@ export class TopologyDisplay extends HTMLElement {
       pickerLabel.id = labelId;
       pickerLabel.textContent = 'Select chain';
       region.appendChild(pickerLabel);
-      const picker = renderChainPicker(chainsWithCoords, displayLabels, selectedId, (chainId) => {
-        this._selectedChainId = chainId;
-        this.render();
-      });
+      const picker = renderChainPicker(chainsWithCoords, displayLabels, selectedId, (chainId) =>
+        this.pickChain(chainId),
+      );
       picker.setAttribute('aria-labelledby', labelId);
       region.appendChild(picker);
     }
@@ -2229,6 +2385,9 @@ export class TopologyDisplay extends HTMLElement {
       assembly,
     );
     scroll.appendChild(svg);
+    this._shown = { chain: selectedChain, svg };
+    this.bindElements(svg, selectedChain.chainId);
+    this.applySelection();
     const bar = this.renderMorphBar(scene !== null);
     if (scene) {
       this._morphSource = {
@@ -2248,6 +2407,111 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+  }
+
+  /** Chains that have Cα coordinates (the ones that can be drawn). */
+  private chainsWithCoords(): ChainData[] {
+    // Don't mutate the caller's proteinData — consumers may share or memoise it.
+    return (this._data?.chains ?? []).filter(
+      (c) => Array.isArray(c.calphas) && c.calphas.length > 0,
+    );
+  }
+
+  /** Reflect a user's pick or click into the `selection` attribute. */
+  private selectByUser(sel: TopologySelection): void {
+    this.selection = sel;
+    this._userSelection = this.getAttribute('selection');
+  }
+
+  /**
+   * A new protein forgets what the user picked in the old one, but keeps a
+   * `selection` the page set, so it can be set before the data loads.
+   */
+  private dropUserSelection(): void {
+    const mine = this._userSelection;
+    this._userSelection = null;
+    if (mine !== null && this.getAttribute('selection') === mine) {
+      this.removeAttribute('selection');
+    }
+  }
+
+  /** A chain picked in the chain picker becomes the whole selection. */
+  private pickChain(chainId: string): void {
+    const chain = this.chainsWithCoords().find((c) => c.chainId === chainId);
+    if (!chain) return;
+    const detail: TopologySelection = { chainId, ...chainBounds(chain) };
+    this._selectedChainId = chainId;
+    this.selectByUser(detail);
+    this.emit('chain-select', detail);
+  }
+
+  private emit<T>(type: string, detail: T): void {
+    this.dispatchEvent(new CustomEvent<T>(type, { detail, bubbles: true, composed: true }));
+  }
+
+  /** Event detail for an SS element polygon. */
+  private static elementDetail(el: Element, chainId: string): TopologyElementDetail {
+    const d = (el as SVGElement).dataset;
+    return {
+      chainId,
+      start: Number(d.start),
+      end: Number(d.end),
+      type: d.type === 'strand' ? 'strand' : 'helix',
+    };
+  }
+
+  /**
+   * Wire the SS element buttons: hover/focus emits `element-hover` (detail
+   * null on leave), click/Enter/Space selects the element's residues and
+   * emits `element-click`. Delegated on the svg so one listener set serves
+   * every element.
+   */
+  private bindElements(svg: SVGSVGElement, chainId: string): void {
+    const target = (e: Event): Element | null =>
+      e.target instanceof Element ? e.target.closest('.ss-element') : null;
+    const hover = (el: Element | null): void => {
+      if (el === this._hovered) return;
+      this._hovered = el;
+      this.emit('element-hover', el ? TopologyDisplay.elementDetail(el, chainId) : null);
+    };
+    const activate = (el: Element): void => {
+      const detail = TopologyDisplay.elementDetail(el, chainId);
+      this.selectByUser(detail);
+      this.emit('element-click', detail);
+    };
+    svg.addEventListener('pointerover', (e) => hover(target(e)));
+    svg.addEventListener('pointerleave', () => hover(null));
+    svg.addEventListener('focusin', (e) => hover(target(e)));
+    svg.addEventListener('focusout', (e) => {
+      const next = (e as FocusEvent).relatedTarget;
+      if (!(next instanceof Element && svg.contains(next))) hover(null);
+    });
+    svg.addEventListener('click', (e) => {
+      const el = target(e);
+      if (el) activate(el);
+    });
+    svg.addEventListener('keydown', (e) => {
+      const el = target(e);
+      if (!el || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault(); // Space would otherwise scroll the page.
+      activate(el);
+    });
+  }
+
+  /**
+   * Style the on-screen elements and loops that overlap the selection. An
+   * element or loop counts as selected when any of its residues is in range.
+   */
+  private applySelection(): void {
+    if (!this._shown) return;
+    const sel = this.selection;
+    const hit = sel && sel.chainId === this._shown.chain.chainId ? sel : null;
+    for (const el of this._shown.svg.querySelectorAll<SVGElement>('.ss-element, .loop')) {
+      const on =
+        hit !== null && Number(el.dataset.start) <= hit.end && Number(el.dataset.end) >= hit.start;
+      el.classList.toggle('selected', on);
+      if (el.classList.contains('ss-element')) el.setAttribute('aria-pressed', String(on));
+    }
   }
 
   /**

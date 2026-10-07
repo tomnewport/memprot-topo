@@ -36,3 +36,4 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute
 - [PROJECT.md](PROJECT.md) — project specification and roadmap
+- [docs/selection.md](docs/selection.md) — the `selection` attribute and selection events
