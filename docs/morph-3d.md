@@ -38,7 +38,10 @@ By default the roll travels as a wave from the N-terminus to the C-terminus
 Each joint of the curtain bends by its own share of the final turn, so the strip
 rolls up like a carpet: the finished part is already a rigid copy of the real
 structure, the rest is still flat, and the curtain never curls tighter than it
-will at the end.
+will at the end. On the barrel curtain the samples also slide (from their 2-D
+spacing to their real one), so its curvature at each point follows the
+progress of the samples sitting there at that moment, not a fixed position
+along the strip.
 
 The curtain is built outwards from one anchor sample, which on its own would
 make whatever is furthest from the anchor swing round like a lever. So the
@@ -58,7 +61,15 @@ on the membrane at atan(1/√2) ≈ 35.3°, so sizes don't change with depth. Th
 camera tilts down into that view as the strip rolls up, re-centres on the
 protein, and the picture grows from the 2-D strip to a 3-D-friendly aspect
 ratio. A precomputed zoom track backs the camera off where a half-rolled frame
-would otherwise run out of the picture. Drag to orbit once in 3-D.
+would otherwise run out of the picture.
+
+Once in 3-D, drag to orbit, or use the arrow keys on the focused diagram. On
+touch screens a horizontal drag turns the view and a vertical swipe still
+scrolls the page (the diagram can fill most of a phone screen), so tilting is
+mouse/pen/keyboard only. The framing is refitted when the container changes
+width. With `prefers-reduced-motion: reduce` the 3D button jumps straight to
+the other view instead of animating. Changing an attribute or the chain
+re-renders the component and returns it to the 2-D view.
 
 `morph-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent
@@ -89,13 +100,23 @@ finished 3-D view stays vector (and exportable).
 - Consecutive sections of the same element are merged into one path whenever
   nothing drawn in between overlaps them on screen (convex-footprint test).
   This keeps the DOM small and avoids anti-aliasing seams; contiguous sections
-  are emitted as a single outline polygon for the same reason.
+  are emitted as a single outline polygon for the same reason. A merged run
+  draws all its fills before its lines, so a loop that crosses itself on screen
+  must not share a run with its own far piece: pieces further apart along the
+  loop than a few tube widths that overlap start a new run.
+- Helices become straight cylinders, as in a Richardson diagram: the sample
+  trace (a smoothed local axis, which bends and hooks at the ends where its
+  window is one-sided) is pulled onto a line fitted to it as the cylinder
+  grows, or onto two lines meeting at a real kink (> 20° between the halves'
+  axes, decided once from the real structure). Samples are spread along the
+  line by their fraction of the trace's length, so a hooked trace can't fold
+  the cylinder back on itself. Loops ease onto the moved helix ends within a
+  few Å.
 - Shading is Lambert lighting from the upper left with depth fog. Cylinders get
-  a smooth gradient across their width; because an SVG gradient is straight, a
-  curved helix is split into stretches that turn by at most 2.5° on screen,
-  each with its own. Strand faces get a gradient along each straight stretch,
-  and loops become tubes with edge lines and a highlight. Shading, fog,
-  outlines and the membrane surfaces all fade in from the flat 2-D style.
+  a smooth gradient across their width (one per straight stretch, as an SVG
+  gradient is straight). Strand faces get a gradient along each straight
+  stretch, and loops become tubes with edge lines and a highlight. Shading,
+  fog, outlines and the membrane surfaces all fade in from the flat 2-D style.
 - Strands are thin boxes: the long side walls keep one dark tone for the
   ribbon's thickness, and the blunt start is lit like a face. Arrowhead
   shoulders have no walls: seen face-on while the arrowhead is edge-on, they
@@ -106,8 +127,13 @@ finished 3-D view stays vector (and exportable).
   element, not per depth-sorted run: colours averaged over whichever sections
   happen to share a run, round line ends at run joins, dash patterns restarted
   per path and depth snapping all made the picture shimmer while orbiting.
-  Dashes are cut as separate pieces pinned to the curve, and the depth snap
-  that preserves the 2-D drawing order near t = 0 fades out by t = 0.3.
+  Dashes are cut as separate pieces with one pattern along the whole loop, and
+  the depth snap that preserves the 2-D drawing order near t = 0 fades out by
+  t = 0.3.
+- Chain-break dashes match the 2-D figure at t = 0; in 3-D the pattern is laid
+  along the loop's length on screen and sized to the (much wider) line, so a
+  stretch pointing at the viewer doesn't bunch its dashes into a clump. The
+  price is that the dashes slide along the curve as the view turns.
 - Faded neighbouring chains (assembly barrels) start at the 2-D figure's
   translucency and become opaque by t = 0.3, with colours lightened so they
   look the same over white. Translucent pieces of one element overlap slightly
@@ -120,5 +146,14 @@ finished 3-D view stays vector (and exportable).
   few pixels.
 - Strand ribbons lie in the curtain (correct for barrel walls). β-sheets in
   non-barrel proteins are not yet oriented by their sheet plane.
-- Rendering cost scales with chain length; a 340-residue barrel animates at
-  roughly 30–60 fps in headless Chromium without GPU rasterisation.
+- Rendering cost scales with chain length. In headless Chromium without GPU
+  rasterisation, a 340-residue barrel takes about 17–25 ms of script per frame
+  (plus style, layout and paint), so it animates at about 30 fps there.
+- The morph code is a separate chunk loaded on first use, so pages that never
+  show the 3-D view don't download or parse it. The first frame then builds
+  the model and the steadying track (about 250–300 ms for the demo proteins in
+  the setting above); pointing at or focusing the 3D bar does this ahead of the
+  click (about 45–70 ms left), and the steadying track is kept for later
+  transitions.
+- A chain whose samples lack 3-D positions gets a disabled 3D button rather
+  than a picture with parts rolled up to the origin.

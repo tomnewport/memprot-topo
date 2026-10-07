@@ -10,6 +10,9 @@ export default defineConfig({
     outDir: 'dist-demo',
     rollupOptions: {
       input: 'index.html',
+      // One script: the gallery inlines it into a page with no base URL, where
+      // the lazily loaded 3-D chunk could not be fetched.
+      output: { inlineDynamicImports: true },
     },
   },
   define: {

@@ -223,20 +223,41 @@ export function computePose(model: MorphModel, tau: number, sweep: number, rigid
     const X = new Float64Array(m);
     const Y = new Float64Array(m);
     const H = new Float64Array(m);
-    const spanU = hi - lo;
-    const kappaAt = (uu: number): number => {
-      const p = spanU > 0 ? (uu - lo) / spanU : 0;
-      return (localProgress(tau, p, sweep) * model.sign) / model.radius;
+    // Curvature at each point of the curtain follows the progress of the
+    // samples sitting there, so a sample that has finished rolling sits on a
+    // fully curved curtain even while samples slide from their 2-D spacing to
+    // their real one: progress interpolated over the samples sorted by u.
+    const order = Array.from({ length: n }, (_, k) => k).sort((a, b) => u[a] - u[b]);
+    const su = Float64Array.from(order, (k) => u[k]);
+    const st = Float64Array.from(order, (k) => t[k]);
+    const progressAt = (uu: number): number => {
+      if (n === 0) return tau;
+      if (uu <= su[0]) return st[0];
+      if (uu >= su[n - 1]) return st[n - 1];
+      let a = 0;
+      let b = n - 1;
+      while (b - a > 1) {
+        const mid = (a + b) >> 1;
+        if (su[mid] <= uu) a = mid;
+        else b = mid;
+      }
+      const du = su[b] - su[a];
+      return du > 1e-12 ? st[a] + ((uu - su[a]) / du) * (st[b] - st[a]) : st[b];
     };
-    for (let k = 0; k < m; k++) U[k] = ua0 + (k - kBack) * GRID;
+    const kappaAt = (uu: number): number => (progressAt(uu) * model.sign) / model.radius;
+    const K = new Float64Array(m);
+    for (let k = 0; k < m; k++) {
+      U[k] = ua0 + (k - kBack) * GRID;
+      K[k] = kappaAt(U[k]);
+    }
     for (let k = kBack; k < m - 1; k++) {
-      H[k + 1] = H[k] + (GRID * (kappaAt(U[k]) + kappaAt(U[k + 1]))) / 2;
+      H[k + 1] = H[k] + (GRID * (K[k] + K[k + 1])) / 2;
       const hm = 0.5 * (H[k] + H[k + 1]);
       X[k + 1] = X[k] + GRID * Math.cos(hm);
       Y[k + 1] = Y[k] + GRID * Math.sin(hm);
     }
     for (let k = kBack - 1; k >= 0; k--) {
-      H[k] = H[k + 1] - (GRID * (kappaAt(U[k]) + kappaAt(U[k + 1]))) / 2;
+      H[k] = H[k + 1] - (GRID * (K[k] + K[k + 1])) / 2;
       const hm = 0.5 * (H[k] + H[k + 1]);
       X[k] = X[k + 1] - GRID * Math.cos(hm);
       Y[k] = Y[k + 1] - GRID * Math.sin(hm);

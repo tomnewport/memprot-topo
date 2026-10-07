@@ -18,8 +18,9 @@ import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
 import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
-import { MorphController } from '../morph/controller.js';
-import { PROJECTIONS } from '../morph/renderer.js';
+import type { MorphController } from '../morph/controller.js';
+import type { MorphOptions } from '../morph/renderer.js';
+import { PROJECTIONS } from '../morph/projections.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -1156,7 +1157,7 @@ function renderChainSvg(
   analysis: BarrelAnalysis,
   showContacts: boolean,
   assembly?: AssemblyContext,
-): { svg: SVGSVGElement; scene: MorphScene } {
+): { svg: SVGSVGElement; scene: MorphScene | null } {
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
   // unwraps by angle; everything else uses the arc-length unroll.
@@ -1354,49 +1355,56 @@ function renderChainSvg(
     svg.setAttribute('height', `${finalHeight}`);
   }
 
-  const scene: MorphScene = {
-    mode: useUnwrap ? 'cylinder' : 'polyline',
-    segments: layouts.map((layout, s) => ({
-      display: layout.samples,
-      positions: unroll.segments[s]?.positions ?? [],
-      unwrapArc: useUnwrap ? unroll.segments[s]?.samples.map((p) => p.arc) : undefined,
-      cylinder: useUnwrap ? (asm ? asm.cylinders[s] : unroll.cylinder) : undefined,
-    })),
-    elements: recorder.elements,
-    loops: recorder.loops,
-    labels: recorder.labels,
-    ties: recorder.ties,
-    slab: { x0: 0, x1: totalArc, half: PLOT.membraneHalf },
-    frame: {
-      originX: cx,
-      originY: cy,
-      minX: expanded ? minX : 0,
-      minY: expanded ? minY : 0,
-      width: expanded ? finalWidth : svgWidth,
-      height: expanded ? finalHeight : svgHeight,
-      pxPerA: PLOT.arcPxPerA,
-    },
-    gapA: LOOP.elementGapPx / PLOT.arcPxPerA,
-    style: {
-      helixFill: COLOURS.helix,
-      helixStroke: COLOURS.helixEdge,
-      strandFill: COLOURS.strand,
-      strandStroke: COLOURS.strandEdge,
-      coil: COLOURS.coil,
-      membraneFill: COLOURS.membraneFill,
-      membraneEdge: COLOURS.membraneEdge,
-      midplane: COLOURS.zAxis,
-      contact: COLOURS.contact,
-      labelFill: LABEL.fill,
-      labelFontSize: LABEL.fontSizePx,
-      labelGap: LABEL.gapPx,
-      labelTangentStep: LABEL.tangentStepSamples,
-      halfWidthPx: SS_BODY.halfWidthPx,
-      arrowHalfWidthPx: SS_BODY.arrowHalfWidthPx,
-      arrowLengthPx: SS_BODY.arrowLengthPx,
-      fadedOpacity: 0.32,
-    },
-  };
+  // Every displayed sample needs its 3-D position, or it would roll up to the
+  // origin: without them the chain gets no 3-D view.
+  const morphable = layouts.every(
+    (layout, s) => unroll.segments[s]?.positions?.length === layout.samples.length,
+  );
+  const scene: MorphScene | null = !morphable
+    ? null
+    : {
+        mode: useUnwrap ? 'cylinder' : 'polyline',
+        segments: layouts.map((layout, s) => ({
+          display: layout.samples,
+          positions: unroll.segments[s]?.positions ?? [],
+          unwrapArc: useUnwrap ? unroll.segments[s]?.samples.map((p) => p.arc) : undefined,
+          cylinder: useUnwrap ? (asm ? asm.cylinders[s] : unroll.cylinder) : undefined,
+        })),
+        elements: recorder.elements,
+        loops: recorder.loops,
+        labels: recorder.labels,
+        ties: recorder.ties,
+        slab: { x0: 0, x1: totalArc, half: PLOT.membraneHalf },
+        frame: {
+          originX: cx,
+          originY: cy,
+          minX: expanded ? minX : 0,
+          minY: expanded ? minY : 0,
+          width: expanded ? finalWidth : svgWidth,
+          height: expanded ? finalHeight : svgHeight,
+          pxPerA: PLOT.arcPxPerA,
+        },
+        gapA: LOOP.elementGapPx / PLOT.arcPxPerA,
+        style: {
+          helixFill: COLOURS.helix,
+          helixStroke: COLOURS.helixEdge,
+          strandFill: COLOURS.strand,
+          strandStroke: COLOURS.strandEdge,
+          coil: COLOURS.coil,
+          membraneFill: COLOURS.membraneFill,
+          membraneEdge: COLOURS.membraneEdge,
+          midplane: COLOURS.zAxis,
+          contact: COLOURS.contact,
+          labelFill: LABEL.fill,
+          labelFontSize: LABEL.fontSizePx,
+          labelGap: LABEL.gapPx,
+          labelTangentStep: LABEL.tangentStepSamples,
+          halfWidthPx: SS_BODY.halfWidthPx,
+          arrowHalfWidthPx: SS_BODY.arrowHalfWidthPx,
+          arrowLengthPx: SS_BODY.arrowLengthPx,
+          fadedOpacity: 0.32,
+        },
+      };
 
   return { svg, scene };
 }
@@ -1854,7 +1862,16 @@ export class TopologyDisplay extends HTMLElement {
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
+  /** What the displayed chain's 3-D morph is built from, until it is needed. */
+  private _morphSource: {
+    scroll: HTMLElement;
+    svg: SVGSVGElement;
+    scene: MorphScene;
+    options: Partial<MorphOptions>;
+    bar: HTMLDivElement;
+  } | null = null;
   private _morph: MorphController | null = null;
+  private _morphLoad: Promise<MorphController | null> | null = null;
   private _selectedChainId: string | null = null;
   private _styleEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
@@ -1972,19 +1989,49 @@ export class TopologyDisplay extends HTMLElement {
     return this._morph?.progress ?? 0;
   }
 
-  /** Jump the morph to `tau` ∈ [0, 1] without animating. */
-  setMorphProgress(tau: number): void {
-    this._morph?.setProgress(tau);
+  /**
+   * Jump the morph to `tau` ∈ [0, 1] without animating. Resolves once the
+   * frame is drawn (the morph code is loaded on first use).
+   */
+  async setMorphProgress(tau: number): Promise<void> {
+    (await this.loadMorph())?.setProgress(tau);
   }
 
   /** Animate between the 2-D topology and the 3-D view. */
-  toggle3d(): void {
-    this._morph?.toggle();
+  async toggle3d(): Promise<void> {
+    (await this.loadMorph())?.toggle();
+  }
+
+  /**
+   * The displayed chain's morph controller. The morph code is loaded on
+   * first use, so pages that never show the 3-D view don't pay for it.
+   */
+  private loadMorph(): Promise<MorphController | null> {
+    const src = this._morphSource;
+    if (!src) return Promise.resolve(null);
+    if (this._morph) return Promise.resolve(this._morph);
+    this._morphLoad ??= import('../morph/controller.js').then(({ MorphController }) => {
+      // Re-rendered (new chain or settings) while loading: stale.
+      if (this._morphSource !== src) return null;
+      const morph = new MorphController(
+        src.scroll,
+        src.svg,
+        src.scene,
+        `mp${this._instanceId}`,
+        src.options,
+      );
+      this._morph = morph;
+      this.bindMorphBar(src.bar, morph);
+      return morph;
+    });
+    return this._morphLoad;
   }
 
   private render() {
     this._morph?.dispose();
     this._morph = null;
+    this._morphSource = null;
+    this._morphLoad = null;
     this._contentEl.replaceChildren();
 
     if (!this._data) {
@@ -2147,20 +2194,29 @@ export class TopologyDisplay extends HTMLElement {
       assembly,
     );
     scroll.appendChild(svg);
-    const morph = new MorphController(scroll, svg, scene, `mp${this._instanceId}`, {
-      sweep: this.morphSweep,
-      ...PROJECTIONS[this.morphProjection],
-    });
-    this._morph = morph;
-    block.appendChild(this.renderMorphBar(morph));
+    const bar = this.renderMorphBar(scene !== null);
+    if (scene) {
+      this._morphSource = {
+        scroll,
+        svg,
+        scene,
+        options: { sweep: this.morphSweep, ...PROJECTIONS[this.morphProjection] },
+        bar,
+      };
+    }
+    block.appendChild(bar);
     block.appendChild(scroll);
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
   }
 
-  /** Toggle + scrubber for the 2-D ↔ 3-D morph. */
-  private renderMorphBar(morph: MorphController): HTMLDivElement {
+  /**
+   * Toggle + scrubber for the 2-D ↔ 3-D morph; disabled when the chain has no
+   * 3-D view. Pointing at or focusing the bar loads the morph code and does
+   * its set-up ahead of the click.
+   */
+  private renderMorphBar(available: boolean): HTMLDivElement {
     const bar = document.createElement('div');
     bar.className = 'morph-bar';
     const toggle = document.createElement('button');
@@ -2180,14 +2236,31 @@ export class TopologyDisplay extends HTMLElement {
     hint.className = 'morph-hint';
     hint.textContent = 'Drag to rotate';
     bar.append(toggle, scrub, hint);
-    toggle.addEventListener('click', () => morph.toggle());
-    scrub.addEventListener('input', () => morph.setProgress(Number(scrub.value) / 1000));
+    if (!available) {
+      toggle.disabled = true;
+      scrub.disabled = true;
+      bar.title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
+      return bar;
+    }
+    toggle.addEventListener('click', () => void this.toggle3d());
+    scrub.addEventListener('input', () => void this.setMorphProgress(Number(scrub.value) / 1000));
+    const warm = (): void => {
+      void this.loadMorph().then((m) => m?.precompute());
+    };
+    bar.addEventListener('pointerenter', warm, { once: true });
+    bar.addEventListener('focusin', warm, { once: true });
+    return bar;
+  }
+
+  /** Keep the bar in step with the morph once it is loaded. */
+  private bindMorphBar(bar: HTMLDivElement, morph: MorphController): void {
+    const toggle = bar.querySelector<HTMLButtonElement>('.morph-toggle')!;
+    const scrub = bar.querySelector<HTMLInputElement>('.morph-scrub')!;
     morph.onChange = (tau, goal) => {
       scrub.value = String(Math.round(tau * 1000));
       toggle.setAttribute('aria-pressed', goal >= 0.5 ? 'true' : 'false');
       bar.classList.toggle('is-3d', tau > 0);
     };
-    return bar;
   }
 }
 

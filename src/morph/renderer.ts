@@ -33,6 +33,8 @@ export interface MorphOptions {
   sweep: number;
 }
 
+export { PROJECTIONS } from './projections.js';
+
 export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
   helixRadius: 2.3,
   strandWidth: 3.8,
@@ -45,12 +47,6 @@ export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
   fov: 0,
   sweep: 0.35,
 };
-
-/** Projection presets for the finished 3-D view. */
-export const PROJECTIONS = {
-  isometric: { fov: 0, elevation: Math.atan(1 / Math.SQRT2) },
-  perspective: { fov: 2 * Math.atan(Math.hypot(36, 24) / 2 / 35), elevation: (16 * Math.PI) / 180 },
-} as const;
 
 /** User orbit applied on top of the scripted camera (radians). */
 export interface Orbit {
@@ -67,15 +63,9 @@ export interface FrameLayout {
 
 type RGB = [number, number, number];
 
-/**
- * Coordinate precision (steps per px): 0.01 px while the picture is still the
- * 2-D figure, 0.1 px once it is 3-D (shorter path strings, faster frames).
- */
-let coordScale = 100;
-
-/** Compact coordinate formatting — much cheaper than toFixed. */
-function f2(v: number): string {
-  return String(Math.round(v * coordScale) / coordScale);
+/** Compact coordinate formatting to `scale` steps per px — much cheaper than toFixed. */
+function fmt(v: number, scale: number): string {
+  return String(Math.round(v * scale) / scale);
 }
 
 function hexRgb(hex: string): RGB {
@@ -144,6 +134,15 @@ interface Prim {
   hull?: number[];
   /** Extra footprint margin (stroke half-width), px. */
   pad?: number;
+  /**
+   * Position along its element (Å) and the distance within which pieces of
+   * the same element are expected to overlap on screen (neighbours along the
+   * curve). Pieces further apart that overlap — an element crossing itself —
+   * must not share a run, since a run draws all its fills before its lines.
+   * Absent: the element cannot cross itself.
+   */
+  along?: number;
+  reach?: number;
   /** Run this primitive was emitted into (set while merging). */
   run?: number;
   emit: (run: Run) => void;
@@ -267,7 +266,13 @@ class Run {
     readonly faded: boolean,
     /** Overlap strip ends to hide seams (only safe for opaque runs). */
     private readonly extend = true,
+    /** Coordinate precision, steps per px. */
+    private readonly scale = 100,
   ) {}
+
+  private f(v: number): string {
+    return fmt(v, this.scale);
+  }
 
   private op(spec: OpSpec): Op {
     const k = `${spec.layer}|${spec.key}`;
@@ -291,8 +296,8 @@ class Run {
   fill(spec: OpSpec, pts: number[], c: RGB, opacity = 1): void {
     if (pts.length < 6) return;
     const op = this.op(spec);
-    let d = 'M' + f2(pts[0]) + ',' + f2(pts[1]);
-    for (let i = 2; i < pts.length; i += 2) d += 'L' + f2(pts[i]) + ',' + f2(pts[i + 1]);
+    let d = 'M' + this.f(pts[0]) + ',' + this.f(pts[1]);
+    for (let i = 2; i < pts.length; i += 2) d += 'L' + this.f(pts[i]) + ',' + this.f(pts[i + 1]);
     op.d.push(d + 'Z');
     op.rgb[0] += c[0];
     op.rgb[1] += c[1];
@@ -343,9 +348,10 @@ class Run {
       extendEnd(s.L, s.L.length - 2, s.L.length - 4);
       extendEnd(s.R, s.R.length - 2, s.R.length - 4);
     }
-    let d = 'M' + f2(s.L[0]) + ',' + f2(s.L[1]);
-    for (let i = 2; i < s.L.length; i += 2) d += 'L' + f2(s.L[i]) + ',' + f2(s.L[i + 1]);
-    for (let i = s.R.length - 2; i >= 0; i -= 2) d += 'L' + f2(s.R[i]) + ',' + f2(s.R[i + 1]);
+    let d = 'M' + this.f(s.L[0]) + ',' + this.f(s.L[1]);
+    for (let i = 2; i < s.L.length; i += 2) d += 'L' + this.f(s.L[i]) + ',' + this.f(s.L[i + 1]);
+    for (let i = s.R.length - 2; i >= 0; i -= 2)
+      d += 'L' + this.f(s.R[i]) + ',' + this.f(s.R[i + 1]);
     op.d.push(d + 'Z');
     op.strip = null;
   }
@@ -382,8 +388,8 @@ class Run {
   flush(op: Op): void {
     const line = op.line;
     if (!line) return;
-    let d = 'M' + f2(line[0]) + ',' + f2(line[1]);
-    for (let i = 2; i < line.length; i += 2) d += 'L' + f2(line[i]) + ',' + f2(line[i + 1]);
+    let d = 'M' + this.f(line[0]) + ',' + this.f(line[1]);
+    for (let i = 2; i < line.length; i += 2) d += 'L' + this.f(line[i]) + ',' + this.f(line[i + 1]);
     op.d.push(d);
     op.line = null;
   }
@@ -429,36 +435,36 @@ const DASH_ON = 3;
 const DASH_PERIOD = 8;
 
 /**
- * Cut a polyline section into its "on" dash pieces. `params` gives each
- * point's normalised position along the loop, and the pattern is laid along
- * `lengthPx` — the loop's 2-D length — so at t = 0 it matches the 2-D dashes
- * and afterwards it stays pinned to the curve.
+ * Cut a polyline section into its "on" dash pieces. `phases` gives each
+ * point's position (px) along the dash pattern, `on` and `period` its on
+ * length and period. With phases laid along the loop's 2-D length the dashes
+ * match the 2-D figure at t = 0; laid along a view-independent length they
+ * stay pinned to the curve as the view moves.
  */
-function dashPieces(pts: number[], params: number[], lengthPx: number): number[][] {
+function dashPieces(pts: number[], phases: number[], on: number, period: number): number[][] {
   const pieces: number[][] = [];
   let cur: number[] | null = null;
-  const phaseAt = (q: number): number => params[q] * lengthPx;
+  const phaseAt = (q: number): number => phases[q];
   const n = pts.length / 2;
   for (let q = 0; q < n - 1; q++) {
     const u0 = phaseAt(q);
     const u1 = phaseAt(q + 1);
     // Breakpoints inside this segment, where the pattern switches on/off.
     const cuts = [u0];
-    for (let k = Math.floor(u0 / DASH_PERIOD); k * DASH_PERIOD <= u1; k++) {
-      for (const b of [k * DASH_PERIOD, k * DASH_PERIOD + DASH_ON])
-        if (b > u0 && b < u1) cuts.push(b);
+    for (let k = Math.floor(u0 / period); k * period <= u1; k++) {
+      for (const b of [k * period, k * period + on]) if (b > u0 && b < u1) cuts.push(b);
     }
     cuts.push(u1);
     for (let j = 0; j < cuts.length - 1; j++) {
       const a = (cuts[j] - u0) / (u1 - u0 || 1);
       const b = (cuts[j + 1] - u0) / (u1 - u0 || 1);
       const mid = (cuts[j] + cuts[j + 1]) / 2;
-      const on = ((mid % DASH_PERIOD) + DASH_PERIOD) % DASH_PERIOD < DASH_ON;
+      const isOn = ((mid % period) + period) % period < on;
       const ax = lerp(pts[q * 2], pts[q * 2 + 2], a);
       const ay = lerp(pts[q * 2 + 1], pts[q * 2 + 3], a);
       const bx = lerp(pts[q * 2], pts[q * 2 + 2], b);
       const by = lerp(pts[q * 2 + 1], pts[q * 2 + 3], b);
-      if (on) {
+      if (isOn) {
         if (!cur) {
           cur = [ax, ay];
           pieces.push(cur);
@@ -577,6 +583,10 @@ export class MorphRenderer {
    * would otherwise show darker lines.
    */
   private fadeOpacity = 1;
+  /** Coordinate precision of the current frame, steps per px. */
+  private coordScale = 100;
+  /** Kink of each helix (sample index, −1 = straight), from the real structure. */
+  private kinks: Map<number, number> | null = null;
   /** Steadying rigid motion sampled at τ = i / STEADY_STEPS. */
   private steady: Rigid[] = [];
   private readonly tmp = new Float64Array(8);
@@ -625,6 +635,22 @@ export class MorphRenderer {
   }
 
   /**
+   * The set-up that depends only on the model and options — the steadying
+   * track and the helix kinks — done once per renderer, so it can be run
+   * ahead of time and isn't repeated each time the view is shown.
+   */
+  precompute(): void {
+    if (this.steady.length === 0) this.steady = this.fitSteadyTrack();
+    if (!this.kinks) {
+      this.kinks = new Map();
+      const real = computePose(this.model, 1, 0);
+      for (const e of this.model.elements) {
+        if (e.type === 'helix') this.kinks.set(e.id, findKink(real.w, e.g0, e.g1));
+      }
+    }
+  }
+
+  /**
    * Fix the start and end framing. `clientWidth` is the visible width of the
    * scroll container and `scroll0` its scroll offset at the 2-D end.
    */
@@ -632,7 +658,7 @@ export class MorphRenderer {
     const { model, options } = this;
     const fr = model.scene.frame;
     const half = model.scene.slab.half;
-    this.steady = this.fitSteadyTrack();
+    this.precompute();
     const pose = computePose(model, 1, options.sweep, this.rigidAt(1));
     let x0 = Infinity,
       x1 = -Infinity,
@@ -946,7 +972,9 @@ export class MorphRenderer {
     // Easing channels.
     const eCam = smooth(0, 1, tau);
     const sigma = smooth(0.02, 0.65, tau);
-    coordScale = sigma > 0.05 ? 10 : 100;
+    // Coordinate precision: 0.01 px while the picture is still the 2-D figure,
+    // 0.1 px once it is 3-D (shorter path strings, faster frames).
+    this.coordScale = sigma > 0.05 ? 10 : 100;
     this.fadeOpacity = lerp(st.fadedOpacity, 1, smooth(0.02, 0.3, tau));
     const eW = smooth(0.0, 0.55, tau);
     const eLoop = smooth(0.0, 0.7, tau);
@@ -1006,6 +1034,7 @@ export class MorphRenderer {
       pxA,
       prims,
       veil,
+      endShift: new Map(),
     };
 
     for (const el of model.elements) {
@@ -1036,7 +1065,7 @@ export class MorphRenderer {
   // ── Primitive builders ────────────────────────────────────────────────
 
   private helixPrims(ctx: FrameCtx, el: ModelElement): void {
-    const { pose, cam, proj, scale, sigma, eW, pxA, prims } = ctx;
+    const { pose, cam, scale, sigma, eW, pxA, prims } = ctx;
     const st = this.model.scene.style;
     const g0 = el.g0;
     const g1 = el.g1;
@@ -1044,6 +1073,81 @@ export class MorphRenderer {
     const rA = lerp(st.halfWidthPx / pxA, this.options.helixRadius, eW);
     const idx = this.downsample(ctx, g0, g1, lerp(0.5, 1.0, ctx.eW));
     const m0 = idx.length;
+
+    // Axis: the sample trace bends with the local-axis smoothing (and hooks
+    // at the ends, where its window is one-sided), so in 3-D it is pulled onto
+    // a straight line fitted to the samples — two lines meeting at a real
+    // kink — as the cylinder grows.
+    const nh = g1 - g0 + 1;
+    const hw = new Float64Array(nh * 3);
+    const hp = new Float64Array(nh * 4);
+    for (let g = g0; g <= g1; g++)
+      for (let k = 0; k < 3; k++) hw[(g - g0) * 3 + k] = pose.w[g * 4 + k];
+    if (eW > 0) {
+      this.precompute();
+      const kink = this.kinks!.get(el.id) ?? -1;
+      const straight = new Float64Array(nh * 3);
+      /**
+       * The segment of the line fitted to samples a..b that spans them, and
+       * each sample's fraction of the way along the trace. Samples are spread
+       * along the segment by that fraction, so they stay in order even where
+       * the trace hooks back (projecting them would fold the cylinder).
+       */
+      const axis = (a: number, b: number): { from: number[]; to: number[]; frac: number[] } => {
+        const { c, d } = fitLine(pose.w, a, b);
+        let lo = Infinity;
+        let hi = -Infinity;
+        const frac = [0];
+        for (let g = a; g <= b; g++) {
+          const t =
+            (pose.w[g * 4] - c[0]) * d[0] +
+            (pose.w[g * 4 + 1] - c[1]) * d[1] +
+            (pose.w[g * 4 + 2] - c[2]) * d[2];
+          lo = Math.min(lo, t);
+          hi = Math.max(hi, t);
+          if (g > a) {
+            frac.push(
+              frac[frac.length - 1] +
+                Math.hypot(
+                  pose.w[g * 4] - pose.w[g * 4 - 4],
+                  pose.w[g * 4 + 1] - pose.w[g * 4 - 3],
+                  pose.w[g * 4 + 2] - pose.w[g * 4 - 2],
+                ),
+            );
+          }
+        }
+        const total = frac[frac.length - 1] || 1;
+        return {
+          from: c.map((x, k) => x + lo * d[k]),
+          to: c.map((x, k) => x + hi * d[k]),
+          frac: frac.map((f) => f / total),
+        };
+      };
+      const place = (g: number, p: number[], q: number[], f: number): void => {
+        for (let k = 0; k < 3; k++) straight[(g - g0) * 3 + k] = p[k] + f * (q[k] - p[k]);
+      };
+      if (kink < 0) {
+        const L = axis(g0, g1);
+        for (let g = g0; g <= g1; g++) place(g, L.from, L.to, L.frac[g - g0]);
+      } else {
+        // Two lines meeting at the joint (the mean of their kink ends).
+        const L1 = axis(g0, kink);
+        const L2 = axis(kink, g1);
+        const joint = L1.to.map((x, k) => (x + L2.from[k]) / 2);
+        for (let g = g0; g <= kink; g++) place(g, L1.from, joint, L1.frac[g - g0]);
+        for (let g = kink + 1; g <= g1; g++) place(g, joint, L2.to, L2.frac[g - kink]);
+      }
+      for (let i = 0; i < nh * 3; i++) hw[i] = lerp(hw[i], straight[i], eW);
+      for (const g of [g0, g1]) {
+        const o = (g - g0) * 3;
+        ctx.endShift.set(g, [
+          hw[o] - pose.w[g * 4],
+          hw[o + 1] - pose.w[g * 4 + 1],
+          hw[o + 2] - pose.w[g * 4 + 2],
+        ]);
+      }
+    }
+    for (let i = 0; i < nh; i++) cam.project(hw[i * 3], hw[i * 3 + 1], hw[i * 3 + 2], hp, i * 4);
 
     // Silhouette frame per kept point: screen centre, perpendicular, radius.
     // The 2-D outline takes its tangent from the neighbouring samples; in 3-D
@@ -1062,22 +1166,23 @@ export class MorphRenderer {
     for (let i = 0; i < m0; i++) {
       const g = idx[i];
       const [fx, fy] = unit(
-        proj[Math.min(g1, g + 1) * 4] - proj[Math.max(g0, g - 1) * 4],
-        proj[Math.min(g1, g + 1) * 4 + 1] - proj[Math.max(g0, g - 1) * 4 + 1],
+        hp[(Math.min(g1, g + 1) - g0) * 4] - hp[(Math.max(g0, g - 1) - g0) * 4],
+        hp[(Math.min(g1, g + 1) - g0) * 4 + 1] - hp[(Math.max(g0, g - 1) - g0) * 4 + 1],
       );
       const [wx, wy] = unit(
-        proj[Math.min(g1, g + AXIS_BASELINE) * 4] - proj[Math.max(g0, g - AXIS_BASELINE) * 4],
-        proj[Math.min(g1, g + AXIS_BASELINE) * 4 + 1] -
-          proj[Math.max(g0, g - AXIS_BASELINE) * 4 + 1],
+        hp[(Math.min(g1, g + AXIS_BASELINE) - g0) * 4] -
+          hp[(Math.max(g0, g - AXIS_BASELINE) - g0) * 4],
+        hp[(Math.min(g1, g + AXIS_BASELINE) - g0) * 4 + 1] -
+          hp[(Math.max(g0, g - AXIS_BASELINE) - g0) * 4 + 1],
       );
       const [ux, ty] = unit(lerp(fx, wx, eW), lerp(fy, wy, eW));
       const tx = ux === 0 && ty === 0 ? 1 : ux;
-      sx0[i] = proj[g * 4];
-      sy0[i] = proj[g * 4 + 1];
+      sx0[i] = hp[(g - g0) * 4];
+      sy0[i] = hp[(g - g0) * 4 + 1];
       ppx0[i] = -ty;
       ppy0[i] = tx;
-      rs0[i] = rA * scale * proj[g * 4 + 3];
-      dep0[i] = proj[g * 4 + 2];
+      rs0[i] = rA * scale * hp[(g - g0) * 4 + 3];
+      dep0[i] = hp[(g - g0) * 4 + 2];
     }
 
     // Cut where the membrane tint starts or stops (see strandPrims): extra
@@ -1100,18 +1205,19 @@ export class MorphRenderer {
       ppyL.push(py / pl);
       rsL.push(lerp(rs0[i], rs0[j], u));
       depL.push(lerp(dep0[i], dep0[j], u));
-      for (let k = 0; k < 3; k++) wL.push(lerp(pose.w[idx[i] * 4 + k], pose.w[idx[j] * 4 + k], u));
+      for (let k = 0; k < 3; k++)
+        wL.push(lerp(hw[(idx[i] - g0) * 3 + k], hw[(idx[j] - g0) * 3 + k], u));
     };
     for (let i = 0; i < m0; i++) {
       point(i, i, 0);
       if (i + 1 >= m0 || veil.on <= 0) continue;
-      const a = idx[i] * 4;
-      const b = idx[i + 1] * 4;
+      const a = (idx[i] - g0) * 3;
+      const b = (idx[i + 1] - g0) * 3;
       const lvAt = (u: number): number =>
         veil.level(
-          lerp(pose.w[a], pose.w[b], u),
-          lerp(pose.w[a + 1], pose.w[b + 1], u),
-          lerp(pose.w[a + 2], pose.w[b + 2], u),
+          lerp(hw[a], hw[b], u),
+          lerp(hw[a + 1], hw[b + 1], u),
+          lerp(hw[a + 2], hw[b + 2], u),
         );
       let la = lvAt(0);
       const lb = lvAt(1);
@@ -1233,13 +1339,15 @@ export class MorphRenderer {
     for (const end of [0, m - 1]) {
       const g = idx[end === 0 ? 0 : m0 - 1];
       const gIn = idx[end === 0 ? Math.min(m0 - 1, 1) : Math.max(0, m0 - 2)];
-      const lv = veil.level(pose.w[g * 4], pose.w[g * 4 + 1], pose.w[g * 4 + 2]);
+      const o = (g - g0) * 3;
+      const oIn = (gIn - g0) * 3;
+      const lv = veil.level(hw[o], hw[o + 1], hw[o + 2]);
       const lineC = veil.apply(edgeC, lv);
-      const ox = pose.w[g * 4] - pose.w[gIn * 4];
-      const oy = pose.w[g * 4 + 1] - pose.w[gIn * 4 + 1];
-      const oz = pose.w[g * 4 + 2] - pose.w[gIn * 4 + 2];
+      const ox = hw[o] - hw[oIn];
+      const oy = hw[o + 1] - hw[oIn + 1];
+      const oz = hw[o + 2] - hw[oIn + 2];
       const ol = Math.hypot(ox, oy, oz) || 1;
-      cam.toEye(pose.w[g * 4], pose.w[g * 4 + 1], pose.w[g * 4 + 2], this.tmp);
+      cam.toEye(hw[o], hw[o + 1], hw[o + 2], this.tmp);
       const facing = (ox * this.tmp[0] + oy * this.tmp[1] + oz * this.tmp[2]) / ol;
       // Outward axis direction on screen (the tangent, from the stable
       // perpendicular), pointing away from the body.
@@ -1722,7 +1830,31 @@ export class MorphRenderer {
       wx[c] = this.tmp[0];
       wy[c] = this.tmp[1];
       wz[c] = this.tmp[2];
-      cam.project(this.tmp[0], this.tmp[1], this.tmp[2], this.tmp, 4);
+    }
+    // Length along the loop in space (Å), independent of the view.
+    const arc = new Float64Array(count);
+    for (let c = 1; c < count; c++) {
+      arc[c] = arc[c - 1] + Math.hypot(wx[c] - wx[c - 1], wy[c] - wy[c - 1], wz[c] - wz[c - 1]);
+    }
+    // Follow element ends drawn away from their pose (straightened helices),
+    // easing back to the loop's own path within a few Å.
+    for (const [g, fromEnd] of [
+      [loop.fromG, true],
+      [loop.toG, false],
+    ] as const) {
+      const shift = g >= 0 ? ctx.endShift.get(g) : undefined;
+      if (!shift) continue;
+      for (let c = 0; c < count; c++) {
+        const d = fromEnd ? arc[c] : arc[count - 1] - arc[c];
+        if (d >= END_EASE) continue;
+        const f = 1 - smooth(0, END_EASE, d);
+        wx[c] += shift[0] * f;
+        wy[c] += shift[1] * f;
+        wz[c] += shift[2] * f;
+      }
+    }
+    for (let c = 0; c < count; c++) {
+      cam.project(wx[c], wy[c], wz[c], this.tmp, 4);
       sx[c] = this.tmp[4];
       sy[c] = this.tmp[5];
       sd[c] = this.tmp[6];
@@ -1740,6 +1872,9 @@ export class MorphRenderer {
     const fog = ctx.fogAt(dAvg);
     const core = lerp(1.8, 2 * this.options.coilRadius * scale * kAvg, eW);
     const outer = core + 1.8 * sigma;
+    // Pieces closer than this along the loop overlap anyway (see Prim.reach).
+    const reach =
+      3 + 2 * Math.max(2 * this.options.coilRadius, outer / Math.max(1e-6, scale * kAvg));
     const coreC = fogged(mixRgb(coil, [150, 150, 150], sigma), fog);
     const outC = fogged(mixRgb(coil, [52, 52, 52], sigma), fog);
     const shineC = mixRgb(coreC, WHITE, 0.45);
@@ -1753,7 +1888,17 @@ export class MorphRenderer {
     const cap = loop.discontinuous || !tube ? 'round' : 'butt';
     const coreSpec: OpSpec = { layer: 2, key: 'tube', kind: 'stroke', linecap: cap };
     const outSpec: OpSpec = { layer: 1, key: 'tube-o', kind: 'stroke', linecap: cap };
+    // Dashes of a chain break: as in 2-D at t = 0; in 3-D laid along the
+    // loop's length on screen (laid along its length in space, a stretch
+    // pointing at the viewer bunches them into a clump) and sized to the
+    // line, which is much wider than in 2-D.
     const dashPx = loop.discontinuous ? loop.synLength * ctx.pxA : 0;
+    const dashOn = lerp(DASH_ON, core, sigma);
+    const dashPeriod = lerp(DASH_PERIOD, 3.5 * core, sigma);
+    const onScreen = new Float64Array(count);
+    for (let c = 1; c < count; c++) {
+      onScreen[c] = onScreen[c - 1] + Math.hypot(sx[c] - sx[c - 1], sy[c] - sy[c - 1]);
+    }
     const edgeAlpha = clamp01((sigma - 0.05) / 0.3);
     const rb = outer / 2;
     const edgeW = 1.2;
@@ -1798,6 +1943,9 @@ export class MorphRenderer {
       py: number;
       sh: number;
       s: number;
+      /** Length along the loop in space (Å) and on screen (px). */
+      a: number;
+      scr: number;
     }
     const at = (q: number, r: number, u: number): LoopPoint => {
       let px = lerp(ppx[q], ppx[r], u);
@@ -1815,6 +1963,8 @@ export class MorphRenderer {
         py,
         sh: lerp(shine[q], shine[r], u),
         s: lerp(q, r, u) / (count - 1),
+        a: lerp(arc[q], arc[r], u),
+        scr: lerp(onScreen[q], onScreen[r], u),
       };
     };
     const piece = (P: LoopPoint[], lv: number, sub: number): void => {
@@ -1873,11 +2023,11 @@ export class MorphRenderer {
           run.stroke(edgeR, right, oC, edgeW, edgeAlpha);
         };
       } else {
-        const params = P.map((p) => p.s);
+        const phases = P.map((p) => lerp(p.s * dashPx, p.scr, sigma));
         const coreS = veiled(coreSpec, lv);
         const outS = veiled(outSpec, lv);
         emit = (run) => {
-          const pieces = dashPx > 0 ? dashPieces(pts, params, dashPx) : [pts];
+          const pieces = dashPx > 0 ? dashPieces(pts, phases, dashOn, dashPeriod) : [pts];
           for (const pc of pieces) {
             if (sigma > 0) run.stroke(outS, pc, oC, outer, sigma);
             run.stroke(coreS, pc, cC, core);
@@ -1896,6 +2046,8 @@ export class MorphRenderer {
         faded: loop.faded,
         pts,
         pad: outer / 2,
+        along: (P[0].a + P[P.length - 1].a) / 2,
+        reach,
         emit,
       });
     };
@@ -2166,8 +2318,9 @@ export class MorphRenderer {
 
   private mergeRuns(prims: Prim[], width: number, height: number): Run[] {
     // A primitive joins its element's latest run only if nothing drawn since
-    // that run started overlaps it on screen — merged runs then never break
-    // the back-to-front order where it matters. A coarse grid finds the
+    // that run started overlaps it on screen, and no piece of the run from
+    // further along the element does (see Prim.reach) — merged runs then never
+    // break the back-to-front order where it matters. A coarse grid finds the
     // candidates; convex footprints decide.
     const CELL = 32;
     const cols = Math.max(1, Math.ceil(width / CELL) + 2);
@@ -2191,9 +2344,18 @@ export class MorphRenderer {
         for (let r = r0; r <= r1 && !blocked; r++) {
           for (let c = c0; c <= c1 && !blocked; c++) {
             const cell = r * cols + c;
-            if (newest[cell] <= ri) continue;
+            if (newest[cell] < ri) continue;
             for (const q of cells[cell]) {
-              if ((q.run ?? -1) <= ri || stamp.get(q) === visit) continue;
+              const qr = q.run ?? -1;
+              if (qr < ri || stamp.get(q) === visit) continue;
+              if (
+                qr === ri &&
+                (p.reach === undefined ||
+                  q.along === undefined ||
+                  Math.abs((p.along ?? 0) - q.along) <= p.reach)
+              ) {
+                continue;
+              }
               stamp.set(q, visit);
               const margin = (p.pad ?? 0) + (q.pad ?? 0) + 1;
               if (
@@ -2217,7 +2379,7 @@ export class MorphRenderer {
       }
       if (ri === undefined) {
         ri = runs.length;
-        runs.push(new Run(p.id, p.faded, !p.faded || this.fadeOpacity >= 0.999));
+        runs.push(new Run(p.id, p.faded, !p.faded || this.fadeOpacity >= 0.999, this.coordScale));
         open.set(p.id, ri);
       }
       p.run = ri;
@@ -2367,10 +2529,10 @@ export class MorphRenderer {
       slot = { el: new Pooled(el), stops: [] };
       this.grads.push(slot);
     }
-    slot.el.set('x1', f2(x1));
-    slot.el.set('y1', f2(y1));
-    slot.el.set('x2', f2(x2));
-    slot.el.set('y2', f2(y2));
+    slot.el.set('x1', fmt(x1, this.coordScale));
+    slot.el.set('y1', fmt(y1, this.coordScale));
+    slot.el.set('x2', fmt(x2, this.coordScale));
+    slot.el.set('y2', fmt(y2, this.coordScale));
     for (let k = 0; k < sorted.length; k++) {
       let st = slot.stops[k];
       if (!st) {
@@ -2455,6 +2617,11 @@ interface FrameCtx {
   pxA: number;
   prims: Prim[];
   veil: Veil;
+  /**
+   * World displacement of element end samples whose drawn position differs
+   * from the pose (straightened helices), so loops can stay attached.
+   */
+  endShift: Map<number, [number, number, number]>;
 }
 
 const RIM: OpSpec = { layer: 0, key: 'rim', kind: 'stroke', linecap: 'round' };
@@ -2491,6 +2658,61 @@ function shadeEdge(edge: RGB, sigma: number, fog: number): RGB {
 
 function fogged(c: RGB, fog: number): RGB {
   return fog > 0 ? mixRgb(c, WHITE, fog) : c;
+}
+
+/** Distance (Å) over which a loop eases from a moved element end to its own path. */
+const END_EASE = 5;
+
+/** A helix bends into two straight cylinders only at a kink sharper than this. */
+const KINK_ANGLE = (20 * Math.PI) / 180;
+/** Fewest samples either side of a helix kink. */
+const KINK_MIN = 5;
+
+/**
+ * Best-fit line through samples a..b of `w` (stride 4): centroid and unit
+ * direction (principal axis, pointing from sample a towards sample b).
+ */
+export function fitLine(w: Float64Array, a: number, b: number): { c: number[]; d: number[] } {
+  const n = b - a + 1;
+  const c = [0, 0, 0];
+  for (let g = a; g <= b; g++) for (let k = 0; k < 3; k++) c[k] += w[g * 4 + k] / n;
+  const m = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let g = a; g <= b; g++) {
+    const q = [w[g * 4] - c[0], w[g * 4 + 1] - c[1], w[g * 4 + 2] - c[2]];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m[i * 3 + j] += q[i] * q[j];
+  }
+  // Power iteration from the end-to-end direction.
+  let d = [w[b * 4] - w[a * 4], w[b * 4 + 1] - w[a * 4 + 1], w[b * 4 + 2] - w[a * 4 + 2]];
+  for (let it = 0; it < 24; it++) {
+    const e = [0, 1, 2].map((i) => m[i * 3] * d[0] + m[i * 3 + 1] * d[1] + m[i * 3 + 2] * d[2]);
+    const l = Math.hypot(e[0], e[1], e[2]);
+    if (l < 1e-12) break;
+    d = e.map((x) => x / l);
+  }
+  const l = Math.hypot(d[0], d[1], d[2]) || 1;
+  d = d.map((x) => x / l);
+  const ex = [w[b * 4] - w[a * 4], w[b * 4 + 1] - w[a * 4 + 1], w[b * 4 + 2] - w[a * 4 + 2]];
+  if (d[0] * ex[0] + d[1] * ex[1] + d[2] * ex[2] < 0) d = d.map((x) => -x);
+  return { c, d };
+}
+
+/**
+ * Sample index at which helix g0..g1 bends by more than KINK_ANGLE (the split
+ * with the sharpest angle between the two halves' axes), or -1 if straight.
+ */
+export function findKink(w: Float64Array, g0: number, g1: number): number {
+  let best = -1;
+  let bestAngle = KINK_ANGLE;
+  for (let k = g0 + KINK_MIN; k <= g1 - KINK_MIN; k++) {
+    const p = fitLine(w, g0, k).d;
+    const q = fitLine(w, k, g1).d;
+    const angle = Math.acos(Math.min(1, p[0] * q[0] + p[1] * q[1] + p[2] * q[2]));
+    if (angle > bestAngle) {
+      bestAngle = angle;
+      best = k;
+    }
+  }
+  return best;
 }
 
 /** Opacity of the upper and lower leaflet sheets. */
