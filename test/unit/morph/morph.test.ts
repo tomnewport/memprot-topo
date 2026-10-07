@@ -538,8 +538,8 @@ describe('<topology-display> 3-D morph', () => {
     el.setAttribute('morph-strand-thickness', '2.5');
     expect(opts().strandWidth).toBe(10);
     expect(opts().strandThickness).toBe(2.5);
-    // The arrowhead keeps its default proportion to the ribbon (6.2 / 3.8).
-    expect(opts().arrowWidth).toBeCloseTo((10 * 6.2) / 3.8);
+    // The arrowhead keeps its default proportion to the ribbon (4.65 / 2.85).
+    expect(opts().arrowWidth).toBeCloseTo((10 * 4.65) / 2.85);
     el.setAttribute('morph-strand-width', '-1');
     expect(opts().strandWidth).toBeUndefined();
   });

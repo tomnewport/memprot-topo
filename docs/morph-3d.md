@@ -81,9 +81,10 @@ the other view instead of animating. Changing an attribute or the chain
 re-renders the component and returns it to the 2-D view.
 
 `morph-strand-width` and `morph-strand-thickness` set the strand ribbon size
-in Å (defaults 3.8 × 1.0; the arrowhead scales with the width). The issue's
-suggested ~10 × 2.5 Å works, but neighbouring barrel strands (≈ 4.8 Å apart)
-then overlap heavily.
+in Å (defaults 2.85 × 1.0; the arrowhead, 4.65 Å, scales with the width).
+Neighbouring barrel strands are ≈ 4.8 Å apart, so the default leaves a gap
+between ribbons and keeps arrowheads from cutting into the next strand. The
+issue's suggested ~10 × 2.5 Å works, but the strands then overlap heavily.
 
 `morph-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent

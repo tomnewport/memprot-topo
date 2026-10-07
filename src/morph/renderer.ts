@@ -37,8 +37,8 @@ export { PROJECTIONS } from './projections.js';
 
 export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
   helixRadius: 2.3,
-  strandWidth: 3.8,
-  arrowWidth: 6.2,
+  strandWidth: 2.85,
+  arrowWidth: 4.65,
   arrowLength: 5,
   strandThickness: 1.0,
   coilRadius: 0.42,

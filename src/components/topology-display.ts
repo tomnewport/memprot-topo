@@ -1733,8 +1733,8 @@ function renderChainPicker(
 /** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
 const DEFAULT_MORPH_SWEEP = 0.35;
 
-/** Default strand arrowhead width over ribbon width in the morph (6.2 / 3.8 Å). */
-const STRAND_ARROW_RATIO = 6.2 / 3.8;
+/** Default strand arrowhead width over ribbon width in the morph (4.65 / 2.85 Å). */
+const STRAND_ARROW_RATIO = 4.65 / 2.85;
 
 let _instanceCounter = 0;
 
@@ -1967,7 +1967,7 @@ export class TopologyDisplay extends HTMLElement {
 
   /**
    * Strand ribbon size in the 3-D view, in Å (`morph-strand-width`,
-   * `morph-strand-thickness`; defaults 3.8 × 1.0). The arrowhead keeps its
+   * `morph-strand-thickness`; defaults 2.85 × 1.0). The arrowhead keeps its
    * default proportion to the ribbon width. Invalid or non-positive values
    * fall back to the defaults.
    */
