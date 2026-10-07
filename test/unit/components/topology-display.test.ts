@@ -299,6 +299,50 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(mainLabels[0]).toContain('Chain A');
   });
 
+  it('draws chain icons as a violin for a TM chain and a top-row box for a soluble one', () => {
+    const tm = tmHelixProtein().chains[0];
+    const soluble = {
+      chainId: 'S',
+      residueCount: 20,
+      segments: [],
+      calphas: Array.from({ length: 20 }, (_, i) => ({
+        resSeq: i + 1,
+        iCode: '',
+        x: i,
+        y: 0,
+        z: 40 + i,
+      })),
+    };
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'fusion', chains: [tm, soluble] };
+
+    const buttons = el.shadowRoot!.querySelectorAll('.chain-violin');
+    expect(buttons[0].querySelector('.icon-violin')).not.toBeNull();
+    expect(buttons[1].querySelector('.icon-box-top')).not.toBeNull();
+    expect(buttons[1].querySelector('.icon-violin')).toBeNull();
+    // 5 × 6 grid of 10 px cells plus 2 px padding.
+    const svg = buttons[0].querySelector('svg')!;
+    expect(svg.getAttribute('viewBox')).toBe('0 0 54 64');
+  });
+
+  it('re-renders the chain icons when icon-bandwidth changes', () => {
+    const tm = tmHelixProtein().chains[0];
+    const tmB = { ...tm, chainId: 'B' };
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'dimer', chains: [tm, tmB] };
+    const path = () => el.shadowRoot!.querySelector('.icon-violin')!.getAttribute('d');
+
+    const byDefault = path();
+    el.setAttribute('icon-bandwidth', '30');
+    expect(path()).toBe(byDefault); // default = membrane thickness (30 Å)
+    el.setAttribute('icon-bandwidth', '4');
+    expect(path()).not.toBe(byDefault);
+    el.setAttribute('icon-bandwidth', 'nonsense');
+    expect(path()).toBe(byDefault);
+  });
+
   it('switches the displayed chain when a different violin is clicked', () => {
     const tm = tmHelixProtein().chains[0];
     const tmB = { ...tm, chainId: 'B' };

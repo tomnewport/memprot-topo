@@ -17,6 +17,14 @@ import {
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
+import {
+  chainIconShape,
+  iconZOuter,
+  maxIconDensity,
+  renderChainIcon,
+  type IconColours,
+  type IconMembrane,
+} from './chain-icon.js';
 import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
 import type { MorphController } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
@@ -171,6 +179,15 @@ const COLOURS = {
   strand: '#6ea76d',
   strandEdge: '#3d6d3d',
   contact: '#c98a3b',
+};
+
+const ICON_COLOURS: IconColours = {
+  helix: COLOURS.helix,
+  strand: COLOURS.strand,
+  coil: '#b5b5b5',
+  outline: '#5b6f8a',
+  membrane: '#e8edf3',
+  midline: '#bdbdbd',
 };
 
 const LOOP = {
@@ -1514,218 +1531,6 @@ function drawSegment(
   }
 }
 
-const VIOLIN = {
-  width: 64,
-  height: 180,
-  margin: { top: 6, right: 6, bottom: 6, left: 6 },
-  /** Minimum z half-range shown (Å); auto-expands to fit data. */
-  zRangeMin: 30,
-  /**
-   * Number of z-bins for the density estimate. Higher = smoother curve at
-   * the cost of more vertices in the SVG.
-   */
-  bins: 60,
-  /** Gaussian smoothing kernel σ, in bins. */
-  smoothingSigma: 1.8,
-};
-
-interface ChainSsBins {
-  helix: number[];
-  strand: number[];
-  coil: number[];
-  total: number[];
-  maxBinTotal: number;
-}
-
-function smoothBins(values: number[], sigma: number): number[] {
-  if (sigma <= 0 || values.length === 0) return values.slice();
-  const half = Math.max(1, Math.ceil(sigma * 3));
-  const kernel: number[] = [];
-  for (let i = -half; i <= half; i++) {
-    kernel.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
-  }
-  const ksum = kernel.reduce((a, b) => a + b, 0);
-  for (let i = 0; i < kernel.length; i++) kernel[i] /= ksum;
-
-  const out = new Array<number>(values.length).fill(0);
-  for (let i = 0; i < values.length; i++) {
-    let acc = 0;
-    let weight = 0;
-    for (let k = -half; k <= half; k++) {
-      const j = i + k;
-      if (j < 0 || j >= values.length) continue;
-      const w = kernel[k + half];
-      acc += values[j] * w;
-      weight += w;
-    }
-    // Renormalise at edges so the boundary doesn't pull the density to zero.
-    out[i] = weight > 0 ? acc / weight : 0;
-  }
-  return out;
-}
-
-function binChainBySs(chain: ChainData, bins: number, zMin: number, zMax: number): ChainSsBins {
-  const helixRaw = new Array<number>(bins).fill(0);
-  const strandRaw = new Array<number>(bins).fill(0);
-  const coilRaw = new Array<number>(bins).fill(0);
-  const range = zMax - zMin;
-  if (range > 0) {
-    for (const ca of chain.calphas) {
-      if (ca.z < zMin || ca.z > zMax) continue;
-      const t = (ca.z - zMin) / range;
-      const b = Math.min(bins - 1, Math.max(0, Math.floor(t * bins)));
-      const ss = ssTypeAt(chain.segments, ca.resSeq);
-      if (ss === 'helix') helixRaw[b]++;
-      else if (ss === 'strand') strandRaw[b]++;
-      else coilRaw[b]++;
-    }
-  }
-
-  const sigma = VIOLIN.smoothingSigma;
-  const helix = smoothBins(helixRaw, sigma);
-  const strand = smoothBins(strandRaw, sigma);
-  const coil = smoothBins(coilRaw, sigma);
-  const total = new Array<number>(bins);
-  let maxBinTotal = 0;
-  for (let i = 0; i < bins; i++) {
-    total[i] = helix[i] + strand[i] + coil[i];
-    if (total[i] > maxBinTotal) maxBinTotal = total[i];
-  }
-  return { helix, strand, coil, total, maxBinTotal };
-}
-
-/**
- * Build a smooth half-violin polygon path: outer envelope walks one side from
- * bottom to top through the density values, then closes along the centreline.
- *
- * `side` = -1 for the left half, +1 for the right half. `widths[i]` is the
- * unsigned width of the violin at bin i. `centreOffset` lets us push the
- * envelope outwards by another density (e.g. coil) so layers stack cleanly.
- */
-function halfViolinPath(
-  widths: number[],
-  centreOffset: number[],
-  side: -1 | 1,
-  yForBin: (b: number) => number,
-): string {
-  const bins = widths.length;
-  if (bins === 0) return '';
-  const parts: string[] = [];
-  parts.push(`M ${side * centreOffset[0]} ${yForBin(-0.5)}`);
-  for (let b = 0; b < bins; b++) {
-    parts.push(`L ${side * (centreOffset[b] + widths[b])} ${yForBin(b)}`);
-  }
-  parts.push(`L ${side * (centreOffset[bins - 1] + widths[bins - 1])} ${yForBin(bins - 0.5)}`);
-  parts.push(`L ${side * centreOffset[bins - 1]} ${yForBin(bins - 0.5)}`);
-  for (let b = bins - 1; b >= 0; b--) {
-    parts.push(`L ${side * centreOffset[b]} ${yForBin(b)}`);
-  }
-  parts.push('Z');
-  return parts.join(' ');
-}
-
-function renderViolin(
-  binned: ChainSsBins,
-  maxBinTotal: number,
-  zMin: number,
-  zMax: number,
-): SVGSVGElement {
-  const { width: W, height: H, margin, bins } = VIOLIN;
-  const plotW = W - margin.left - margin.right;
-  const plotH = H - margin.top - margin.bottom;
-
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('xmlns', SVG_NS);
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('width', `${W}`);
-  svg.setAttribute('height', `${H}`);
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-hidden', 'true');
-
-  const yScale = plotH / (zMax - zMin);
-  const xScale = maxBinTotal > 0 ? plotW / 2 / maxBinTotal : 0;
-  const cx = margin.left + plotW / 2;
-  const cy = margin.top + plotH / 2;
-
-  const plot = document.createElementNS(SVG_NS, 'g');
-  plot.setAttribute('transform', `translate(${cx}, ${cy})`);
-  svg.appendChild(plot);
-
-  // Membrane band — faint grey slab so membrane-spanning chains are obvious
-  // vs. soluble ones.
-  const slab = document.createElementNS(SVG_NS, 'rect');
-  slab.setAttribute('x', `${-plotW / 2}`);
-  slab.setAttribute('y', `${-PLOT.membraneHalf * yScale}`);
-  slab.setAttribute('width', `${plotW}`);
-  slab.setAttribute('height', `${PLOT.membraneHalf * 2 * yScale}`);
-  slab.setAttribute('fill', '#e8edf3');
-  plot.appendChild(slab);
-
-  // Midplane.
-  const mid = document.createElementNS(SVG_NS, 'line');
-  mid.setAttribute('x1', `${-plotW / 2}`);
-  mid.setAttribute('x2', `${plotW / 2}`);
-  mid.setAttribute('y1', '0');
-  mid.setAttribute('y2', '0');
-  mid.setAttribute('stroke', '#bdbdbd');
-  mid.setAttribute('stroke-dasharray', '2 3');
-  plot.appendChild(mid);
-
-  // Density-bin centres in z, mapped to SVG y.
-  const binCentreY = (b: number) => -(zMin + ((b + 0.5) * (zMax - zMin)) / bins) * yScale;
-
-  // Each side of the violin is the stacked total density of helix + strand +
-  // coil. Helix goes innermost (against the centreline), strand next, coil
-  // outermost as a faint outline — so the dominant SS type drives the colour
-  // and the outer envelope is always the *total* residue density.
-  const helixW = binned.helix.map((v) => v * xScale);
-  const strandW = binned.strand.map((v) => v * xScale);
-  const coilW = binned.coil.map((v) => v * xScale);
-  const zeroes = new Array<number>(bins).fill(0);
-  const helixOffsets = zeroes;
-  const strandOffsets = helixW;
-  const coilOffsets = helixW.map((h, i) => h + strandW[i]);
-
-  for (const side of [-1, 1] as const) {
-    // Coil — drawn first as a faint outer envelope.
-    const coilPath = document.createElementNS(SVG_NS, 'path');
-    coilPath.setAttribute('d', halfViolinPath(coilW, coilOffsets, side, binCentreY));
-    coilPath.setAttribute('fill', COLOURS.coil);
-    coilPath.setAttribute('opacity', '0.35');
-    plot.appendChild(coilPath);
-
-    // Strand.
-    const strandPath = document.createElementNS(SVG_NS, 'path');
-    strandPath.setAttribute('d', halfViolinPath(strandW, strandOffsets, side, binCentreY));
-    strandPath.setAttribute('fill', COLOURS.strand);
-    plot.appendChild(strandPath);
-
-    // Helix — innermost so the colour reads as "blue body" for helical bundles.
-    const helixPath = document.createElementNS(SVG_NS, 'path');
-    helixPath.setAttribute('d', halfViolinPath(helixW, helixOffsets, side, binCentreY));
-    helixPath.setAttribute('fill', COLOURS.helix);
-    plot.appendChild(helixPath);
-  }
-
-  // Subtle outline around the total density envelope to make small violins
-  // (soluble chains) easier to see.
-  const totalW = binned.total.map((v) => v * xScale);
-  const outlinePath = document.createElementNS(SVG_NS, 'path');
-  outlinePath.setAttribute(
-    'd',
-    halfViolinPath(totalW, zeroes, 1, binCentreY) +
-      ' ' +
-      halfViolinPath(totalW, zeroes, -1, binCentreY),
-  );
-  outlinePath.setAttribute('fill', 'none');
-  outlinePath.setAttribute('stroke', '#5b6f8a');
-  outlinePath.setAttribute('stroke-width', '0.8');
-  outlinePath.setAttribute('stroke-linejoin', 'round');
-  plot.appendChild(outlinePath);
-
-  return svg;
-}
-
 function toRoman(n: number): string {
   const vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
   const syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
@@ -1794,29 +1599,16 @@ function renderChainPicker(
   chains: ChainData[],
   chainLabels: Map<string, ChainLabel>,
   selectedId: string,
+  icon: { membrane: IconMembrane; bandwidth: number },
   onSelect: (chainId: string) => void,
 ): HTMLDivElement {
   const container = document.createElement('div');
   container.className = 'chain-picker';
   container.setAttribute('role', 'group');
 
-  let zMin = Infinity;
-  let zMax = -Infinity;
-  for (const chain of chains) {
-    for (const ca of chain.calphas) {
-      if (ca.z < zMin) zMin = ca.z;
-      if (ca.z > zMax) zMax = ca.z;
-    }
-  }
-  if (!Number.isFinite(zMin)) {
-    zMin = -VIOLIN.zRangeMin;
-    zMax = VIOLIN.zRangeMin;
-  }
-  zMin = Math.min(zMin, -VIOLIN.zRangeMin);
-  zMax = Math.max(zMax, VIOLIN.zRangeMin);
-
-  const binData = chains.map((c) => binChainBySs(c, VIOLIN.bins, zMin, zMax));
-  const maxBinTotal = Math.max(0, ...binData.map((b) => b.maxBinTotal));
+  const zOuter = iconZOuter(chains, icon.membrane);
+  const shapes = chains.map((c) => chainIconShape(c, icon.membrane, icon.bandwidth, zOuter));
+  const maxDensity = maxIconDensity(shapes);
 
   for (let i = 0; i < chains.length; i++) {
     const chain = chains[i];
@@ -1826,7 +1618,7 @@ function renderChainPicker(
     button.className = 'chain-violin' + (chain.chainId === selectedId ? ' selected' : '');
     button.setAttribute('aria-pressed', chain.chainId === selectedId ? 'true' : 'false');
     button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
-    button.appendChild(renderViolin(binData[i], maxBinTotal, zMin, zMax));
+    button.appendChild(renderChainIcon(chain, shapes[i], maxDensity, ICON_COLOURS));
 
     const label = document.createElement('div');
     label.className = 'violin-label';
@@ -1863,6 +1655,7 @@ export class TopologyDisplay extends HTMLElement {
     'morph-projection',
     'morph-strand-width',
     'morph-strand-thickness',
+    'icon-bandwidth',
   ];
 
   private readonly _instanceId = ++_instanceCounter;
@@ -1922,7 +1715,8 @@ export class TopologyDisplay extends HTMLElement {
       name === 'morph-sweep' ||
       name === 'morph-projection' ||
       name === 'morph-strand-width' ||
-      name === 'morph-strand-thickness'
+      name === 'morph-strand-thickness' ||
+      name === 'icon-bandwidth'
     ) {
       this.render();
       return;
@@ -1997,6 +1791,26 @@ export class TopologyDisplay extends HTMLElement {
     const thickness = read('morph-strand-thickness');
     if (thickness !== null) opts.strandThickness = thickness;
     return opts;
+  }
+
+  /**
+   * Membrane the chain-picker icons are drawn against. The centre is the z = 0
+   * datum of the input frame (OPM / MemProtMD place it at the bulk bilayer
+   * midplane); once explicit bulk-lipid positions are supported (#24) they
+   * should feed this.
+   */
+  private get iconMembrane(): IconMembrane {
+    return { centre: 0, thickness: 2 * PLOT.membraneHalf };
+  }
+
+  /**
+   * Gaussian KDE bandwidth (σ, Å) for the chain-picker violins
+   * (`icon-bandwidth`). Defaults to the membrane thickness; invalid or
+   * non-positive values fall back to the default.
+   */
+  private get iconBandwidth(): number {
+    const v = Number.parseFloat(this.getAttribute('icon-bandwidth') ?? '');
+    return Number.isFinite(v) && v > 0 ? v : this.iconMembrane.thickness;
   }
 
   /** Assemble the loop rendering options from the component's attributes. */
@@ -2123,10 +1937,17 @@ export class TopologyDisplay extends HTMLElement {
       pickerLabel.id = labelId;
       pickerLabel.textContent = 'Select chain';
       region.appendChild(pickerLabel);
-      const picker = renderChainPicker(chainsWithCoords, displayLabels, selectedId, (chainId) => {
-        this._selectedChainId = chainId;
-        this.render();
-      });
+      const icon = { membrane: this.iconMembrane, bandwidth: this.iconBandwidth };
+      const picker = renderChainPicker(
+        chainsWithCoords,
+        displayLabels,
+        selectedId,
+        icon,
+        (chainId) => {
+          this._selectedChainId = chainId;
+          this.render();
+        },
+      );
       picker.setAttribute('aria-labelledby', labelId);
       region.appendChild(picker);
     }
