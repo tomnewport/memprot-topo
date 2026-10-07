@@ -77,6 +77,19 @@ const STYLES = `
     display: flex;
     font-family: inherit;
   }
+  .chain-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+  }
+  .chain-copy {
+    font: 0.75rem Georgia, 'Times New Roman', serif;
+    padding: 0 0.15rem;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    background: #fff;
+  }
   .chain-violin .icon-grid { display: none; }
   .chain-violin:hover .icon-grid,
   .chain-violin.selected .icon-grid { display: inline; }
@@ -1604,19 +1617,50 @@ function renderChainPicker(
   const shapes = chains.map((c) => chainIconShape(c, icon.membrane, icon.bandwidth, zOuter));
   const maxDensity = maxIconDensity(shapes);
 
-  for (let i = 0; i < chains.length; i++) {
-    const chain = chains[i];
+  // Copies of the same chain (A(I), A(II), …) share one icon; a dropdown picks
+  // the copy. The icon shows the selected copy, or the first if none is.
+  const groups = new Map<string, number[]>();
+  chains.forEach((c, i) => {
+    const base = chainLabels.get(c.chainId)!.base;
+    groups.set(base, [...(groups.get(base) ?? []), i]);
+  });
+
+  for (const [base, members] of groups) {
+    const shownIdx = members.find((i) => chains[i].chainId === selectedId) ?? members[0];
+    const chain = chains[shownIdx];
     const lbl = chainLabels.get(chain.chainId)!;
+    const isSelected = chain.chainId === selectedId;
+
+    const group = document.createElement('div');
+    group.className = 'chain-group';
+
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'chain-violin' + (chain.chainId === selectedId ? ' selected' : '');
-    button.setAttribute('aria-pressed', chain.chainId === selectedId ? 'true' : 'false');
+    button.className = 'chain-violin' + (isSelected ? ' selected' : '');
+    button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
     button.title = `Chain ${lbl.text} · ${chain.residueCount} aa`;
-    button.appendChild(renderChainIcon(shapes[i], maxDensity, lbl, ICON_COLOURS));
-
+    button.appendChild(
+      renderChainIcon(shapes[shownIdx], maxDensity, { base, suffix: null }, ICON_COLOURS),
+    );
     button.addEventListener('click', () => onSelect(chain.chainId));
-    container.appendChild(button);
+    group.appendChild(button);
+
+    if (members.length > 1) {
+      const select = document.createElement('select');
+      select.className = 'chain-copy';
+      select.setAttribute('aria-label', `Copy of chain ${base}`);
+      for (const i of members) {
+        const option = document.createElement('option');
+        option.value = chains[i].chainId;
+        option.textContent = chainLabels.get(chains[i].chainId)!.suffix ?? '';
+        option.selected = i === shownIdx;
+        select.appendChild(option);
+      }
+      select.addEventListener('change', () => onSelect(select.value));
+      group.appendChild(select);
+    }
+    container.appendChild(group);
   }
 
   return container;

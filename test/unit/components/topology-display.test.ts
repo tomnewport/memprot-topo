@@ -347,25 +347,26 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(path()).toBe(byDefault);
   });
 
-  it('switches the displayed chain when a different violin is clicked', () => {
+  it('switches between copies of a chain with the copy dropdown', () => {
     const tm = tmHelixProtein().chains[0];
     const tmB = { ...tm, chainId: 'B' };
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'dimer', chains: [tm, tmB] };
 
-    // Chains A and B share the same residue count → homomeric A(I)/A(II) labels.
-    const violinII = Array.from(
-      el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin'),
-    ).find((b) => b.getAttribute('aria-label')?.includes('A(II)'));
-    expect(violinII).toBeDefined();
-    violinII!.click();
+    // Chains A and B share the same residue count → one A icon with an I/II dropdown.
+    expect(el.shadowRoot!.querySelectorAll('.chain-violin')).toHaveLength(1);
+    const select = el.shadowRoot!.querySelector<HTMLSelectElement>('.chain-copy')!;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['I', 'II']);
+    select.value = 'B';
+    select.dispatchEvent(new Event('change'));
 
     const mainLabel = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
     // textContent flattens the DOM so <sub>II</sub> contributes just "II": "Chain AII · …"
     expect(mainLabel).toContain('AII');
     const selected = el.shadowRoot!.querySelector('.chain-violin.selected');
     expect(selected!.getAttribute('aria-label')).toContain('A(II)');
+    expect(el.shadowRoot!.querySelector<HTMLSelectElement>('.chain-copy')!.value).toBe('B');
   });
 
   it('renders one strand polygon per strand run for a beta barrel chain, all with arrowhead vertices', () => {
@@ -746,12 +747,10 @@ describe('TopologyDisplay live attribute updates', () => {
     const el = attach(new TopologyDisplay());
     el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer', chains: [tm, tmB] }));
 
-    // Switch to chain B via click
-    const violins = el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin');
-    const violinB = Array.from(violins).find((b) =>
-      b.getAttribute('aria-label')?.includes('A(II)'),
-    );
-    violinB!.click();
+    // Switch to chain B via the copy dropdown
+    const select = el.shadowRoot!.querySelector<HTMLSelectElement>('.chain-copy')!;
+    select.value = 'B';
+    select.dispatchEvent(new Event('change'));
     expect(
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(II)');
