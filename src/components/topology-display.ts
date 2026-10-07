@@ -195,8 +195,8 @@ const COLOURS = {
 };
 
 const ICON_COLOURS: IconColours = {
-  helix: '#5b84d6',
-  strand: '#5cd99a',
+  helix: COLOURS.helix,
+  strand: COLOURS.strand,
   coil: '#f7f7f7',
   outline: '#2b2b2b',
   frame: '#2b2b2b',

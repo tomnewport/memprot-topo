@@ -20,7 +20,7 @@ comparable.
 
 A chain is drawn as a mirrored violin: a Gaussian kernel density estimate of
 its Cα z positions, cut at the chain's highest and lowest Cα. The violin is
-stacked by secondary structure: helix (blue) innermost, strand (green) around
+stacked by secondary structure: helix innermost, strand around
 it, and coil as a pale outer halo, so the outer edge is the total density. All
 violins share one width scale, so a larger chain draws a wider violin.
 
