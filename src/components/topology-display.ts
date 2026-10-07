@@ -43,17 +43,38 @@ import {
   type IconMembrane,
 } from './chain-icon.js';
 import { ScrollBox, SCROLL_BOX_STYLES } from './scroll-box.js';
-import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
+import type {
+  MorphScene,
+  MorphElement,
+  MorphLoop,
+  MorphLabel,
+  MorphStyle,
+  MorphTie,
+} from '../morph/types.js';
 import type { MorphController, MorphView } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
 import { PROJECTIONS } from '../morph/projections.js';
+import {
+  getTheme,
+  onThemeRegistered,
+  paint,
+  registerTheme,
+  repaint,
+  resolveThemeName,
+  themeCss,
+  type Theme,
+  type ThemeInput,
+  type ThemeName,
+} from '../theme/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const STYLES = `
   :host {
     display: block;
-    font-family: sans-serif;
+    font-family: var(--mp-font-family);
+    color: var(--mp-text);
+    background: var(--mp-background);
     padding: 0.5rem;
     max-width: 100%;
   }
@@ -74,14 +95,14 @@ const STYLES = `
   }
   .chain-block { margin-top: 0.75rem; }
   .chain-label {
-    font-family: monospace;
+    font-family: var(--mp-mono-font-family);
     font-size: 0.85rem;
-    color: #444;
+    color: var(--mp-text);
     margin-bottom: 0.25rem;
   }
   .chain-note {
     font-size: 0.8rem;
-    color: #6c757d;
+    color: var(--mp-text-muted);
     font-style: italic;
     margin-top: 0.25rem;
   }
@@ -91,16 +112,16 @@ const STYLES = `
     gap: 0.5rem;
     margin: 0.5rem 0;
     padding: 0.5rem;
-    background: #fafafa;
-    border-radius: 4px;
-    border: 1px solid #efefef;
+    background: var(--mp-surface);
+    border-radius: var(--mp-corner-radius);
+    border: 1px solid var(--mp-border);
   }
   .chain-violin {
     border: 1px solid transparent;
     background: transparent;
     cursor: pointer;
     padding: 0.2rem;
-    border-radius: 6px;
+    border-radius: calc(var(--mp-corner-radius) + 2px);
     display: flex;
     font-family: inherit;
   }
@@ -111,27 +132,29 @@ const STYLES = `
     gap: 0.15rem;
   }
   .chain-copy {
-    font: 0.75rem Georgia, 'Times New Roman', serif;
+    font-family: var(--mp-serif-font-family);
+    font-size: 0.75rem;
     padding: 0 0.15rem;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    background: #fff;
+    border: 1px solid var(--mp-border);
+    border-radius: max(0px, calc(var(--mp-corner-radius) - 1px));
+    background: var(--mp-background);
+    color: var(--mp-text);
   }
   .chain-violin .icon-grid { display: none; }
   .chain-violin:hover .icon-grid,
   .chain-violin.selected .icon-grid { display: inline; }
-  .chain-violin:hover { background: #eef3f8; }
+  .chain-violin:hover { background: color-mix(in srgb, var(--mp-accent) 8%, transparent); }
   .chain-violin.selected {
-    background: #e6f2ff;
-    border-color: #1f77b4;
+    background: color-mix(in srgb, var(--mp-accent) 14%, transparent);
+    border-color: var(--mp-accent);
   }
   .chain-violin:focus-visible {
-    outline: 2px solid #1f77b4;
+    outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
   .chain-picker-label {
     font-size: 0.75rem;
-    color: #6c757d;
+    color: var(--mp-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 0.25rem;
@@ -139,9 +162,9 @@ const STYLES = `
   .svg-scroll {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    background: var(--mp-background);
+    border: 1px solid var(--mp-border);
+    border-radius: var(--mp-corner-radius);
   }
   svg {
     display: block;
@@ -149,46 +172,51 @@ const STYLES = `
     /* no height: auto — inside overflow-x:auto containers it causes the browser
        to compute height from container width, producing a huge whitespace gap */
   }
-  .placeholder { font-style: italic; color: #888; }
+  .placeholder { font-style: italic; color: var(--mp-text-muted); }
   .morph-bar {
     display: flex;
     align-items: center;
     gap: 0.6rem;
     margin-bottom: 0.35rem;
     font-size: 0.75rem;
-    color: #6c757d;
+    color: var(--mp-text-muted);
   }
   .morph-toggle {
     font: inherit;
     font-weight: 600;
     padding: 0.15rem 0.6rem;
-    border: 1px solid #1f77b4;
-    border-radius: 4px;
-    background: #fff;
-    color: #1f77b4;
+    border: 1px solid var(--mp-accent);
+    border-radius: var(--mp-corner-radius);
+    background: var(--mp-background);
+    color: var(--mp-accent);
     cursor: pointer;
   }
-  .morph-toggle[aria-pressed='true'] { background: #1f77b4; color: #fff; }
+  .morph-toggle[aria-pressed='true'] { background: var(--mp-accent); color: var(--mp-accent-text); }
   .morph-toggle:focus-visible, .morph-scrub:focus-visible {
-    outline: 2px solid #1f77b4;
+    outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
-  .morph-scrub { width: 10rem; accent-color: #1f77b4; }
+  .morph-scrub { width: 10rem; accent-color: var(--mp-accent); }
   .morph-hint { visibility: hidden; }
   .morph-bar.is-3d .morph-hint { visibility: visible; }
   .ss-element { cursor: pointer; outline: none; }
   .ss-element:hover, .ss-element:focus-visible {
     filter: brightness(1.15);
-    stroke: #111;
-    stroke-width: 2.5px;
+    stroke: var(--mp-hover);
+    stroke-width: var(--mp-hover-width);
   }
-  .ss-element.selected, .loop.selected { stroke: #e6550d; }
-  .ss-element.selected { stroke-width: 2.5px; }
-  .ss-element.selected:hover, .ss-element.selected:focus-visible { stroke-width: 3.5px; }
-  .loop.selected { stroke-width: 3px; }
+  .ss-element.selected, .loop.selected { stroke: var(--mp-selection); }
+  .ss-element.selected { stroke-width: var(--mp-selection-width); }
+  .ss-element.selected:hover, .ss-element.selected:focus-visible {
+    stroke-width: calc(var(--mp-selection-width) + 1px);
+  }
+  .loop.selected { stroke-width: calc(var(--mp-selection-width) + 0.5px); }
   /* A loop drawn residue by residue shows its plain curve only as the halo. */
   .loop.has-data { stroke-opacity: 0; }
-  .loop.has-data.selected { stroke-opacity: 1; stroke-width: 5px; }
+  .loop.has-data.selected {
+    stroke-opacity: 1;
+    stroke-width: calc(var(--mp-selection-width) + 2.5px);
+  }
 ${SCROLL_BOX_STYLES}`;
 
 const PLOT = {
@@ -210,31 +238,6 @@ const PLOT = {
   arcPxPerA: 2.5,
   /** Å per pixel on the y-axis (real z).  Equal to arcPxPerA for 1:1 aspect ratio. */
   zPxPerA: 2.5,
-};
-
-const COLOURS = {
-  membraneFill: '#eaeaea',
-  membraneEdge: '#bdbdbd',
-  zAxis: '#666',
-  coil: '#666',
-  helix: '#6e8db6',
-  helixEdge: '#3e587a',
-  strand: '#6ea76d',
-  strandEdge: '#3d6d3d',
-  contact: '#c98a3b',
-};
-
-const ICON_COLOURS: IconColours = {
-  helix: COLOURS.helix,
-  strand: COLOURS.strand,
-  coil: '#f7f7f7',
-  outline: '#2b2b2b',
-  frame: '#2b2b2b',
-  grid: '#d6d6d6',
-  membraneEdge: '#2b2b2b',
-  membraneDark: '#c4c4c4',
-  membraneLight: '#e9e9e9',
-  label: '#1a1a1a',
 };
 
 const LOOP = {
@@ -399,11 +402,6 @@ const SS_BODY = {
   arrowLengthPx: 12,
 };
 
-const SS_STYLE: Record<'helix' | 'strand', { fill: string; stroke: string }> = {
-  helix: { fill: COLOURS.helix, stroke: COLOURS.helixEdge },
-  strand: { fill: COLOURS.strand, stroke: COLOURS.strandEdge },
-};
-
 const LABEL = {
   fontSizePx: 11,
   /** Gap (screen pixels) between the polygon tip and the nearest label edge. */
@@ -412,7 +410,6 @@ const LABEL = {
    * Stepping > 1 averages out the helix curl that makes single-sample
    * tangents jitter at the ends. */
   tangentStepSamples: 3,
-  fill: '#333',
 };
 
 interface LabelBox {
@@ -489,7 +486,7 @@ function placeResidueLabel(
   textEl.setAttribute('text-anchor', 'middle');
   textEl.setAttribute('dominant-baseline', 'central');
   textEl.setAttribute('font-size', `${fontSize}`);
-  textEl.setAttribute('fill', LABEL.fill);
+  paint(textEl, { fill: 'label' });
   textEl.textContent = text;
   labelsGroup.appendChild(textEl);
 }
@@ -604,12 +601,16 @@ function drawSsPolygon(
     for (const span of residueSpans(residues, startIdx, endIdx)) {
       const verts = outlineSlice(screen, sections, span.from - startIdx, span.to - startIdx);
       if (verts.length < 3) continue;
-      const fill = data!.colour!(span.resSeq) ?? SS_STYLE[type].fill;
+      const fill = data!.colour!(span.resSeq);
       const slice = document.createElementNS(SVG_NS, 'polygon');
       slice.setAttribute('points', toPoints(verts));
-      slice.setAttribute('fill', fill);
       // A hairline of the same colour hides anti-aliasing seams between slices.
-      slice.setAttribute('stroke', fill);
+      if (fill) {
+        slice.setAttribute('fill', fill);
+        slice.setAttribute('stroke', fill);
+      } else {
+        paint(slice, { fill: type, stroke: type });
+      }
       slice.setAttribute('stroke-width', '0.5');
       slice.setAttribute('vector-effect', 'non-scaling-stroke');
       slice.dataset.res = String(span.resSeq);
@@ -622,12 +623,14 @@ function drawSsPolygon(
 
   const poly = document.createElementNS(SVG_NS, 'polygon');
   poly.setAttribute('points', points);
-  poly.setAttribute('fill', SS_STYLE[type].fill);
+  paint(poly, {
+    fill: type,
+    stroke: type === 'helix' ? 'helixEdge' : 'strandEdge',
+    'stroke-width': 'outlineWidth',
+    'stroke-linejoin': 'lineJoin',
+  });
   // Still painted (so the interior is clickable) but see-through to the slices.
   if (coloured) poly.setAttribute('fill-opacity', '0');
-  poly.setAttribute('stroke', SS_STYLE[type].stroke);
-  poly.setAttribute('stroke-width', '1.5');
-  poly.setAttribute('stroke-linejoin', 'round');
   poly.setAttribute('vector-effect', 'non-scaling-stroke');
   // Neighbouring-chain elements (assembly barrels) are desaturated so the focal
   // protomer reads as the subject.
@@ -815,10 +818,8 @@ function renderLoopCurve(
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('d', d);
   path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', COLOURS.coil);
-  path.setAttribute('stroke-width', String(LOOP_STROKE_PX));
+  paint(path, { stroke: 'loop', 'stroke-width': 'loopWidth', 'stroke-linejoin': 'lineJoin' });
   path.setAttribute('stroke-linecap', 'round');
-  path.setAttribute('stroke-linejoin', 'round');
   path.setAttribute('vector-effect', 'non-scaling-stroke');
   if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
   if (faded) path.setAttribute('opacity', '0.32');
@@ -832,7 +833,7 @@ function renderLoopCurve(
       dot.setAttribute('cy', (-p.z * PLOT.zPxPerA).toFixed(2));
       dot.setAttribute('r', '2.5');
       dot.setAttribute('fill', LOOP_DEBUG_FILL[p.kind]);
-      dot.setAttribute('stroke', '#fff');
+      paint(dot, { stroke: 'background' });
       dot.setAttribute('stroke-width', '0.5');
       markers.appendChild(dot);
     }
@@ -906,7 +907,7 @@ function drawLoopData(
     const rib = ribbon(poly, (d) => widthPx(profile(d)) / 2 / PLOT.arcPxPerA);
     for (let k = 0; k < n; k++) {
       const resSeq = loopResidues[k].resSeq;
-      const colour = data.colour?.(resSeq) ?? COLOURS.coil;
+      const colour = data.colour?.(resSeq);
       const piece = document.createElementNS(SVG_NS, 'polygon');
       piece.setAttribute(
         'points',
@@ -914,9 +915,13 @@ function drawLoopData(
           .map((q) => `${q.x.toFixed(3)},${q.y.toFixed(3)}`)
           .join(' '),
       );
-      piece.setAttribute('fill', colour);
       // A hairline of the same colour hides anti-aliasing seams between pieces.
-      piece.setAttribute('stroke', colour);
+      if (colour) {
+        piece.setAttribute('fill', colour);
+        piece.setAttribute('stroke', colour);
+      } else {
+        paint(piece, { fill: 'loop', stroke: 'loop' });
+      }
       piece.setAttribute('stroke-width', '0.4');
       piece.setAttribute('stroke-linejoin', 'round');
       piece.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -936,7 +941,9 @@ function drawLoopData(
       piece.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(''),
     );
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', data.colour?.(resSeq) ?? COLOURS.coil);
+    const colour = data.colour?.(resSeq);
+    if (colour) path.setAttribute('stroke', colour);
+    else paint(path, { stroke: 'loop' });
     const w = widthPx(data.widths.get(resSeq) ?? 1);
     path.setAttribute('stroke-width', w.toFixed(2));
     // Round caps join the pieces without gaps at bends.
@@ -1328,8 +1335,7 @@ function drawContacts(
       line.setAttribute('y1', a.z.toFixed(3));
       line.setAttribute('x2', b.arc.toFixed(3));
       line.setAttribute('y2', b.z.toFixed(3));
-      line.setAttribute('stroke', COLOURS.contact);
-      line.setAttribute('stroke-width', '1');
+      paint(line, { stroke: 'contact', 'stroke-width': 'contactWidth' });
       line.setAttribute('stroke-opacity', '0.5');
       line.setAttribute('vector-effect', 'non-scaling-stroke');
       group.appendChild(line);
@@ -1433,6 +1439,7 @@ function renderChainSvg(
   opts: LoopRenderOptions,
   analysis: BarrelAnalysis,
   showContacts: boolean,
+  theme: Theme,
   assembly?: AssemblyContext,
   display?: ChainDisplayData,
 ): { svg: SVGSVGElement; scene: MorphScene | null } {
@@ -1514,9 +1521,8 @@ function renderChainSvg(
   slab.setAttribute('y', `${-PLOT.membraneHalf}`);
   slab.setAttribute('width', `${totalArc.toFixed(2)}`);
   slab.setAttribute('height', `${PLOT.membraneHalf * 2}`);
-  slab.setAttribute('fill', COLOURS.membraneFill);
+  paint(slab, { fill: 'membrane', stroke: 'membraneEdge', 'stroke-width': 'membraneEdgeWidth' });
   slab.setAttribute('fill-opacity', '0.55');
-  slab.setAttribute('stroke', COLOURS.membraneEdge);
   // Stroke gets multiplied by the (non-uniform) scale, so use vector-effect to
   // keep it 1px regardless of zoom.
   slab.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -1528,7 +1534,7 @@ function renderChainSvg(
   mid.setAttribute('x2', `${totalArc.toFixed(2)}`);
   mid.setAttribute('y1', '0');
   mid.setAttribute('y2', '0');
-  mid.setAttribute('stroke', COLOURS.zAxis);
+  paint(mid, { stroke: 'midplane', 'stroke-width': 'midplaneWidth' });
   mid.setAttribute('stroke-dasharray', '4 4');
   mid.setAttribute('vector-effect', 'non-scaling-stroke');
   plot.appendChild(mid);
@@ -1546,7 +1552,7 @@ function renderChainSvg(
   // group below so labels render on top of polygons.
   const labelsGroup = document.createElementNS(SVG_NS, 'g');
   labelsGroup.setAttribute('transform', `translate(${cx}, ${cy})`);
-  labelsGroup.setAttribute('font-family', 'sans-serif');
+  paint(labelsGroup, { 'font-family': 'fontFamily' });
   const placedBoxes: LabelBox[] = [];
 
   // Debug markers for loop control points. Non-scaled (translate only) so the
@@ -1673,16 +1679,7 @@ function renderChainSvg(
         },
         gapA: LOOP.elementGapPx / PLOT.arcPxPerA,
         style: {
-          helixFill: COLOURS.helix,
-          helixStroke: COLOURS.helixEdge,
-          strandFill: COLOURS.strand,
-          strandStroke: COLOURS.strandEdge,
-          coil: COLOURS.coil,
-          membraneFill: COLOURS.membraneFill,
-          membraneEdge: COLOURS.membraneEdge,
-          midplane: COLOURS.zAxis,
-          contact: COLOURS.contact,
-          labelFill: LABEL.fill,
+          ...morphColours(theme),
           labelFontSize: LABEL.fontSizePx,
           labelGap: LABEL.gapPx,
           labelTangentStep: LABEL.tangentStepSamples,
@@ -1703,7 +1700,6 @@ function renderChainSvg(
       display.colouring,
       vb[2] - PLOT.margin.left - PLOT.margin.right,
       display.idPrefix,
-      LABEL.fill,
     );
     group.setAttribute('transform', `translate(${legendX}, ${legendY})`);
     svg.appendChild(group);
@@ -1712,6 +1708,7 @@ function renderChainSvg(
     svg.setAttribute('height', `${h}`);
   }
 
+  repaint(svg, theme);
   return { svg, scene };
 }
 
@@ -1915,6 +1912,7 @@ function renderChainPicker(
   chainLabels: Map<string, ChainLabel>,
   selectedId: string,
   icon: { membrane: IconMembrane; smoothing: number },
+  colours: IconColours,
   onSelect: (chainId: string) => void,
 ): HTMLDivElement {
   const container = document.createElement('div');
@@ -1949,7 +1947,7 @@ function renderChainPicker(
     button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
     button.title = `Chain ${lbl.text} · ${chain.residueCount} aa`;
     button.appendChild(
-      renderChainIcon(shapes[shownIdx], maxDensity, { base, suffix: null }, ICON_COLOURS),
+      renderChainIcon(shapes[shownIdx], maxDensity, { base, suffix: null }, colours),
     );
     button.addEventListener('click', () => onSelect(chain.chainId));
     group.appendChild(button);
@@ -1974,6 +1972,60 @@ function renderChainPicker(
   return container;
 }
 
+/** The chain-picker icon colours of a theme. */
+function iconColours(theme: Theme): IconColours {
+  return {
+    helix: theme.helix,
+    strand: theme.strand,
+    coil: theme.iconCoil,
+    outline: theme.iconOutline,
+    frame: theme.iconOutline,
+    grid: theme.iconGrid,
+    membraneEdge: theme.iconOutline,
+    membraneDark: theme.iconMembraneDark,
+    membraneLight: theme.iconMembraneLight,
+    label: theme.text,
+    background: theme.iconBackground,
+    fontFamily: theme.serifFontFamily,
+    frameRadius: theme.cornerRadius,
+  };
+}
+
+/** Theme-dependent parts of the 3-D morph's style: its colours and label typeface. */
+type MorphThemeStyle = Pick<
+  MorphStyle,
+  | 'helixFill'
+  | 'helixStroke'
+  | 'strandFill'
+  | 'strandStroke'
+  | 'coil'
+  | 'membraneFill'
+  | 'membraneEdge'
+  | 'midplane'
+  | 'contact'
+  | 'background'
+  | 'labelFill'
+  | 'labelFontFamily'
+>;
+
+/** The 3-D morph's colours from a theme: its shading is built from the same tokens. */
+function morphColours(theme: Theme): MorphThemeStyle {
+  return {
+    helixFill: theme.helix,
+    helixStroke: theme.helixEdge,
+    strandFill: theme.strand,
+    strandStroke: theme.strandEdge,
+    coil: theme.loop,
+    membraneFill: theme.membrane,
+    membraneEdge: theme.membraneEdge,
+    midplane: theme.midplane,
+    contact: theme.contact,
+    background: theme.background,
+    labelFill: theme.label,
+    labelFontFamily: theme.fontFamily,
+  };
+}
+
 /** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
 const DEFAULT_MORPH_SWEEP = 0.35;
 
@@ -1981,6 +2033,17 @@ const DEFAULT_MORPH_SWEEP = 0.35;
 const STRAND_ARROW_RATIO = 6.2 / 3.8;
 
 let _instanceCounter = 0;
+
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+/** Whether the system asks for a dark colour scheme. */
+function prefersDark(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(DARK_QUERY).matches
+  );
+}
 
 /**
  * A residue range on one chain: the value of the `selection` attribute once
@@ -2054,7 +2117,15 @@ export class TopologyDisplay extends HTMLElement {
     'colour-scale',
     'colour-domain',
     'colour-label',
+    'theme',
+    'theme-light',
+    'theme-dark',
   ];
+
+  /** Add or replace a named theme (see {@link registerTheme}). */
+  static registerTheme(name: ThemeName, theme: ThemeInput): Readonly<Theme> {
+    return registerTheme(name, theme);
+  }
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
@@ -2083,7 +2154,13 @@ export class TopologyDisplay extends HTMLElement {
   /** `selection` value last written by a user pick or click, not the page. */
   private _userSelection: string | null = null;
   private _styleEl: HTMLStyleElement;
+  /** The theme's tokens as `--mp-*` custom properties on the host. */
+  private _themeEl: HTMLStyleElement;
   private _contentEl: HTMLDivElement;
+  private _themeName: ThemeName = 'light';
+  private _theme: Readonly<Theme> = getTheme('light')!;
+  /** Undo the colour-scheme and theme-registry listeners while connected. */
+  private _unlisten: (() => void) | null = null;
   // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
   // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
   private _assemblyCache: {
@@ -2112,10 +2189,79 @@ export class TopologyDisplay extends HTMLElement {
   constructor() {
     super();
     const shadow = this.attachShadow({ mode: 'open' });
+    this._themeEl = document.createElement('style');
     this._styleEl = document.createElement('style');
     this._styleEl.textContent = STYLES;
     this._contentEl = document.createElement('div');
-    shadow.append(this._styleEl, this._contentEl);
+    shadow.append(this._themeEl, this._styleEl, this._contentEl);
+    this._themeName = this.resolveTheme();
+    this._theme = getTheme(this._themeName)!;
+    this._themeEl.textContent = themeCss(this._theme);
+  }
+
+  /** Name of the theme in use: from `theme`, else `theme-light` / `theme-dark` by colour scheme. */
+  get activeThemeName(): ThemeName {
+    return this._themeName;
+  }
+
+  /** The tokens of the theme in use. */
+  get activeTheme(): Readonly<Theme> {
+    return this._theme;
+  }
+
+  private resolveTheme(): ThemeName {
+    for (const attr of ['theme', 'theme-light', 'theme-dark']) {
+      const name = this.getAttribute(attr);
+      if (name !== null && !getTheme(name)) {
+        console.warn(`topology-display: unknown theme "${name}" in ${attr}`);
+      }
+    }
+    return resolveThemeName(
+      {
+        theme: this.getAttribute('theme'),
+        light: this.getAttribute('theme-light'),
+        dark: this.getAttribute('theme-dark'),
+      },
+      prefersDark(),
+    );
+  }
+
+  /**
+   * Show the theme the attributes and colour scheme now call for. Restyles in
+   * place: the chain, 2-D scroll position, 3-D view and focus are kept.
+   * `force` re-applies a theme whose tokens were re-registered.
+   */
+  private applyTheme(force = false): void {
+    const name = this.resolveTheme();
+    const theme = getTheme(name)!;
+    if (!force && name === this._themeName && theme === this._theme) return;
+    const old = this._theme;
+    this._themeName = name;
+    this._theme = theme;
+    this._themeEl.textContent = themeCss(theme);
+    this.restyle(old);
+    this.emit('theme-change', { name });
+  }
+
+  /** Bring what is on screen into the current theme. */
+  private restyle(old: Theme): void {
+    const theme = this._theme;
+    if (!this._shown) return;
+    // Per-residue colours come from the data palettes; a new palette means
+    // recolouring the data, which is a redraw.
+    const palettesChanged =
+      old.dataScale.join() !== theme.dataScale.join() ||
+      old.dataCategories.join() !== theme.dataCategories.join();
+    if (palettesChanged && this._residueColours) {
+      this.render({ keepView: true });
+      return;
+    }
+    repaint(this._shown.svg, theme);
+    if (this._morphSource) {
+      Object.assign(this._morphSource.scene.style, morphColours(theme));
+      this._morph?.restyle();
+    }
+    this.redrawPicker();
   }
 
   get proteinData(): ProteinData | null {
@@ -2185,6 +2331,11 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, old: string | null, value: string | null) {
+    if (name === 'theme' || name === 'theme-light' || name === 'theme-dark') {
+      // Restyled in place: the view is kept.
+      this.applyTheme();
+      return;
+    }
     if (name === 'selection') {
       // The page set its own selection: it is no longer the user's.
       if (value !== this._userSelection) this._userSelection = null;
@@ -2396,7 +2547,33 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   connectedCallback() {
+    this.listenForThemes();
+    // The colour scheme may have changed while disconnected.
+    this.applyTheme();
     this.render();
+  }
+
+  disconnectedCallback() {
+    this._unlisten?.();
+    this._unlisten = null;
+  }
+
+  /** Follow the system colour scheme, and themes (re-)registered by name. */
+  private listenForThemes(): void {
+    if (this._unlisten) return;
+    const offRegistry = onThemeRegistered((name) => {
+      if (name === this._themeName || name === this.resolveTheme()) this.applyTheme(true);
+    });
+    const query =
+      typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia(DARK_QUERY)
+        : null;
+    const onScheme = (): void => this.applyTheme();
+    query?.addEventListener?.('change', onScheme);
+    this._unlisten = () => {
+      offRegistry();
+      query?.removeEventListener?.('change', onScheme);
+    };
   }
 
   /** 2-D ↔ 3-D morph progress of the displayed chain: 0 = 2-D, 1 = 3-D. */
@@ -2634,6 +2811,7 @@ export class TopologyDisplay extends HTMLElement {
       this.loopOptions,
       analysis,
       this.showContacts,
+      this._theme,
       assembly,
       this.chainDisplayData(selectedChain.chainId),
     );
@@ -2687,14 +2865,19 @@ export class TopologyDisplay extends HTMLElement {
       // Å → rows: one row is half a membrane thickness.
       smoothing: this.iconBandwidth / (this.iconMembrane.thickness / 2),
     };
-    const picker = renderChainPicker(chains, labels, selectedId, icon, (chainId) =>
-      this.pickChain(chainId),
+    const picker = renderChainPicker(
+      chains,
+      labels,
+      selectedId,
+      icon,
+      iconColours(this._theme),
+      (chainId) => this.pickChain(chainId),
     );
     picker.setAttribute('aria-labelledby', `chain-picker-label-${this._instanceId}`);
     return picker;
   }
 
-  /** Redraw just the chain picker (new icon settings), keeping keyboard focus. */
+  /** Redraw just the chain picker (new icon settings or theme), keeping keyboard focus. */
   private redrawPicker(): void {
     const old = this._picker;
     const shown = this._shown?.chain.chainId;
@@ -2717,7 +2900,10 @@ export class TopologyDisplay extends HTMLElement {
         domain: this.getAttribute('colour-domain'),
         label: this.getAttribute('colour-label'),
       },
-      readDataTheme(this),
+      readDataTheme(this, {
+        scale: this._theme.dataScale,
+        categories: this._theme.dataCategories,
+      }),
     );
     const widths = widthFactors(this._residueWidths, chainId);
     const chainColoured = !!this._residueColours?.[chainId] && colouring !== null;

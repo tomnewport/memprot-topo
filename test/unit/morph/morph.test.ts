@@ -25,6 +25,8 @@ const STYLE: MorphScene['style'] = {
   membraneEdge: '#bdbdbd',
   midplane: '#666',
   contact: '#c98a3b',
+  background: '#ffffff',
+  labelFontFamily: 'sans-serif',
   labelFill: '#333',
   labelFontSize: 11,
   labelGap: 3,

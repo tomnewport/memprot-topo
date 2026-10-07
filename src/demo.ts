@@ -27,6 +27,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('controls-reset')?.addEventListener('click', reset);
   }
 
+  // The page follows the diagrams' theme (#26).
+  const markTheme = (): void => {
+    const first = document.querySelector('topology-display');
+    const bg = first instanceof TopologyDisplay ? first.activeTheme.background : '#fff';
+    // Dark when the diagram's background is (a #rrggbb) below mid-grey.
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(bg);
+    const dark = !!m && m.slice(1).reduce((sum, h) => sum + parseInt(h, 16), 0) < 3 * 128;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  };
+  document.addEventListener('theme-change', markTheme);
+  markTheme();
+
   const buildInfo = document.getElementById('build-info');
   if (buildInfo) {
     buildInfo.textContent = `Built ${__BUILD_DATE__.slice(0, 10)} · ${__COMMIT__}`;

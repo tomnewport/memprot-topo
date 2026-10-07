@@ -175,6 +175,14 @@ export class MorphController {
     if (focused) renderer.svg.focus();
   }
 
+  /**
+   * Redraw with the scene's current style (a new theme), keeping progress,
+   * orbit, focus and any running animation.
+   */
+  restyle(): void {
+    this.setOptions(this.options);
+  }
+
   dispose(): void {
     this.cancel();
     this.resize?.disconnect();

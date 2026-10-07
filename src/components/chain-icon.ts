@@ -285,6 +285,12 @@ export interface IconColours {
   membraneDark: string;
   membraneLight: string;
   label: string;
+  /** Behind the grid (default white). */
+  background?: string;
+  /** Chain label typeface (default Georgia / Times New Roman serif). */
+  fontFamily?: string;
+  /** Corner radius of the frame, px (default {@link ICON.frameRadius}). */
+  frameRadius?: number;
 }
 
 /** Text shown in the icon's lower-left corner: chain letter and copy suffix. */
@@ -308,6 +314,7 @@ export function renderChainIcon(
   const W = gridW + 2 * pad;
   const H = gridH + 2 * pad;
   const uid = `chain-icon-${++_iconCounter}`;
+  const frameRadius = colours.frameRadius ?? ICON.frameRadius;
   const el = <K extends keyof SVGElementTagNameMap>(
     tag: K,
     attrs: Record<string, string | number>,
@@ -329,14 +336,18 @@ export function renderChainIcon(
 
   const defs = el('defs', {}, svg);
   const clip = el('clipPath', { id: `${uid}-clip` }, defs);
-  el('rect', { width: gridW, height: gridH, rx: ICON.frameRadius }, clip);
+  el('rect', { width: gridW, height: gridH, rx: frameRadius }, clip);
   const grad = el('linearGradient', { id: `${uid}-membrane`, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
   el('stop', { offset: '0', 'stop-color': colours.membraneDark }, grad);
   el('stop', { offset: '0.5', 'stop-color': colours.membraneLight }, grad);
   el('stop', { offset: '1', 'stop-color': colours.membraneDark }, grad);
 
   const g = el('g', { transform: `translate(${pad}, ${pad})` }, svg);
-  el('rect', { width: gridW, height: gridH, rx: ICON.frameRadius, fill: '#fff' }, g);
+  el(
+    'rect',
+    { width: gridW, height: gridH, rx: frameRadius, fill: colours.background ?? '#fff' },
+    g,
+  );
   const inner = el('g', { 'clip-path': `url(#${uid}-clip)` }, g);
 
   // Membrane: the middle two rows, with dark edges at each surface.
@@ -435,7 +446,7 @@ export function renderChainIcon(
       class: 'icon-label',
       x: 2,
       y: gridH - 3,
-      'font-family': 'Georgia, "Times New Roman", serif',
+      'font-family': colours.fontFamily ?? 'Georgia, "Times New Roman", serif',
       'font-size': ICON.labelSize,
       fill: colours.label,
     },
@@ -452,7 +463,7 @@ export function renderChainIcon(
     {
       width: gridW,
       height: gridH,
-      rx: ICON.frameRadius,
+      rx: frameRadius,
       fill: 'none',
       stroke: colours.frame,
       'stroke-width': 0.8,
