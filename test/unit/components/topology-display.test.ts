@@ -299,25 +299,74 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(mainLabels[0]).toContain('Chain A');
   });
 
-  it('switches the displayed chain when a different violin is clicked', () => {
+  it('draws chain icons as a violin for a TM chain and a top-row box for a soluble one', () => {
+    const tm = tmHelixProtein().chains[0];
+    const soluble = {
+      chainId: 'S',
+      residueCount: 20,
+      segments: [],
+      calphas: Array.from({ length: 20 }, (_, i) => ({
+        resSeq: i + 1,
+        iCode: '',
+        x: i,
+        y: 0,
+        z: 40 + i,
+      })),
+    };
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'fusion', chains: [tm, soluble] };
+
+    const buttons = el.shadowRoot!.querySelectorAll('.chain-violin');
+    expect(buttons[0].querySelector('.icon-violin')).not.toBeNull();
+    expect(buttons[1].querySelector('.icon-box-top')).not.toBeNull();
+    expect(buttons[1].querySelector('.icon-violin')).toBeNull();
+    // TM helix chain: helix layer inside the coil halo.
+    expect(buttons[0].querySelector('.icon-helix')).not.toBeNull();
+    // 5 × 6 grid of 12 × 10 px cells plus 1 px padding.
+    const svg = buttons[0].querySelector('svg')!;
+    expect(svg.getAttribute('viewBox')).toBe('0 0 62 62');
+    // Chain label sits inside the icon.
+    expect(buttons[0].querySelector('.icon-label')!.textContent).toBe('A');
+  });
+
+  it('re-renders the chain icons when icon-bandwidth changes', () => {
+    const tm = tmHelixProtein().chains[0];
+    const tmB = { ...tm, chainId: 'B' };
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'dimer', chains: [tm, tmB] };
+    const path = () => el.shadowRoot!.querySelector('.icon-violin')!.getAttribute('d');
+
+    const byDefault = path();
+    el.setAttribute('icon-bandwidth', '0');
+    expect(path()).toBe(byDefault); // default = no smoothing (plain row histogram)
+    el.setAttribute('icon-bandwidth', '20');
+    expect(path()).not.toBe(byDefault);
+    el.setAttribute('icon-bandwidth', 'nonsense');
+    expect(path()).toBe(byDefault);
+  });
+
+  it('switches between copies of a chain with the copy dropdown', () => {
     const tm = tmHelixProtein().chains[0];
     const tmB = { ...tm, chainId: 'B' };
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'dimer', chains: [tm, tmB] };
 
-    // Chains A and B share the same residue count → homomeric A(I)/A(II) labels.
-    const violinII = Array.from(
-      el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin'),
-    ).find((b) => b.getAttribute('aria-label')?.includes('A(II)'));
-    expect(violinII).toBeDefined();
-    violinII!.click();
+    // Chains A and B share the same residue count → one A icon with an I/II dropdown.
+    expect(el.shadowRoot!.querySelectorAll('.chain-violin')).toHaveLength(1);
+    const select = el.shadowRoot!.querySelector<HTMLSelectElement>('.chain-copy')!;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['I', 'II']);
+    select.value = 'B';
+    select.dispatchEvent(new Event('change'));
 
     const mainLabel = el.shadowRoot!.querySelector('.chain-label')!.textContent ?? '';
     // textContent flattens the DOM so <sub>II</sub> contributes just "II": "Chain AII · …"
     expect(mainLabel).toContain('AII');
     const selected = el.shadowRoot!.querySelector('.chain-violin.selected');
     expect(selected!.getAttribute('aria-label')).toContain('A(II)');
+    expect(el.shadowRoot!.querySelector<HTMLSelectElement>('.chain-copy')!.value).toBe('B');
   });
 
   it('scrolls only the diagram, with edge arrows, and keeps the chain picker outside it', () => {
@@ -714,12 +763,10 @@ describe('TopologyDisplay live attribute updates', () => {
     const el = attach(new TopologyDisplay());
     el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer', chains: [tm, tmB] }));
 
-    // Switch to chain B via click
-    const violins = el.shadowRoot!.querySelectorAll<HTMLButtonElement>('.chain-violin');
-    const violinB = Array.from(violins).find((b) =>
-      b.getAttribute('aria-label')?.includes('A(II)'),
-    );
-    violinB!.click();
+    // Switch to chain B via the copy dropdown
+    const select = el.shadowRoot!.querySelector<HTMLSelectElement>('.chain-copy')!;
+    select.value = 'B';
+    select.dispatchEvent(new Event('change'));
     expect(
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(II)');
