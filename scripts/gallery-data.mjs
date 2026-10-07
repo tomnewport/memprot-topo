@@ -181,23 +181,36 @@ function withCalphas(protein) {
 export const PROTEINS = [
   {
     pdbId: '3k19',
-    label: 'A2A Adenosine Receptor',
-    topology: 'bundle',
-    ringRadius: 8,
+    label: 'OmpF Porin',
+    topology: 'barrel',
+    ringRadius: 11,
     data: {
       pdbId: '3k19',
       chains: [
         {
           chainId: 'A',
-          residueCount: 317,
+          // E. coli OmpF, a second crystal form of the homotrimeric porin (see
+          // also 2OMF). Strand ranges are the 16 barrel strands of chain A from
+          // the entry's _struct_sheet_range records (sheet A), omitting the
+          // short 2–6 and 36–37 fragments.
+          residueCount: 340,
           segments: [
-            { start: 10, end: 37, type: 'helix' },
-            { start: 68, end: 97, type: 'helix' },
-            { start: 104, end: 135, type: 'helix' },
-            { start: 148, end: 172, type: 'helix' },
-            { start: 197, end: 226, type: 'helix' },
-            { start: 239, end: 265, type: 'helix' },
-            { start: 272, end: 300, type: 'helix' },
+            { start: 9, end: 23, type: 'strand' },
+            { start: 40, end: 50, type: 'strand' },
+            { start: 55, end: 66, type: 'strand' },
+            { start: 80, end: 90, type: 'strand' },
+            { start: 94, end: 102, type: 'strand' },
+            { start: 132, end: 141, type: 'strand' },
+            { start: 151, end: 158, type: 'strand' },
+            { start: 173, end: 182, type: 'strand' },
+            { start: 185, end: 195, type: 'strand' },
+            { start: 210, end: 222, type: 'strand' },
+            { start: 225, end: 235, type: 'strand' },
+            { start: 253, end: 263, type: 'strand' },
+            { start: 269, end: 283, type: 'strand' },
+            { start: 287, end: 301, type: 'strand' },
+            { start: 307, end: 316, type: 'strand' },
+            { start: 331, end: 340, type: 'strand' },
           ],
         },
       ],
