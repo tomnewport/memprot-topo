@@ -4,7 +4,8 @@
  * Each control writes its attribute on the displays it targets; a control at
  * its default removes the attribute, so the component's own default applies.
  * `DEMO_CONTROLS` must cover every observed attribute except `protein-data`
- * (enforced by a unit test), so new attributes need an entry here.
+ * (enforced by a unit test), so new attributes need an entry here. Attributes
+ * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
  */
 import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
 
@@ -125,6 +126,15 @@ export const DEMO_CONTROLS: DemoControl[] = [
     step: 0.1,
     scope: 'all',
     description: 'Strand ribbon thickness in the 3-D view (Å).',
+  },
+  {
+    // CSS-only (`:host([fit])`), so not in observedAttributes.
+    attribute: 'fit',
+    kind: 'select',
+    default: 'width',
+    options: ['width', 'content'],
+    scope: 'all',
+    description: 'Fill the available width and scroll, or size to the diagram.',
   },
   {
     attribute: 'selection',

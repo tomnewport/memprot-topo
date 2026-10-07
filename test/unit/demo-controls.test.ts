@@ -27,8 +27,12 @@ afterEach(() => {
 });
 
 describe('demo controls', () => {
-  it('has a control for every observed attribute except protein-data', () => {
-    const expected = TopologyDisplay.observedAttributes.filter((a) => a !== 'protein-data');
+  it('has a control for every observed attribute except protein-data, plus fit', () => {
+    // `fit` is CSS-only, so it isn't observed; listed by hand.
+    const expected = [
+      ...TopologyDisplay.observedAttributes.filter((a) => a !== 'protein-data'),
+      'fit',
+    ];
     expect(DEMO_CONTROLS.map((c) => c.attribute).sort()).toEqual([...expected].sort());
   });
 
