@@ -16,7 +16,21 @@ import {
 } from '../unroll/index.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
-import { ssOutline, outlinePolygon, type OutlinePoint } from './ss-outline.js';
+import { ssOutline, outlinePolygon, outlineSlice, type OutlinePoint } from './ss-outline.js';
+import {
+  factorAtSample,
+  measure,
+  parseSeriesAttribute,
+  readDataTheme,
+  renderLegend,
+  resolveColouring,
+  residueSpans,
+  slicePolyline,
+  widthFactors,
+  type Colouring,
+  type ResidueColourValues,
+  type ResidueWidthValues,
+} from './residue-data.js';
 import {
   chainIconShape,
   iconZOuter,
@@ -169,6 +183,9 @@ const STYLES = `
   .ss-element.selected { stroke-width: 2.5px; }
   .ss-element.selected:hover, .ss-element.selected:focus-visible { stroke-width: 3.5px; }
   .loop.selected { stroke-width: 3px; }
+  /* A loop drawn residue by residue shows its plain curve only as the halo. */
+  .loop.has-data { stroke-opacity: 0; }
+  .loop.has-data.selected { stroke-opacity: 1; stroke-width: 5px; }
 ${SCROLL_BOX_STYLES}`;
 
 const PLOT = {
@@ -512,6 +529,14 @@ function trimStrandEnd(samples: UnrolledPoint[], startIdx: number, endIdx: numbe
   return endIdx;
 }
 
+/** Per-residue data styling for the displayed chain (issue #23). */
+interface ResidueStyle {
+  /** Colour of a residue, or undefined where it has no value; null when not colouring. */
+  colour: ((resSeq: number) => string | undefined) | null;
+  /** Width multiplier per residue (absent = 1). */
+  widths: Map<number, number>;
+}
+
 /**
  * Render a helix or strand run as one filled+stroked polygon: a uniform-width
  * body with butt ends, terminated at the C-terminal end by an integrated
@@ -531,6 +556,8 @@ function drawSsPolygon(
   type: 'helix' | 'strand',
   withArrow: boolean,
   faded = false,
+  data?: ResidueStyle,
+  residues: { resSeq: number; sampleIndex: number }[] = [],
 ): SVGPolygonElement | null {
   if (endIdx <= startIdx) return null;
 
@@ -544,14 +571,49 @@ function drawSsPolygon(
     arrowLength: SS_BODY.arrowLengthPx,
   });
   if (sections.length === 0) return null;
+  const toPoints = (verts: OutlinePoint[]): string =>
+    verts
+      .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
+      .join(' ');
 
-  const points = outlinePolygon(screen, sections)
-    .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
-    .join(' ');
+  // Per-residue width: scale each cross-section by the factor interpolated
+  // between the residues either side of it.
+  if (data && data.widths.size > 0) {
+    for (const s of sections) s.hw *= factorAtSample(residues, data.widths, startIdx + s.fi);
+  }
+
+  // Per-residue colour: one fill slice per residue under the outline, which is
+  // then drawn unfilled on top so the edge and hit area stay one shape.
+  const coloured = !!data?.colour && residues.some((r) => data.colour!(r.resSeq) !== undefined);
+  if (coloured) {
+    const slices = document.createElementNS(SVG_NS, 'g');
+    slices.setAttribute('class', 'residue-fill');
+    slices.setAttribute('pointer-events', 'none');
+    if (faded) slices.setAttribute('opacity', '0.32');
+    for (const span of residueSpans(residues, startIdx, endIdx)) {
+      const verts = outlineSlice(screen, sections, span.from - startIdx, span.to - startIdx);
+      if (verts.length < 3) continue;
+      const fill = data!.colour!(span.resSeq) ?? SS_STYLE[type].fill;
+      const slice = document.createElementNS(SVG_NS, 'polygon');
+      slice.setAttribute('points', toPoints(verts));
+      slice.setAttribute('fill', fill);
+      // A hairline of the same colour hides anti-aliasing seams between slices.
+      slice.setAttribute('stroke', fill);
+      slice.setAttribute('stroke-width', '0.5');
+      slice.setAttribute('vector-effect', 'non-scaling-stroke');
+      slice.dataset.res = String(span.resSeq);
+      slices.appendChild(slice);
+    }
+    plot.appendChild(slices);
+  }
+
+  const points = toPoints(outlinePolygon(screen, sections));
 
   const poly = document.createElementNS(SVG_NS, 'polygon');
   poly.setAttribute('points', points);
   poly.setAttribute('fill', SS_STYLE[type].fill);
+  // Still painted (so the interior is clickable) but see-through to the slices.
+  if (coloured) poly.setAttribute('fill-opacity', '0');
   poly.setAttribute('stroke', SS_STYLE[type].stroke);
   poly.setAttribute('stroke-width', '1.5');
   poly.setAttribute('stroke-linejoin', 'round');
@@ -743,7 +805,7 @@ function renderLoopCurve(
   path.setAttribute('d', d);
   path.setAttribute('fill', 'none');
   path.setAttribute('stroke', COLOURS.coil);
-  path.setAttribute('stroke-width', '1.8');
+  path.setAttribute('stroke-width', String(LOOP_STROKE_PX));
   path.setAttribute('stroke-linecap', 'round');
   path.setAttribute('stroke-linejoin', 'round');
   path.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -765,6 +827,80 @@ function renderLoopCurve(
     }
   }
   return path;
+}
+
+/** Loop stroke width in screen pixels. */
+const LOOP_STROKE_PX = 1.8;
+
+/**
+ * Draw a loop's residues as consecutive stroke pieces over the loop curve,
+ * each coloured and sized by its residue's data. Residues share the curve's
+ * length equally, in sequence order, since the loop is a smoothed connector
+ * rather than a residue-by-residue trace. Returns false when no residue has
+ * data (the plain curve then stands alone).
+ */
+function drawLoopData(
+  plot: SVGGElement,
+  points: LoopControlPoint[],
+  loopResidues: { resSeq: number }[],
+  data: ResidueStyle,
+  discontinuous: boolean,
+): boolean {
+  const n = loopResidues.length;
+  if (n === 0 || points.length < 2) return false;
+  const hasData = loopResidues.some(
+    (r) => data.widths.has(r.resSeq) || data.colour?.(r.resSeq) !== undefined,
+  );
+  if (!hasData) return false;
+
+  // Flatten the curve's Bézier pieces into a dense polyline to measure along.
+  const bez = catmullRomBezier(points.map((p) => ({ x: p.arc, y: p.z, z: 0 })));
+  const flat: { x: number; y: number }[] = [{ x: bez.start.x, y: bez.start.y }];
+  let p0 = bez.start;
+  for (const seg of bez.segments) {
+    for (let i = 1; i <= 16; i++) {
+      const t = i / 16;
+      const u = 1 - t;
+      const b0 = u * u * u;
+      const b1 = 3 * u * u * t;
+      const b2 = 3 * u * t * t;
+      const b3 = t * t * t;
+      flat.push({
+        x: b0 * p0.x + b1 * seg.c1.x + b2 * seg.c2.x + b3 * seg.end.x,
+        y: b0 * p0.y + b1 * seg.c1.y + b2 * seg.c2.y + b3 * seg.end.y,
+      });
+    }
+    p0 = seg.end;
+  }
+  const poly = measure(flat);
+  const total = poly[poly.length - 1].d;
+  if (total <= 0) return false;
+
+  const group = document.createElementNS(SVG_NS, 'g');
+  group.setAttribute('class', 'residue-stroke');
+  group.setAttribute('pointer-events', 'none');
+  for (let k = 0; k < n; k++) {
+    const piece = slicePolyline(poly, (k / n) * total, ((k + 1) / n) * total);
+    const resSeq = loopResidues[k].resSeq;
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute(
+      'd',
+      piece.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(''),
+    );
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', data.colour?.(resSeq) ?? COLOURS.coil);
+    const w = LOOP_STROKE_PX * (data.widths.get(resSeq) ?? 1);
+    path.setAttribute('stroke-width', w.toFixed(2));
+    // Round caps join the pieces without gaps at bends.
+    path.setAttribute('stroke-linecap', discontinuous ? 'butt' : 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
+    path.dataset.res = String(resSeq);
+    group.appendChild(path);
+  }
+  plot.appendChild(group);
+  return true;
 }
 
 /** Tag a loop path with the residue range it stands for, for selection styling. */
@@ -806,6 +942,7 @@ function drawLoop(
   opts: LoopRenderOptions,
   faded = false,
   rec?: { recorder: SceneRecorder; seg: number },
+  data?: ResidueStyle,
 ): void {
   const prev: LoopEnd | null = prevRun ? { samples, index: prevRun.endResSampleIdx } : null;
   const next: LoopEnd | null = nextRun ? { samples, index: nextRun.startSample } : null;
@@ -826,6 +963,11 @@ function drawLoop(
   }
 
   const path = renderLoopCurve(plot, markers, points, discontinuous, opts.showPoints, faded);
+  // Residue data is drawn over the curve, which stays as the hit area and the
+  // selection halo (hidden otherwise; see `.loop.has-data`).
+  if (path && data && drawLoopData(plot, points, loopResidues, data, discontinuous)) {
+    path.classList.add('has-data');
+  }
   // Neighbouring protomers are context only, so only the focal chain's loops
   // take part in the selection.
   if (path && !faded && loopResidues.length > 0) {
@@ -1244,6 +1386,7 @@ function renderChainSvg(
   analysis: BarrelAnalysis,
   showContacts: boolean,
   assembly?: AssemblyContext,
+  display?: ChainDisplayData,
 ): { svg: SVGSVGElement; scene: MorphScene | null } {
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
@@ -1384,6 +1527,8 @@ function renderChainSvg(
       hasBreakAfter,
       focalFlags ? !focalFlags[s] : false,
       { recorder, seg: s },
+      // Data is keyed by chain, so it styles only the focal chain's segments.
+      focalFlags && !focalFlags[s] ? undefined : display?.style,
     );
     // Dashed connector across a chain break. Anchor at the nearest SS endpoint
     // on each side so that any trailing/leading coil in the adjacent segments is
@@ -1500,7 +1645,35 @@ function renderChainSvg(
         },
       };
 
+  // Colour legend under the plot. Added after the 3-D scene's frame is fixed:
+  // the 3-D view replaces the whole picture, legend included.
+  if (display?.colouring) {
+    const vb = svg.getAttribute('viewBox')!.split(' ').map(Number);
+    const legendX = vb[0] + PLOT.margin.left;
+    const legendY = vb[1] + vb[3] + 4;
+    const { group, height } = renderLegend(
+      display.colouring,
+      vb[2] - PLOT.margin.left - PLOT.margin.right,
+      display.idPrefix,
+      LABEL.fill,
+    );
+    group.setAttribute('transform', `translate(${legendX}, ${legendY})`);
+    svg.appendChild(group);
+    const h = vb[3] + 4 + height + 12;
+    svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${h}`);
+    svg.setAttribute('height', `${h}`);
+  }
+
   return { svg, scene };
+}
+
+/** Residue data for the chain being drawn: its styling and the legend to show. */
+interface ChainDisplayData {
+  style: ResidueStyle;
+  /** Colour scale for the legend; null when the chain isn't coloured. */
+  colouring: Colouring | null;
+  /** Unique prefix for ids inside the svg (legend gradient). */
+  idPrefix: string;
 }
 
 function isSs(run: SsRun | undefined): run is SsRun {
@@ -1533,6 +1706,7 @@ function drawSegment(
   hasBreakAfter = false,
   faded = false,
   rec?: { recorder: SceneRecorder; seg: number },
+  data?: ResidueStyle,
 ): void {
   const { samples, residues } = layout;
   // For barrel strand arrows, trim C-terminal samples that curl away from the
@@ -1558,6 +1732,8 @@ function drawSegment(
         run.type,
         withArrow,
         faded,
+        data,
+        residues.slice(run.residueStart, run.residueEnd + 1),
       );
       // Focal-chain elements act as buttons (see TopologyDisplay.bindElements).
       if (poly && !faded) markSsElement(poly, run.type, run.startResSeq, run.endResSeq);
@@ -1606,7 +1782,19 @@ function drawSegment(
     // break — the cross-break connector will cover it to the next SS start.
     if (nextRun === null && hasBreakAfter) continue;
     const loopResidues = residues.slice(run.residueStart, run.residueEnd + 1);
-    drawLoop(plot, markersGroup, samples, run, prevRun, nextRun, loopResidues, opts, faded, rec);
+    drawLoop(
+      plot,
+      markersGroup,
+      samples,
+      run,
+      prevRun,
+      nextRun,
+      loopResidues,
+      opts,
+      faded,
+      rec,
+      data,
+    );
   }
 }
 
@@ -1813,10 +2001,17 @@ export class TopologyDisplay extends HTMLElement {
     'min-helix-length',
     'min-strand-length',
     'selection',
+    'residue-colours',
+    'residue-widths',
+    'colour-scale',
+    'colour-domain',
+    'colour-label',
   ];
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
+  private _residueColours: ResidueColourValues | null = null;
+  private _residueWidths: ResidueWidthValues | null = null;
   /** What the displayed chain's 3-D morph is built from, until it is needed. */
   private _morphSource: {
     scroll: HTMLElement;
@@ -1883,6 +2078,39 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
+   * Per-residue colour data, `{ chainId: { resSeq: value } }` (issue #23).
+   * All-number values are mapped through a numerical colour scale
+   * (`colour-scale`, `colour-domain`); otherwise values are categories with a
+   * colour each (`colour-scale` as `key:colour` pairs, else the theme
+   * palette, or amino-acid colours when every category is a one-letter code).
+   * Mirrors the `residue-colours` attribute (JSON).
+   */
+  get residueColours(): ResidueColourValues | null {
+    return this._residueColours;
+  }
+
+  set residueColours(value: ResidueColourValues | null) {
+    if (value === this._residueColours) return;
+    this._residueColours = value;
+    this.render();
+  }
+
+  /**
+   * Per-residue width change in percent, `{ chainId: { resSeq: percent } }`:
+   * 30 draws the residue 30 % wider, −50 half as wide (floored at −90 %).
+   * Mirrors the `residue-widths` attribute (JSON).
+   */
+  get residueWidths(): ResidueWidthValues | null {
+    return this._residueWidths;
+  }
+
+  set residueWidths(value: ResidueWidthValues | null) {
+    if (value === this._residueWidths) return;
+    this._residueWidths = value;
+    this.render();
+  }
+
+  /**
    * The current selection resolved against the loaded protein, or null when
    * there is none, the attribute is invalid, or its chain isn't in the
    * protein. A whole-chain selection resolves to the chain's residue bounds.
@@ -1934,6 +2162,20 @@ export class TopologyDisplay extends HTMLElement {
       name === 'min-helix-length' ||
       name === 'min-strand-length'
     ) {
+      this.render();
+      return;
+    }
+    if (name === 'residue-colours') {
+      this._residueColours = parseSeriesAttribute(value, name);
+      this.render();
+      return;
+    }
+    if (name === 'residue-widths') {
+      this._residueWidths = parseSeriesAttribute(value, name);
+      this.render();
+      return;
+    }
+    if (name === 'colour-scale' || name === 'colour-domain' || name === 'colour-label') {
       this.render();
       return;
     }
@@ -2291,6 +2533,7 @@ export class TopologyDisplay extends HTMLElement {
       analysis,
       this.showContacts,
       assembly,
+      this.chainDisplayData(selectedChain.chainId),
     );
     scroll.appendChild(svg);
     box.observe(svg);
@@ -2316,6 +2559,30 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+  }
+
+  /** Residue data styling for `chainId`, or undefined when there is none. */
+  private chainDisplayData(chainId: string): ChainDisplayData | undefined {
+    const colouring = resolveColouring(
+      this._residueColours,
+      {
+        scale: this.getAttribute('colour-scale'),
+        domain: this.getAttribute('colour-domain'),
+        label: this.getAttribute('colour-label'),
+      },
+      readDataTheme(this),
+    );
+    const widths = widthFactors(this._residueWidths, chainId);
+    const chainColoured = !!this._residueColours?.[chainId] && colouring !== null;
+    if (!chainColoured && widths.size === 0) return undefined;
+    return {
+      style: {
+        colour: chainColoured ? (r) => colouring!.residueColour(chainId, r) : null,
+        widths,
+      },
+      colouring: chainColoured ? colouring : null,
+      idPrefix: `mp${this._instanceId}`,
+    };
   }
 
   /** Chains that have Cα coordinates (the ones that can be drawn). */
