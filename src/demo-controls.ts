@@ -8,6 +8,10 @@
  * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
  */
 import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
+import {
+  DEFAULT_MIN_HELIX_LENGTH,
+  DEFAULT_MIN_STRAND_LENGTH,
+} from './components/topology-display.js';
 
 interface BaseControl {
   attribute: string;
@@ -88,6 +92,26 @@ export const DEMO_CONTROLS: DemoControl[] = [
     off: 'off',
     scope: 'all',
     description: 'Overlay β-sheet residue contacts as ties between strands.',
+  },
+  {
+    attribute: 'min-helix-length',
+    kind: 'number',
+    default: DEFAULT_MIN_HELIX_LENGTH,
+    min: 0,
+    max: 20,
+    step: 1,
+    scope: 'all',
+    description: 'Shortest helix (residues) drawn as a helix; shorter ones become loop.',
+  },
+  {
+    attribute: 'min-strand-length',
+    kind: 'number',
+    default: DEFAULT_MIN_STRAND_LENGTH,
+    min: 0,
+    max: 20,
+    step: 1,
+    scope: 'all',
+    description: 'Shortest strand (residues) drawn as a strand; shorter ones become loop.',
   },
   {
     attribute: 'morph-sweep',
