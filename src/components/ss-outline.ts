@@ -167,3 +167,35 @@ export function outlinePolygon(pts: OutlinePoint[], sections: OutlineSection[]):
   }
   return verts;
 }
+
+/** The cross-section at fractional index `fi`, interpolated between neighbours. */
+function sectionAt(sections: OutlineSection[], fi: number): OutlineSection {
+  if (fi <= sections[0].fi) return { ...sections[0], fi };
+  for (let k = 0; k < sections.length - 1; k++) {
+    const a = sections[k];
+    const b = sections[k + 1];
+    if (b.fi < fi) continue;
+    const t = b.fi > a.fi ? (fi - a.fi) / (b.fi - a.fi) : 1;
+    const px = a.px + t * (b.px - a.px);
+    const py = a.py + t * (b.py - a.py);
+    const len = Math.hypot(px, py) || 1;
+    return { fi, hw: a.hw + t * (b.hw - a.hw), px: px / len, py: py / len };
+  }
+  return { ...sections[sections.length - 1], fi };
+}
+
+/**
+ * The closed outline of the part of an element between fractional indices
+ * `from` and `to` — one residue's share of the body, for per-residue fills.
+ * Slices of adjacent ranges share their boundary edge exactly.
+ */
+export function outlineSlice(
+  pts: OutlinePoint[],
+  sections: OutlineSection[],
+  from: number,
+  to: number,
+): OutlinePoint[] {
+  if (sections.length === 0 || to <= from) return [];
+  const inner = sections.filter((s) => s.fi > from && s.fi < to);
+  return outlinePolygon(pts, [sectionAt(sections, from), ...inner, sectionAt(sections, to)]);
+}

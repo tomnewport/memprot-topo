@@ -70,7 +70,8 @@ A user action also updates the selection: picking a chain selects the whole
 chain, and clicking an element selects its residues. The new value is written
 back to the `selection` attribute, so the page can read it there or from the
 event. When a new protein is loaded, a selection the user made this way is
-cleared; one the page set is kept.
+kept if the new protein has that chain, and cleared otherwise; one the page
+set is always kept. `resetView()` clears the user's selection and chain pick.
 
 ## Keyboard and styling
 

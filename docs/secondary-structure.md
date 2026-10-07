@@ -12,7 +12,7 @@ strand shorter than a minimum as coil.
 
 Values are whole residue counts; invalid or negative values fall back to the
 default, and `0` or `1` keeps every assignment. Changing either attribute
-re-renders the diagram.
+redraws the chain, keeping the scroll position and 3-D view.
 
 ```html
 <topology-display min-helix-length="6" min-strand-length="5"></topology-display>

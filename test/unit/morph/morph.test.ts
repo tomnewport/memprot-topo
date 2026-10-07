@@ -532,6 +532,119 @@ describe('<topology-display> 3-D morph', () => {
     expect(opts().strandWidth).toBeUndefined();
   });
 
+  it('changes 3-D settings in place, keeping the 3-D view', async () => {
+    const el = mount(hairpinChain());
+    const root = el.shadowRoot!;
+    await el.setMorphProgress(1);
+    const controller = (el as unknown as Internals)._morph;
+    const before = root.querySelector('.svg-scroll svg');
+    el.setAttribute('morph-projection', 'perspective');
+    el.setAttribute('morph-strand-width', '6');
+    el.setAttribute('morph-sweep', '0');
+    // Same controller and progress; a new 3-D picture.
+    expect((el as unknown as Internals)._morph).toBe(controller);
+    expect(el.morphProgress).toBe(1);
+    const after = root.querySelector('.svg-scroll svg');
+    expect(after).not.toBe(before);
+    expect(after?.classList.contains('morph-svg')).toBe(true);
+    expect(root.querySelectorAll('.svg-scroll svg')).toHaveLength(1);
+    const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
+    expect(ds.join('')).not.toMatch(/NaN|Infinity/);
+    // Back to 2-D shows the original drawing.
+    await el.setMorphProgress(0);
+    expect(root.querySelector('.svg-scroll svg')?.classList.contains('morph-svg')).toBe(false);
+  });
+
+  it('keeps the 3-D view when a 2-D drawing attribute changes', async () => {
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(0.6);
+    el.setAttribute('debug-loops', 'on');
+    // The redraw restores the view once the (already loaded) morph code resolves.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(el.morphProgress).toBeCloseTo(0.6);
+    const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
+    expect(svg?.classList.contains('morph-svg')).toBe(true);
+    expect(el.shadowRoot!.querySelector('.morph-scrub')).toHaveProperty('value', '600');
+  });
+
+  it('keeps the 3-D view when the selection moves to another chain', async () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = {
+      pdbId: 'tst1',
+      chains: [hairpinChain(), { ...hairpinChain(), chainId: 'B' }],
+    };
+    await el.setMorphProgress(1);
+    el.setAttribute('selection', 'B');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(el.selection?.chainId).toBe('B');
+    expect(el.morphProgress).toBe(1);
+  });
+
+  it('redraws only the chain picker when icon-bandwidth changes', async () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = {
+      pdbId: 'tst1',
+      chains: [hairpinChain(), { ...hairpinChain(), chainId: 'B' }],
+    };
+    await el.setMorphProgress(1);
+    const root = el.shadowRoot!;
+    const picker = root.querySelector('.chain-picker');
+    const svg = root.querySelector('.svg-scroll svg');
+    root.querySelector<HTMLButtonElement>('.chain-picker button')!.focus();
+    el.setAttribute('icon-bandwidth', '4');
+    expect(root.querySelector('.chain-picker')).not.toBe(picker);
+    expect(root.querySelectorAll('.chain-picker')).toHaveLength(1);
+    expect(root.querySelector('.svg-scroll svg')).toBe(svg);
+    expect(el.morphProgress).toBe(1);
+    expect(root.activeElement).toBe(root.querySelector('.chain-picker button'));
+  });
+
+  it('keeps the 3-D view for a new protein until resetView()', async () => {
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(1);
+    el.proteinData = { pdbId: 'tst2', chains: [hairpinChain()] };
+    await new Promise((r) => setTimeout(r, 0));
+    expect(el.morphProgress).toBe(1);
+    el.resetView();
+    expect(el.morphProgress).toBe(0);
+    expect(el.shadowRoot!.querySelector('.svg-scroll svg')?.classList.contains('morph-svg')).toBe(
+      false,
+    );
+  });
+
+  it('keeps the 3-D view when residue data changes', async () => {
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(1);
+    el.residueColours = { A: { 1: 0.2, 2: 0.8 } };
+    el.setAttribute('residue-widths', '{"A":{"1":1.5}}');
+    el.setAttribute('colour-label', 'Conservation');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(el.morphProgress).toBe(1);
+  });
+
+  it('keeps the 3-D view when the membrane changes', async () => {
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(1);
+    el.setAttribute('membrane-upper', '22');
+    el.setAttribute('membrane-annular-lower', '-16');
+    el.distortions = null;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(el.morphProgress).toBe(1);
+    expect(el.membrane!.bulk.upper).toBe(22);
+  });
+
+  it('ignores re-assigning the same protein data', async () => {
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(1);
+    const controller = (el as unknown as Internals)._morph;
+    const data = el.proteinData;
+    el.proteinData = data;
+    expect((el as unknown as Internals)._morph).toBe(controller);
+    expect(el.morphProgress).toBe(1);
+  });
+
   it('jumps straight to 3-D when reduced motion is preferred', async () => {
     const spy = vi
       .spyOn(window, 'matchMedia')

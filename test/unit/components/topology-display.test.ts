@@ -785,7 +785,7 @@ describe('TopologyDisplay live attribute updates', () => {
     expect(el.shadowRoot!.querySelector('.svg-scroll')).toBeNull();
   });
 
-  it('resets chain selection when protein-data attribute changes', () => {
+  it('keeps the chain pick when protein-data changes; resetView() returns to default', () => {
     const tm = tmHelixProtein().chains[0];
     const tmB = { ...tm, chainId: 'B' };
     const el = attach(new TopologyDisplay());
@@ -799,8 +799,14 @@ describe('TopologyDisplay live attribute updates', () => {
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(II)');
 
-    // Changing the attribute (different JSON — pdbId updated) resets selection back to default
+    // New data with the same chain keeps the user's pick.
     el.setAttribute('protein-data', JSON.stringify({ pdbId: 'dimer-v2', chains: [tm, tmB] }));
+    expect(
+      el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
+    ).toContain('A(II)');
+
+    // resetView() goes back to the default chain.
+    el.resetView();
     expect(
       el.shadowRoot!.querySelector('.chain-violin.selected')!.getAttribute('aria-label'),
     ).toContain('A(I)');
