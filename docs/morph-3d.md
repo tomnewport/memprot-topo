@@ -123,7 +123,9 @@ finished 3-D view stays vector (and exportable).
   trace (a smoothed local axis, which bends and hooks at the ends where its
   window is one-sided) is pulled onto a line fitted to it as the cylinder
   grows, or onto two lines meeting at a real kink (> 20° between the halves'
-  axes, decided once from the real structure). Samples are spread along the
+  axes, each half at least 7.5 Å of trace, decided once from the real
+  structure; shorter halves let the end hooks pass for kinks, and the helix
+  grew a stub cylinder at a sharp angle on its end). Samples are spread along the
   line by their fraction of the trace's length, so a hooked trace can't fold
   the cylinder back on itself. Loops ease onto the moved helix ends within a
   few Å.
@@ -133,11 +135,15 @@ finished 3-D view stays vector (and exportable).
   stretch, and loops become tubes with edge lines and a highlight. Shading,
   fog, outlines and the membrane surfaces all fade in from the flat 2-D style.
 - Strands are thin boxes: the long side walls keep one dark tone for the
-  ribbon's thickness, and the blunt start is lit like a face. Arrowhead
-  shoulders have no walls: seen face-on while the arrowhead is edge-on, they
-  showed as small detached rectangles. Where two visible faces of a strand
-  meet (face and side wall), a thin line in the wall colour covers the
-  anti-aliasing hairline the abutting polygons would leave.
+  ribbon's thickness, and the blunt start is lit like a face. The arrowhead
+  shoulders' walls face back along the strand and are drawn only when seen
+  from behind (left out, the strand's inside showed through as a notch). Where
+  two visible faces of a strand meet (face and side wall), a thin line in the
+  wall colour covers the anti-aliasing hairline the abutting polygons would
+  leave.
+- A helix's far end is drawn as the end of its side, in the side's gradient,
+  in its own path beneath the body: sharing the body's path, the overlapping
+  polygons cancelled under the non-zero fill rule and left white holes.
 - Anything that should look the same from frame to frame is computed per
   element, not per depth-sorted run: colours averaged over whichever sections
   happen to share a run, round line ends at run joins, dash patterns restarted

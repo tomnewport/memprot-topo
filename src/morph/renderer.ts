@@ -1381,7 +1381,7 @@ export class MorphRenderer {
       // it takes the side's own gradient (a flat dark disc read as a second,
       // detached cap when the helix is seen nearly end-on).
       const gi = group[end === 0 ? 0 : Math.max(0, m - 2)];
-      const sideSpec: OpSpec = { layer: 1, key: `cyl${gi}`, kind: 'gradient' };
+      const sideSpec: OpSpec = { layer: 0, key: `cap-back${end}`, kind: 'gradient' };
       const sideGrad = grads[gi] ?? grads[0];
       const xs = ring.filter((_, k) => k % 2 === 0);
       const ys = ring.filter((_, k) => k % 2 === 1);
@@ -1573,6 +1573,49 @@ export class MorphRenderer {
       return -1;
     };
 
+    /**
+     * Whether the side wall of section a..b on `side` faces the eye direction
+     * (ex, ey, ez). Outward normal = edge × N, oriented away from the inside.
+     */
+    const sideWallVis = (
+      a: number,
+      b: number,
+      side: 1 | -1,
+      ex: number,
+      ey: number,
+      ez: number,
+    ): boolean => {
+      const nx = N[a * 3] + N[b * 3];
+      const ny = N[a * 3 + 1] + N[b * 3 + 1];
+      const nz = N[a * 3 + 2] + N[b * 3 + 2];
+      const ax = C[a * 3] + side * W[a * 3];
+      const ay = C[a * 3 + 1] + side * W[a * 3 + 1];
+      const az = C[a * 3 + 2] + side * W[a * 3 + 2];
+      const bx = C[b * 3] + side * W[b * 3];
+      const by = C[b * 3 + 1] + side * W[b * 3 + 1];
+      const bz = C[b * 3 + 2] + side * W[b * 3 + 2];
+      const qx = bx - ax;
+      const qy = by - ay;
+      const qz = bz - az;
+      let wx = qy * nz - qz * ny;
+      let wy = qz * nx - qx * nz;
+      let wz = qx * ny - qy * nx;
+      const wl = Math.hypot(wx, wy, wz);
+      if (wl < 1e-9) return false;
+      wx /= wl;
+      wy /= wl;
+      wz /= wl;
+      const ox = (ax + bx - C[a * 3] - C[b * 3]) / 2;
+      const oy = (ay + by - C[a * 3 + 1] - C[b * 3 + 1]) / 2;
+      const oz = (az + bz - C[a * 3 + 2] - C[b * 3 + 2]) / 2;
+      if (ox * wx + oy * wy + oz * wz < 0) {
+        wx = -wx;
+        wy = -wy;
+        wz = -wz;
+      }
+      return wx * ex + wy * ey + wz * ez > 1e-4;
+    };
+
     /** A shoulder section waiting to be drawn with the section after it. */
     let held: { pts: number[]; emit: (run: Run) => void } | null = null;
     for (let i = 0; i < m - 1; i++) {
@@ -1594,42 +1637,29 @@ export class MorphRenderer {
       const visBot = vN < -EPS;
 
       // Side walls: outward normal = edge × N, oriented away from the inside.
-      // A zero-length section is an arrowhead shoulder. Its walls (facing back
-      // along the strand) are left out: seen face-on while the arrowhead
-      // itself is edge-on, they showed as small detached rectangles.
+      // A zero-length section is an arrowhead shoulder, whose two walls face
+      // back along the strand.
       const shoulder =
         Math.hypot(C[j * 3] - C[i * 3], C[j * 3 + 1] - C[i * 3 + 1], C[j * 3 + 2] - C[i * 3 + 2]) <=
         1e-6;
-      const wallVis = (side: 1 | -1): boolean => {
-        const ax = C[i * 3] + side * W[i * 3];
-        const ay = C[i * 3 + 1] + side * W[i * 3 + 1];
-        const az = C[i * 3 + 2] + side * W[i * 3 + 2];
-        const bx = C[j * 3] + side * W[j * 3];
-        const by = C[j * 3 + 1] + side * W[j * 3 + 1];
-        const bz = C[j * 3 + 2] + side * W[j * 3 + 2];
-        const qx = bx - ax;
-        const qy = by - ay;
-        const qz = bz - az;
-        let wx = qy * nz - qz * ny;
-        let wy = qz * nx - qx * nz;
-        let wz = qx * ny - qy * nx;
-        const wl = Math.hypot(wx, wy, wz);
-        if (wl < 1e-9) return false;
-        wx /= wl;
-        wy /= wl;
-        wz /= wl;
-        const cxw = (ax + bx) / 2;
-        const cyw = (ay + by) / 2;
-        const czw = (az + bz) / 2;
-        if ((cxw - mx) * wx + (cyw - my) * wy + (czw - mz) * wz < 0) {
-          wx = -wx;
-          wy = -wy;
-          wz = -wz;
+      const wallVis = (side: 1 | -1): boolean => sideWallVis(i, j, side, ex, ey, ez);
+      // A shoulder wall's outward normal is back along the strand. (The side
+      // wall test can't orient it: its edge runs across the strand, so the
+      // inside/outside check is a tie and the walls came and went at random,
+      // showing as detached rectangles; leaving them out instead left a notch
+      // where the strand's inside showed through.)
+      let shoulderVis = false;
+      if (shoulder) {
+        const k = distinct(j);
+        if (k > 0) {
+          const bx = C[j * 3] - C[k * 3];
+          const by = C[j * 3 + 1] - C[k * 3 + 1];
+          const bz = C[j * 3 + 2] - C[k * 3 + 2];
+          shoulderVis = (bx * ex + by * ey + bz * ez) / (Math.hypot(bx, by, bz) || 1) > EPS;
         }
-        return wx * ex + wy * ey + wz * ez > EPS;
-      };
-      const visL = !shoulder && wallVis(1);
-      const visR = !shoulder && wallVis(-1);
+      }
+      const visL = shoulder ? shoulderVis : wallVis(1);
+      const visR = shoulder ? shoulderVis : wallVis(-1);
 
       // Start wall (first section only): faces back along the strand.
       let visStart = false;
@@ -1724,6 +1754,16 @@ export class MorphRenderer {
       if (visTop !== visR) edge(EDGE_TR, [...TR0, ...TR1]);
       if (visBot !== visL) edge(EDGE_BL, [...BL0, ...BL1]);
       if (visBot !== visR) edge(EDGE_BR, [...BR0, ...BR1]);
+      // A shoulder wall's ends meet the body's wall and the arrowhead's: an
+      // end is an outline unless the wall it meets is visible too.
+      if (shoulder) {
+        for (const side of [1, -1] as const) {
+          if (!shoulderVis) break;
+          const [o0, o1, i0, i1] = side === 1 ? [TL1, BL1, TL0, BL0] : [TR1, BR1, TR0, BR0];
+          if (i === 0 || !sideWallVis(i - 1, i, side, ex, ey, ez)) edge(EDGE_X, [...i0, ...i1]);
+          if (j + 1 >= m || !sideWallVis(j, j + 1, side, ex, ey, ez)) edge(EDGE_X, [...o0, ...o1]);
+        }
+      }
       if (i === 0) {
         if (visStart !== visTop) edge(EDGE_X, [...TL0, ...TR0]);
         if (visStart !== visBot) edge(EDGE_X, [...BL0, ...BR0]);
@@ -2686,8 +2726,13 @@ const END_EASE = 5;
 
 /** A helix bends into two straight cylinders only at a kink sharper than this. */
 const KINK_ANGLE = (20 * Math.PI) / 180;
-/** Fewest samples either side of a helix kink. */
-const KINK_MIN = 5;
+/**
+ * Shortest stretch of trace (Å, about five residues) either side of a helix
+ * kink. Measured along the trace, not in samples: at ~16 samples per residue a
+ * sample count let the end hooks of the local-axis trace pass for kinks, and
+ * the helix grew a sub-ångström stub cylinder at a sharp angle on its end.
+ */
+const KINK_ARM = 7.5;
 
 /**
  * Best-fit line through samples a..b of `w` (stride 4): centroid and unit
@@ -2722,9 +2767,17 @@ export function fitLine(w: Float64Array, a: number, b: number): { c: number[]; d
  * with the sharpest angle between the two halves' axes), or -1 if straight.
  */
 export function findKink(w: Float64Array, g0: number, g1: number): number {
+  const s = new Float64Array(g1 - g0 + 1);
+  for (let g = g0 + 1; g <= g1; g++) {
+    s[g - g0] =
+      s[g - g0 - 1] +
+      Math.hypot(w[g * 4] - w[g * 4 - 4], w[g * 4 + 1] - w[g * 4 - 3], w[g * 4 + 2] - w[g * 4 - 2]);
+  }
+  const total = s[g1 - g0];
   let best = -1;
   let bestAngle = KINK_ANGLE;
-  for (let k = g0 + KINK_MIN; k <= g1 - KINK_MIN; k++) {
+  for (let k = g0 + 1; k < g1; k++) {
+    if (s[k - g0] < KINK_ARM || total - s[k - g0] < KINK_ARM) continue;
     const p = fitLine(w, g0, k).d;
     const q = fitLine(w, k, g1).d;
     const angle = Math.acos(Math.min(1, p[0] * q[0] + p[1] * q[1] + p[2] * q[2]));

@@ -451,6 +451,21 @@ describe('helix axis fit', () => {
     expect(findKink(w, 0, n - 1)).toBe(-1);
   });
 
+  it('does not take the end hooks of a densely sampled trace for kinks', () => {
+    // ~16 samples per residue, as the morph model has, with the local-axis
+    // trace hooking ~40° over its last ångström at each end.
+    const w = trace(
+      [
+        [0.8, 0, -15.8],
+        [0, 0, -15],
+        [0, 0, 15],
+        [0.8, 0, 15.8],
+      ],
+      0.1,
+    );
+    expect(findKink(w, 0, w.length / 4 - 1)).toBe(-1);
+  });
+
   it('finds a real kink and splits there', () => {
     // Two 15 Å halves meeting at 35°.
     const a = (35 * Math.PI) / 180;
