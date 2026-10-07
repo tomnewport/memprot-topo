@@ -28,8 +28,10 @@ A chain whose Cα all lie more than half a thickness outside the membrane is
 drawn instead as a rounded box hanging into the top or bottom row, layered the
 same way by its secondary-structure composition.
 
-The chain label sits in the icon's lower-left corner, with a Roman-numeral
-suffix for copies of the same chain. The residue count is in the tooltip. A
+The chain label sits in the icon's lower-left corner. Copies of the same chain
+(same residue count, labelled A(I), A(II), …) share one icon, with a dropdown
+beneath it to pick the copy; picking from the icon or the dropdown emits
+`chain-select` (see [selection.md](selection.md)). The residue count is in the tooltip. A
 faint layout grid shows on hover and on the selected chain.
 
 ## Attributes
