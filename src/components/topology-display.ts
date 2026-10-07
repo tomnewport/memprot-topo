@@ -44,7 +44,7 @@ import {
 } from './chain-icon.js';
 import { ScrollBox, SCROLL_BOX_STYLES } from './scroll-box.js';
 import type { MorphScene, MorphElement, MorphLoop, MorphLabel, MorphTie } from '../morph/types.js';
-import type { MorphController } from '../morph/controller.js';
+import type { MorphController, MorphView } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
 import { PROJECTIONS } from '../morph/projections.js';
 
@@ -2070,8 +2070,12 @@ export class TopologyDisplay extends HTMLElement {
   } | null = null;
   private _morph: MorphController | null = null;
   private _morphLoad: Promise<MorphController | null> | null = null;
+  /** A view a redraw is restoring while the morph code loads. */
+  private _pendingView: MorphView | null = null;
   private _scrollBox: ScrollBox | null = null;
   private _selectedChainId: string | null = null;
+  /** The chain picker, when the protein has more than one chain. */
+  private _picker: HTMLElement | null = null;
   /** Chain and 2-D svg currently on screen, for in-place selection updates. */
   private _shown: { chain: ChainData; svg: SVGSVGElement } | null = null;
   /** SS element under the pointer or focus, so hover events fire once each. */
@@ -2119,10 +2123,9 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   set proteinData(value: ProteinData | null) {
-    this._data = value;
-    this._selectedChainId = null;
-    this.dropUserSelection();
-    this.render();
+    // Re-assigning the same object (e.g. from a framework re-render) is a no-op.
+    if (value === this._data) return;
+    this.loadData(value);
   }
 
   /**
@@ -2140,7 +2143,7 @@ export class TopologyDisplay extends HTMLElement {
   set residueColours(value: ResidueColourValues | null) {
     if (value === this._residueColours) return;
     this._residueColours = value;
-    this.render();
+    this.render({ keepView: true });
   }
 
   /**
@@ -2156,7 +2159,7 @@ export class TopologyDisplay extends HTMLElement {
   set residueWidths(value: ResidueWidthValues | null) {
     if (value === this._residueWidths) return;
     this._residueWidths = value;
-    this.render();
+    this.render({ keepView: true });
   }
 
   /**
@@ -2181,7 +2184,7 @@ export class TopologyDisplay extends HTMLElement {
     else this.setAttribute('selection', `${value.chainId}:${value.start}-${value.end}`);
   }
 
-  attributeChangedCallback(name: string, _old: string | null, value: string | null) {
+  attributeChangedCallback(name: string, old: string | null, value: string | null) {
     if (name === 'selection') {
       // The page set its own selection: it is no longer the user's.
       if (value !== this._userSelection) this._userSelection = null;
@@ -2190,12 +2193,31 @@ export class TopologyDisplay extends HTMLElement {
         console.warn(`topology-display: ignoring invalid selection "${value}"`);
       }
       // Same chain on screen: restyle in place so keyboard focus survives.
-      // Otherwise the selected chain changes, which needs a full render.
+      // Otherwise the selected chain changes, which needs a redraw; it keeps
+      // the 2-D / 3-D view.
       if (this._shown && (!parsed || parsed.chainId === this._shown.chain.chainId)) {
         this.applySelection();
       } else {
-        this.render();
+        this.render({ keepView: true });
       }
+      return;
+    }
+    if (
+      name === 'morph-sweep' ||
+      name === 'morph-projection' ||
+      name === 'morph-strand-width' ||
+      name === 'morph-strand-thickness'
+    ) {
+      // 3-D only: update the morph in place, keeping its view.
+      if (this._morphSource) {
+        this._morphSource.options = this.morphOptions;
+        this._morph?.setOptions(this._morphSource.options);
+      }
+      return;
+    }
+    if (name === 'icon-bandwidth') {
+      // Only the chain-picker icons change.
+      this.redrawPicker();
       return;
     }
     if (
@@ -2203,41 +2225,56 @@ export class TopologyDisplay extends HTMLElement {
       name === 'loop-extreme-points' ||
       name === 'loop-extreme-threshold' ||
       name === 'show-contacts' ||
-      name === 'morph-sweep' ||
-      name === 'morph-projection' ||
-      name === 'morph-strand-width' ||
-      name === 'morph-strand-thickness' ||
-      name === 'icon-bandwidth' ||
       name === 'min-helix-length' ||
       name === 'min-strand-length'
     ) {
-      this.render();
+      // The 2-D drawing changes; keep the scroll position and 3-D view.
+      this.render({ keepView: true });
       return;
     }
-    if (name === 'residue-colours') {
-      this._residueColours = parseSeriesAttribute(value, name);
-      this.render();
-      return;
-    }
-    if (name === 'residue-widths') {
-      this._residueWidths = parseSeriesAttribute(value, name);
-      this.render();
+    if (name === 'residue-colours' || name === 'residue-widths') {
+      if (value === old) return;
+      if (name === 'residue-colours') this._residueColours = parseSeriesAttribute(value, name);
+      else this._residueWidths = parseSeriesAttribute(value, name);
+      this.render({ keepView: true });
       return;
     }
     if (name === 'colour-scale' || name === 'colour-domain' || name === 'colour-label') {
-      this.render();
+      this.render({ keepView: true });
       return;
     }
-    if (name !== 'protein-data') return;
-    if (value === null) {
-      this._data = null;
-    } else {
+    if (name !== 'protein-data' || value === old) return;
+    let data: ProteinData | null = null;
+    if (value !== null) {
       try {
-        this._data = JSON.parse(value) as ProteinData;
+        data = JSON.parse(value) as ProteinData;
       } catch {
-        this._data = null;
+        data = null;
       }
     }
+    this.loadData(data);
+  }
+
+  /**
+   * Show a new protein, changing as little as possible: the 2-D / 3-D view,
+   * orbit and scroll carry over, as do the user's chain pick and selection
+   * when the new protein has that chain. `resetView()` starts afresh.
+   */
+  private loadData(data: ProteinData | null): void {
+    this._data = data;
+    const has = (id: string): boolean => this.chainsWithCoords().some((c) => c.chainId === id);
+    if (this._selectedChainId && !has(this._selectedChainId)) this._selectedChainId = null;
+    const mine = parseSelection(this._userSelection);
+    if (mine && !has(mine.chainId)) this.dropUserSelection();
+    this.render({ keepView: true });
+  }
+
+  /**
+   * Reset what the user has changed: back to the 2-D view at the start of the
+   * default chain, forgetting their chain pick, selection and 3-D orbit.
+   * Attributes the page set (including its own `selection`) are kept.
+   */
+  resetView(): void {
     this._selectedChainId = null;
     this.dropUserSelection();
     this.render();
@@ -2299,6 +2336,15 @@ export class TopologyDisplay extends HTMLElement {
     const thickness = read('morph-strand-thickness');
     if (thickness !== null) opts.strandThickness = thickness;
     return opts;
+  }
+
+  /** Assemble the 3-D morph options from the component's attributes. */
+  private get morphOptions(): Partial<MorphOptions> {
+    return {
+      sweep: this.morphSweep,
+      ...PROJECTIONS[this.morphProjection],
+      ...this.morphStrandOptions,
+    };
   }
 
   /**
@@ -2402,7 +2448,25 @@ export class TopologyDisplay extends HTMLElement {
     return this._morphLoad;
   }
 
-  private render() {
+  /**
+   * Rebuild the shadow DOM. With `keepView`, the redraw keeps the 2-D scroll
+   * position and the 3-D view (progress, orbit and any running animation).
+   */
+  private render({ keepView = false } = {}) {
+    const view: MorphView | null = !keepView
+      ? null
+      : (this._morph?.view ??
+        this._pendingView ??
+        (this._scrollBox
+          ? {
+              tau: 0,
+              goal: 0,
+              animating: false,
+              orbit: { az: 0, el: 0 },
+              scroll0: this._scrollBox.scroll.scrollLeft,
+            }
+          : null));
+    this._pendingView = null;
     this._morph?.dispose();
     this._morph = null;
     this._morphSource = null;
@@ -2410,6 +2474,7 @@ export class TopologyDisplay extends HTMLElement {
     this._scrollBox?.dispose();
     this._scrollBox = null;
     this._shown = null;
+    this._picker = null;
     this._hovered = null;
     this._contentEl.replaceChildren();
 
@@ -2469,20 +2534,8 @@ export class TopologyDisplay extends HTMLElement {
       pickerLabel.id = labelId;
       pickerLabel.textContent = 'Select chain';
       region.appendChild(pickerLabel);
-      const icon = {
-        membrane: this.iconMembrane,
-        // Å → rows: one row is half a membrane thickness.
-        smoothing: this.iconBandwidth / (this.iconMembrane.thickness / 2),
-      };
-      const picker = renderChainPicker(
-        chainsWithCoords,
-        displayLabels,
-        selectedId,
-        icon,
-        (chainId) => this.pickChain(chainId),
-      );
-      picker.setAttribute('aria-labelledby', labelId);
-      region.appendChild(picker);
+      this._picker = this.buildPicker(chainsWithCoords, displayLabels, selectedId);
+      region.appendChild(this._picker);
     }
 
     const selectedChain =
@@ -2595,11 +2648,7 @@ export class TopologyDisplay extends HTMLElement {
         scroll,
         svg,
         scene,
-        options: {
-          sweep: this.morphSweep,
-          ...PROJECTIONS[this.morphProjection],
-          ...this.morphStrandOptions,
-        },
+        options: this.morphOptions,
         bar,
       };
     }
@@ -2608,6 +2657,55 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+
+    if (view) this.restoreView(view);
+  }
+
+  /** Put the re-rendered chain back in `view`, loading the morph only if needed. */
+  private restoreView(view: MorphView): void {
+    this._scrollBox!.scroll.scrollLeft = view.scroll0;
+    if (view.tau <= 0 && !view.animating) return;
+    const src = this._morphSource;
+    if (!src) return;
+    // Until the morph is restored, a further redraw carries this view on.
+    this._pendingView = view;
+    void this.loadMorph().then((m) => {
+      if (this._morphSource !== src) return;
+      this._pendingView = null;
+      m?.restore(view);
+    });
+  }
+
+  /** The chain picker, labelled by the "Select chain" heading. */
+  private buildPicker(
+    chains: ChainData[],
+    labels: Map<string, ChainLabel>,
+    selectedId: string,
+  ): HTMLElement {
+    const icon = {
+      membrane: this.iconMembrane,
+      // Å → rows: one row is half a membrane thickness.
+      smoothing: this.iconBandwidth / (this.iconMembrane.thickness / 2),
+    };
+    const picker = renderChainPicker(chains, labels, selectedId, icon, (chainId) =>
+      this.pickChain(chainId),
+    );
+    picker.setAttribute('aria-labelledby', `chain-picker-label-${this._instanceId}`);
+    return picker;
+  }
+
+  /** Redraw just the chain picker (new icon settings), keeping keyboard focus. */
+  private redrawPicker(): void {
+    const old = this._picker;
+    const shown = this._shown?.chain.chainId;
+    if (!old || !shown) return;
+    const chains = this.chainsWithCoords();
+    const controls = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('button, select')];
+    const focused = controls(old).indexOf(this.shadowRoot!.activeElement as HTMLElement);
+    const picker = this.buildPicker(chains, buildChainLabels(chains), shown);
+    old.replaceWith(picker);
+    this._picker = picker;
+    if (focused >= 0) controls(picker)[focused]?.focus();
   }
 
   /** Residue data styling for `chainId`, or undefined when there is none. */
@@ -2655,8 +2753,8 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * A new protein forgets what the user picked in the old one, but keeps a
-   * `selection` the page set, so it can be set before the data loads.
+   * Forget the selection the user picked, but keep a `selection` the page
+   * set, so it can be set before the data loads.
    */
   private dropUserSelection(): void {
     const mine = this._userSelection;

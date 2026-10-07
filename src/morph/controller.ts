@@ -9,6 +9,15 @@ const DURATION_MS = 2800;
 const KEY_AZ = 0.1;
 const KEY_EL = 0.08;
 
+/** What a re-rendered component restores: progress, heading, orbit and 2-D scroll. */
+export interface MorphView {
+  tau: number;
+  goal: number;
+  animating: boolean;
+  orbit: Orbit;
+  scroll0: number;
+}
+
 function easeInOut(x: number): number {
   return 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
 }
@@ -42,7 +51,7 @@ export class MorphController {
   private appliedScroll = NaN;
   private readonly orbit: Orbit = { az: 0, el: 0 };
   private drag: { x: number; y: number; id: number; touch: boolean } | null = null;
-  private readonly options: MorphOptions;
+  private options: MorphOptions;
   private readonly resize: ResizeObserver | null = null;
   /** Called after every rendered frame with the current progress. */
   onChange: ((tau: number, goal: number) => void) | null = null;
@@ -120,6 +129,52 @@ export class MorphController {
     this.animateTo(this.goal >= 0.5 ? 0 : 1);
   }
 
+  /** The current view, to carry over to a controller for a re-rendered chain. */
+  get view(): MorphView {
+    return {
+      tau: this.tau,
+      goal: this.goal,
+      animating: this.raf !== 0,
+      orbit: { ...this.orbit },
+      scroll0: this.mounted ? this.scroll0 : this.scroll.scrollLeft,
+    };
+  }
+
+  /** Show `view` (from another controller of the same chain), resuming any animation. */
+  restore(view: MorphView): void {
+    this.cancel();
+    this.scroll.scrollLeft = view.scroll0;
+    if (view.tau <= 0 && !view.animating) return;
+    this.orbit.az = view.orbit.az;
+    this.orbit.el = view.orbit.el;
+    this.setProgress(view.tau);
+    if (view.animating) this.animateTo(view.goal >= 0.5 ? 1 : 0);
+  }
+
+  /**
+   * Change the options (projection, sweep, strand size) in place: the view
+   * keeps its progress, orbit and any running animation.
+   */
+  setOptions(options: Partial<MorphOptions>): void {
+    this.options = { ...DEFAULT_MORPH_OPTIONS, ...options };
+    const old = this.renderer;
+    if (!old) return;
+    this.renderer = null;
+    this.prepared = false;
+    if (!this.mounted) return;
+    const focused = old.svg.matches(':focus');
+    const renderer = this.ensureRenderer();
+    renderer.configure(this.framedWidth, this.scroll0);
+    this.prepared = true;
+    this.label(renderer.svg);
+    old.svg.replaceWith(renderer.svg);
+    this.appliedScroll = NaN;
+    // A new projection has a new base elevation: keep the orbit in range.
+    this.orbit.el = this.clampElevation(this.orbit.el);
+    if (!this.raf) this.show(this.tau);
+    if (focused) renderer.svg.focus();
+  }
+
   dispose(): void {
     this.cancel();
     this.resize?.disconnect();
@@ -188,17 +243,18 @@ export class MorphController {
   private mount(): MorphRenderer {
     const renderer = this.prepare();
     if (!this.mounted) {
-      // The 2-D figure's label, so assistive technology still knows what is shown.
-      const label = this.svg2d.getAttribute('aria-label');
-      renderer.svg.setAttribute(
-        'aria-label',
-        `${label ? `${label}, ` : ''}3-D view (arrow keys rotate)`,
-      );
+      this.label(renderer.svg);
       this.svg2d.replaceWith(renderer.svg);
       this.mounted = true;
       this.appliedScroll = NaN;
     }
     return renderer;
+  }
+
+  /** The 2-D figure's label, so assistive technology still knows what is shown. */
+  private label(svg: SVGSVGElement): void {
+    const label = this.svg2d.getAttribute('aria-label');
+    svg.setAttribute('aria-label', `${label ? `${label}, ` : ''}3-D view (arrow keys rotate)`);
   }
 
   private unmount(): void {
@@ -214,9 +270,14 @@ export class MorphController {
   /** Turn the view by (daz, del), keeping the elevation short of straight up or down. */
   private turn(daz: number, del: number): void {
     this.orbit.az += daz;
-    const base = this.options.elevation;
-    this.orbit.el = Math.max(-1.45 - base, Math.min(1.45 - base, this.orbit.el + del));
+    this.orbit.el = this.clampElevation(this.orbit.el + del);
     if (!this.raf && this.renderer) this.renderer.render(this.tau, this.orbit);
+  }
+
+  /** Orbit elevation offset kept short of looking straight up or down. */
+  private clampElevation(el: number): number {
+    const base = this.options.elevation;
+    return Math.max(-1.45 - base, Math.min(1.45 - base, el));
   }
 
   private bindOrbit(svg: SVGSVGElement): void {

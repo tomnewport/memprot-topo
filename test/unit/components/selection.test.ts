@@ -234,11 +234,31 @@ describe('TopologyDisplay selection across protein changes', () => {
     expect(shownChain(el)).toBe('Chain B');
   });
 
-  it("drops the user's pick when a new protein is loaded", () => {
+  it("keeps the user's pick across a new protein with that chain; resetView() drops it", () => {
     const el = mount();
     elements(el)[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(el.getAttribute('selection')).toBe('A:1-14');
     el.proteinData = twoChainProtein();
+    expect(el.getAttribute('selection')).toBe('A:1-14');
+    el.resetView();
     expect(el.hasAttribute('selection')).toBe(false);
+  });
+
+  it("drops the user's pick when the new protein lacks its chain", () => {
+    const el = mount();
+    elements(el)[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const other = twoChainProtein();
+    other.chains = other.chains.map((c) => ({
+      ...c,
+      chainId: c.chainId === 'A' ? 'C' : c.chainId,
+    }));
+    el.proteinData = other;
+    expect(el.hasAttribute('selection')).toBe(false);
+  });
+
+  it('keeps a selection the page set across resetView()', () => {
+    const el = mount('A:1-14');
+    el.resetView();
+    expect(el.getAttribute('selection')).toBe('A:1-14');
   });
 });

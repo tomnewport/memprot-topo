@@ -25,7 +25,8 @@ the PDB file):
 | `residueWidths`  | `residue-widths`  | width factor: 1 normal, 0 a bare line |
 
 Set the property with an object, or the attribute with the same object as
-JSON. Residues with no value keep the normal style (helix/strand colour, plain
+JSON. Changing either redraws the chain but keeps the scroll position and 3-D
+view. Residues with no value keep the normal style (helix/strand colour, plain
 loop width). Widths are factors of the normal width: 1.5 is half as wide
 again, 0 draws the element as a bare line (its outline; a hairline for loops),
 and negative values count as 0. To map another quantity, scale it first, e.g.
