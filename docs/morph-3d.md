@@ -137,7 +137,9 @@ finished 3-D view stays vector (and exportable).
   grew a stub cylinder at a sharp angle on its end). Samples are spread along the
   line by their fraction of the trace's length, so a hooked trace can't fold
   the cylinder back on itself. Loops ease onto the moved helix ends within a
-  few Å.
+  few Å. A gentle kink bends one cylinder outline; one of 45° or more is drawn
+  as two cylinders meeting at a ball joint, as a single outline bent that far
+  opened at the outside of the bend and showed the inside of the tube.
 - Shading is Lambert lighting from the upper left with depth fog. Cylinders get
   a smooth gradient across their width (one per straight stretch, as an SVG
   gradient is straight). Strand faces get a gradient along each straight
