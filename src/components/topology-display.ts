@@ -2010,20 +2010,26 @@ export class TopologyDisplay extends HTMLElement {
     const src = this._morphSource;
     if (!src) return Promise.resolve(null);
     if (this._morph) return Promise.resolve(this._morph);
-    this._morphLoad ??= import('../morph/controller.js').then(({ MorphController }) => {
-      // Re-rendered (new chain or settings) while loading: stale.
-      if (this._morphSource !== src) return null;
-      const morph = new MorphController(
-        src.scroll,
-        src.svg,
-        src.scene,
-        `mp${this._instanceId}`,
-        src.options,
-      );
-      this._morph = morph;
-      this.bindMorphBar(src.bar, morph);
-      return morph;
-    });
+    this._morphLoad ??= import('../morph/controller.js')
+      .then(({ MorphController }) => {
+        // Re-rendered (new chain or settings) while loading: stale.
+        if (this._morphSource !== src) return null;
+        const morph = new MorphController(
+          src.scroll,
+          src.svg,
+          src.scene,
+          `mp${this._instanceId}`,
+          src.options,
+        );
+        this._morph = morph;
+        this.bindMorphBar(src.bar, morph);
+        return morph;
+      })
+      .catch((err: unknown) => {
+        // Let a later click try again (e.g. after a network blip).
+        this._morphLoad = null;
+        throw err;
+      });
     return this._morphLoad;
   }
 
