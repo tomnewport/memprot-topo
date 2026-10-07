@@ -1847,6 +1847,9 @@ function renderChainPicker(
 /** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
 const DEFAULT_MORPH_SWEEP = 0.35;
 
+/** Default strand arrowhead width over ribbon width in the morph (6.2 / 3.8 Å). */
+const STRAND_ARROW_RATIO = 6.2 / 3.8;
+
 let _instanceCounter = 0;
 
 export class TopologyDisplay extends HTMLElement {
@@ -1858,6 +1861,8 @@ export class TopologyDisplay extends HTMLElement {
     'show-contacts',
     'morph-sweep',
     'morph-projection',
+    'morph-strand-width',
+    'morph-strand-thickness',
   ];
 
   private readonly _instanceId = ++_instanceCounter;
@@ -1915,7 +1920,9 @@ export class TopologyDisplay extends HTMLElement {
       name === 'loop-extreme-threshold' ||
       name === 'show-contacts' ||
       name === 'morph-sweep' ||
-      name === 'morph-projection'
+      name === 'morph-projection' ||
+      name === 'morph-strand-width' ||
+      name === 'morph-strand-thickness'
     ) {
       this.render();
       return;
@@ -1968,6 +1975,28 @@ export class TopologyDisplay extends HTMLElement {
    */
   private get morphProjection(): keyof typeof PROJECTIONS {
     return this.getAttribute('morph-projection') === 'perspective' ? 'perspective' : 'isometric';
+  }
+
+  /**
+   * Strand ribbon size in the 3-D view, in Å (`morph-strand-width`,
+   * `morph-strand-thickness`; defaults 3.8 × 1.0). The arrowhead keeps its
+   * default proportion to the ribbon width. Invalid or non-positive values
+   * fall back to the defaults.
+   */
+  private get morphStrandOptions(): Partial<MorphOptions> {
+    const read = (name: string): number | null => {
+      const v = Number.parseFloat(this.getAttribute(name) ?? '');
+      return Number.isFinite(v) && v > 0 ? v : null;
+    };
+    const opts: Partial<MorphOptions> = {};
+    const width = read('morph-strand-width');
+    if (width !== null) {
+      opts.strandWidth = width;
+      opts.arrowWidth = width * STRAND_ARROW_RATIO;
+    }
+    const thickness = read('morph-strand-thickness');
+    if (thickness !== null) opts.strandThickness = thickness;
+    return opts;
   }
 
   /** Assemble the loop rendering options from the component's attributes. */
@@ -2206,7 +2235,11 @@ export class TopologyDisplay extends HTMLElement {
         scroll,
         svg,
         scene,
-        options: { sweep: this.morphSweep, ...PROJECTIONS[this.morphProjection] },
+        options: {
+          sweep: this.morphSweep,
+          ...PROJECTIONS[this.morphProjection],
+          ...this.morphStrandOptions,
+        },
         bar,
       };
     }

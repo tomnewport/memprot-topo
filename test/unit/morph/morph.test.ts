@@ -476,6 +476,21 @@ describe('<topology-display> 3-D morph', () => {
     expect((el as unknown as Internals)._morph).not.toBeNull();
   });
 
+  it('takes the strand ribbon size from morph-strand-width and morph-strand-thickness', () => {
+    type WithOptions = { _morphSource: { options: Record<string, number> } | null };
+    const el = mount(hairpinChain());
+    const opts = () => (el as unknown as WithOptions)._morphSource!.options;
+    expect(opts().strandWidth).toBeUndefined();
+    el.setAttribute('morph-strand-width', '10');
+    el.setAttribute('morph-strand-thickness', '2.5');
+    expect(opts().strandWidth).toBe(10);
+    expect(opts().strandThickness).toBe(2.5);
+    // The arrowhead keeps its default proportion to the ribbon (6.2 / 3.8).
+    expect(opts().arrowWidth).toBeCloseTo((10 * 6.2) / 3.8);
+    el.setAttribute('morph-strand-width', '-1');
+    expect(opts().strandWidth).toBeUndefined();
+  });
+
   it('jumps straight to 3-D when reduced motion is preferred', async () => {
     const spy = vi
       .spyOn(window, 'matchMedia')

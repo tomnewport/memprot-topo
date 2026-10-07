@@ -71,6 +71,11 @@ width. With `prefers-reduced-motion: reduce` the 3D button jumps straight to
 the other view instead of animating. Changing an attribute or the chain
 re-renders the component and returns it to the 2-D view.
 
+`morph-strand-width` and `morph-strand-thickness` set the strand ribbon size
+in Å (defaults 3.8 × 1.0; the arrowhead scales with the width). The issue's
+suggested ~10 × 2.5 Å works, but neighbouring barrel strands (≈ 4.8 Å apart)
+then overlap heavily.
+
 `morph-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent
 perspective while the camera backs off to keep the scale at the target constant.
