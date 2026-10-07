@@ -128,6 +128,16 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Strand ribbon thickness in the 3-D view (Å).',
   },
   {
+    attribute: 'icon-bandwidth',
+    kind: 'number',
+    default: 0,
+    min: 0,
+    max: 20,
+    step: 0.5,
+    scope: 'all',
+    description: 'Smoothing σ (Å) of the chain-picker violins; 0 is the plain histogram.',
+  },
+  {
     // CSS-only (`:host([fit])`), so not in observedAttributes.
     attribute: 'fit',
     kind: 'select',

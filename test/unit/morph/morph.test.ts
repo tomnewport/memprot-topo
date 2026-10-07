@@ -540,6 +540,26 @@ describe('<topology-display> 3-D morph', () => {
     expect(el.morphProgress).toBe(1);
   });
 
+  it('redraws only the chain picker when icon-bandwidth changes', async () => {
+    const el = new TopologyDisplay();
+    document.body.appendChild(el);
+    el.proteinData = {
+      pdbId: 'tst1',
+      chains: [hairpinChain(), { ...hairpinChain(), chainId: 'B' }],
+    };
+    await el.setMorphProgress(1);
+    const root = el.shadowRoot!;
+    const picker = root.querySelector('.chain-picker');
+    const svg = root.querySelector('.svg-scroll svg');
+    root.querySelector<HTMLButtonElement>('.chain-picker button')!.focus();
+    el.setAttribute('icon-bandwidth', '4');
+    expect(root.querySelector('.chain-picker')).not.toBe(picker);
+    expect(root.querySelectorAll('.chain-picker')).toHaveLength(1);
+    expect(root.querySelector('.svg-scroll svg')).toBe(svg);
+    expect(el.morphProgress).toBe(1);
+    expect(root.activeElement).toBe(root.querySelector('.chain-picker button'));
+  });
+
   it('ignores re-assigning the same protein data', async () => {
     const el = mount(hairpinChain());
     await el.setMorphProgress(1);
