@@ -10,6 +10,7 @@
 import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
 import { registerTheme } from './theme/index.js';
 import {
+  DEFAULT_TRANSITION_MS,
   DEFAULT_MIN_HELIX_LENGTH,
   DEFAULT_MIN_STRAND_LENGTH,
 } from './components/topology-display.js';
@@ -138,12 +139,25 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Shortest strand (residues) drawn as a strand; shorter ones become loop.',
   },
   {
-    attribute: 'view',
-    kind: 'select',
-    default: 'topology',
-    options: ['sequence', 'topology', 'structure'],
+    attribute: 'dimension',
+    kind: 'number',
+    default: 2,
+    min: 1,
+    max: 3,
+    step: 0.1,
     scope: 'all',
-    description: 'View on the spectrum: 1-D sequence, 2-D topology or 3-D structure.',
+    description:
+      '1 = sequence, 2 = topology, 3 = structure; in between is part-way (1.3 = 30% of the way to 2-D).',
+  },
+  {
+    attribute: 'transition-time',
+    kind: 'number',
+    default: DEFAULT_TRANSITION_MS,
+    min: 0,
+    max: 10000,
+    step: 100,
+    scope: 'all',
+    description: 'Time (ms) to animate one whole dimension; 0 jumps straight there.',
   },
   {
     attribute: 'sequence-wrap',

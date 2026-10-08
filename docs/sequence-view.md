@@ -1,10 +1,18 @@
 # Sequence view (1-D)
 
-The view switch puts the three views on one spectrum: **Sequence** (1-D) →
-**Topology** (2-D) → **Structure** (3-D). The scrubber runs along the whole
-spectrum, and going from Sequence to Structure passes through Topology. The
-`view` attribute (`sequence`, `topology`, `structure`; default `topology`)
-picks the view from the page.
+The view switch puts the three views on one scale: **1D** (sequence) →
+**2D** (topology) → **3D** (structure). Going from 1D to 3D passes through 2D.
+
+- `dimension` (attribute and property): `1`, `2` (default) or `3`, or
+  anything in between: `1.3` is 30% of the way from the sequence to the
+  topology. Setting it animates there from wherever the view is. Reading the
+  property gives the live value, mid-animation included, and every change
+  fires a `dimension-change` event (`detail.dimension`), so a page can drive
+  its own slider.
+- `transition-time`: milliseconds to move one whole dimension (default 2500;
+  going from 1 to 3 takes twice that). `0` jumps straight there. With
+  `prefers-reduced-motion: reduce` the view always jumps.
+- The 1D / 2D / 3D buttons set `dimension`.
 
 ## Layout
 
@@ -15,19 +23,20 @@ under that. Residues the 2-D layout puts inside the membrane are shaded.
 
 - `sequence-wrap`: residues per row. Absent (or `auto`) fits as many whole
   blocks as the box is wide, and re-wraps when the box changes width.
-- Lanes: `residueColours` gives a colour strip and `residueWidths` a bar lane;
+- Data lanes are colour strips: `residueColours` gives one, and
   `sequenceTracks` (a JS property) adds more:
 
   ```js
   el.sequenceTracks = [
-    { label: 'Hydropathy', values: { A: { 45: 1.8, 46: -0.4 } }, type: 'line' },
-    { label: 'Contacts', values: { A: { 45: 0.7 } }, colour: '#d62728', domain: [0, 1] },
+    { label: 'Hydropathy', values: { A: { 45: 1.8, 46: -0.4 } }, domain: [-3, 3] },
+    { label: 'Contacts', values: { A: { 45: 0.7 } }, scale: ['#ffffff', '#d62728'] },
   ];
   ```
 
   Values are keyed by chain, then residue number, like the other series.
-  `type` is `bar` (default) or `line`; the domain defaults to the data's,
-  widened to include 0.
+  Numbers are coloured on `scale` (the theme's data scale by default) over
+  `domain` (the data's range by default); strings are taken as CSS colours.
+  `residueWidths` is not shown in the sequence view.
 
 One-letter codes come from the residue names in the structure file
 (`Calpha.resName`); residues without one show as `X`.
@@ -58,6 +67,5 @@ shrink into the drawn chain's end.
 - No residue selection or hover in the sequence view yet.
 - Missing residues show as a dashed stretch one cell per resolved neighbour,
   not as a gap of their real length.
-- Residue widths are drawn as a lane, not as cartoon width.
 - Near the topology end the cartoon shows faint seams where a helix crosses
   a row break.

@@ -2,7 +2,7 @@
  * Screenshots (or a video) of the Sequence → Topology → Structure spectrum,
  * from the gallery data (run `npm run prebuild:gallery` first).
  *
- *   node scripts/preview-spectrum.mjs <pdbId> <outPrefix> [positions 0–2...]
+ *   node scripts/preview-spectrum.mjs <pdbId> <outPrefix> [positions 0–2 (dimension − 1)...]
  *
  * Env: W / H viewport, TRACKS=1 (hydropathy lane), COLOURS=1 (residue colours),
  * THEME, VIDEO=<dir> with SEQ=0,2,0 (views to animate to), RESIZE=500,1300
@@ -42,7 +42,7 @@ window.__render = (data, opts) => {
       });
       values[c.chainId] = v;
     }
-    el.sequenceTracks = [{ label: 'Hydropathy', values, type: 'line' }];
+    el.sequenceTracks = [{ label: 'Hydropathy', values, scale: ['#2166ac', '#f7f7f7', '#d6604d'], domain: [-3, 3] }];
   }
   if (opts.colours) {
     const cols = {};
@@ -92,17 +92,21 @@ await page.evaluate(
 await page.waitForTimeout(300);
 if (video) {
   const seq = (process.env.SEQ || '0,2,0').split(',').map(Number);
-  await page.evaluate(() => document.getElementById('td').setViewPosition(1));
+  await page.evaluate(() => (document.getElementById('td').dimension = 2));
   await page.waitForTimeout(600);
   for (const v of seq) {
-    await page.evaluate((v) => document.getElementById('td').goToView(v), v);
+    await page.evaluate((v) => (document.getElementById('td').dimension = v + 1), v);
     await page.waitForTimeout(v === 2 || v === 1 ? 3600 : 2800);
     await page.waitForTimeout(800);
   }
   await ctx.close();
 } else if (process.env.RESIZE) {
   // Sequence view at each body width in turn (checks the re-wrap).
-  await page.evaluate(() => document.getElementById('td').setViewPosition(0));
+  await page.evaluate(() => {
+    const el = document.getElementById('td');
+    el.setAttribute('transition-time', '0');
+    el.dimension = 1;
+  });
   for (const w of process.env.RESIZE.split(',').map(Number)) {
     await page.evaluate((w) => (document.body.style.width = `${w}px`), w);
     await page.waitForTimeout(200);
@@ -114,7 +118,11 @@ if (video) {
   }
 } else {
   for (const p of positions) {
-    await page.evaluate((p) => document.getElementById('td').setViewPosition(p), p);
+    await page.evaluate((p) => {
+      const el = document.getElementById('td');
+      el.setAttribute('transition-time', '0');
+      el.dimension = p + 1;
+    }, p);
     await page.waitForTimeout(p > 1 ? 800 : 100);
     const box = await page.$('#td');
     await box.screenshot({ path: `${out}-${String(p).replace('.', '_')}.png` });

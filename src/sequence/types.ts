@@ -29,24 +29,12 @@ export interface SeqElement {
   withArrow: boolean;
 }
 
-/** A data series drawn as a lane under each row of the sequence. */
-export type SeqLane =
-  | {
-      kind: 'colour';
-      label: string;
-      /** Colour of residue `i`, or undefined where it has no value. */
-      colourAt: (i: number) => string | undefined;
-    }
-  | {
-      kind: 'bar' | 'line';
-      label: string;
-      /** Value of residue `i`, or undefined where it has no value. */
-      valueAt: (i: number) => number | undefined;
-      /** Value range of the lane (the zero line is drawn when it is inside). */
-      domain: [number, number];
-      /** Bar / line colour (CSS); the theme's accent when absent. */
-      colour?: string;
-    };
+/** A data series drawn as a colour strip under each row of the sequence. */
+export interface SeqLane {
+  label: string;
+  /** Colour of residue `i`, or undefined where it has no value. */
+  colourAt: (i: number) => string | undefined;
+}
 
 /**
  * Everything the sequence view and the 1-D ↔ 2-D transition are built from:

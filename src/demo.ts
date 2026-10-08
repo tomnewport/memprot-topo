@@ -30,7 +30,15 @@ function populate(elementId: string, pdbId: string): void {
   const data = proteins[pdbId];
   if (!data) return;
   el.proteinData = data;
-  el.sequenceTracks = [{ label: 'Hydropathy', values: hydropathy(data), type: 'line' }];
+  el.sequenceTracks = [
+    {
+      label: 'Hydropathy',
+      values: hydropathy(data),
+      // Hydrophilic blue → hydrophobic orange (Kyte–Doolittle, ±4.5).
+      scale: ['#2166ac', '#f7f7f7', '#d6604d'],
+      domain: [-3, 3],
+    },
+  ];
 }
 
 document.addEventListener('DOMContentLoaded', () => {

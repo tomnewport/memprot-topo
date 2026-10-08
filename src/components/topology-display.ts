@@ -18,7 +18,9 @@ import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import { ssOutline, outlinePolygon, outlineSlice, type OutlinePoint } from './ss-outline.js';
 import {
+  interpolateStops,
   measure,
+  parseColour,
   monotoneCubic,
   parseSeriesAttribute,
   readDataTheme,
@@ -207,11 +209,10 @@ const STYLES = `
   .view-switch .view-button:last-child { border-radius: 0 var(--mp-corner-radius) var(--mp-corner-radius) 0; }
   .view-button[aria-pressed='true'] { background: var(--mp-accent); color: var(--mp-accent-text); }
   .view-button:disabled { opacity: 0.45; cursor: default; }
-  .view-button:focus-visible, .morph-scrub:focus-visible {
+  .view-button:focus-visible {
     outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
-  .morph-scrub { width: 10rem; accent-color: var(--mp-accent); }
   .morph-hint { visibility: hidden; }
   .morph-bar.is-3d .morph-hint { visibility: visible; }
   .ss-element { cursor: pointer; outline: none; }
@@ -2242,6 +2243,17 @@ function morphColours(theme: Theme): MorphThemeStyle {
   };
 }
 
+/** Default time (ms) to move one whole dimension (see `transition-time`). */
+export const DEFAULT_TRANSITION_MS = 2500;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
 /** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
 const DEFAULT_MORPH_SWEEP = 0.35;
 
@@ -2320,7 +2332,8 @@ export class TopologyDisplay extends HTMLElement {
     'loop-extreme-points',
     'loop-extreme-threshold',
     'show-contacts',
-    'view',
+    'dimension',
+    'transition-time',
     'sequence-wrap',
     'morph-sweep',
     'morph-projection',
@@ -2362,6 +2375,11 @@ export class TopologyDisplay extends HTMLElement {
   private _seq: SequenceController | null = null;
   /** Extra data lanes for the sequence view (see {@link sequenceTracks}). */
   private _sequenceTracks: SequenceTrack[] = [];
+  /** The running `dimension` animation's frame, and a counter that cancels a pending start. */
+  private _dimensionRaf = 0;
+  private _dimensionRun = 0;
+  /** Last position announced in a `dimension-change` event. */
+  private _lastPosition = NaN;
   private _morphLoad: Promise<MorphController | null> | null = null;
   /** A view a redraw is restoring while the morph code loads. */
   private _pendingView: MorphView | null = null;
@@ -2554,11 +2572,12 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, old: string | null, value: string | null) {
-    if (name === 'view') {
-      // Travel along the spectrum to the named view, keeping everything else.
-      if (value !== old && this._seq) this.goToView(this.viewIndex);
+    if (name === 'dimension') {
+      // Travel to the new dimension, keeping everything else.
+      if (value !== old && this._seq) this.animateTo(this.targetPosition);
       return;
     }
+    if (name === 'transition-time') return;
     if (name === 'sequence-wrap') {
       this._seq?.setOptions(this.sequenceOptions);
       return;
@@ -2823,7 +2842,9 @@ export class TopologyDisplay extends HTMLElement {
 
   /** Animate between the 2-D topology and the 3-D view. */
   async toggle3d(): Promise<void> {
-    (await this.loadMorph())?.toggle();
+    this.dimension = this.dimension > 2.5 ? 2 : 3;
+    // Resolves once the morph code is loaded (and, with no animation, drawn).
+    await this.loadMorph();
   }
 
   /**
@@ -3086,9 +3107,9 @@ export class TopologyDisplay extends HTMLElement {
     if (seqView !== null) {
       if (seqView < 1) seq.setProgress(seqView);
     } else {
-      const target = this.viewIndex;
-      if (target === 0) seq.setProgress(0);
-      else if (target === 2 && scene) void this.setMorphProgress(1);
+      // A fresh view starts at the page's `dimension`, without animating.
+      this.cancelDimension();
+      this.applyPosition(this.targetPosition);
     }
   }
 
@@ -3283,18 +3304,95 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Where the view stands on the Sequence (0) → Topology (1) → Structure (2)
-   * spectrum.
+   * Where the view stands, 0 (sequence) → 1 (topology) → 2 (structure): the
+   * dimension minus one.
    */
-  get viewPosition(): number {
+  private get viewPosition(): number {
     const u = this._seq?.progress ?? 1;
     return u < 1 ? u : 1 + this.morphProgress;
   }
 
-  /** The `view` attribute as a point on the spectrum (topology by default). */
-  private get viewIndex(): 0 | 1 | 2 {
-    const v = this.getAttribute('view');
-    return v === 'sequence' ? 0 : v === 'structure' ? 2 : 1;
+  /**
+   * The view's dimensionality, live: 1 (sequence), 2 (topology), 3
+   * (structure), or in between while animating (1.3 is 30% of the way from
+   * the sequence to the topology). Setting it writes the `dimension`
+   * attribute, which animates there at `transition-time` ms per dimension.
+   */
+  get dimension(): number {
+    return 1 + this.viewPosition;
+  }
+
+  set dimension(value: number) {
+    this.setAttribute('dimension', String(value));
+  }
+
+  /** Time (ms) to move one whole dimension (`transition-time`; 0 = instant). */
+  private get transitionTime(): number {
+    const v = Number.parseFloat(this.getAttribute('transition-time') ?? '');
+    return Number.isFinite(v) && v >= 0 ? v : DEFAULT_TRANSITION_MS;
+  }
+
+  /** Where `dimension` asks to be, as a view position (0–2), within what the chain can show. */
+  private get targetPosition(): number {
+    const raw = this.getAttribute('dimension');
+    const v = raw === null ? NaN : Number.parseFloat(raw);
+    const max = this._morphSource ? 2 : 1;
+    return Number.isFinite(v) ? Math.max(0, Math.min(max, v - 1)) : 1;
+  }
+
+  /** Show position `p` (0–2) at once. */
+  private applyPosition(p: number): void {
+    const seq = this._seq;
+    if (!seq) return;
+    if (p < 1) {
+      if (this.morphProgress > 0) this._morph?.setProgress(0);
+      seq.setProgress(p);
+    } else {
+      seq.setProgress(1);
+      if (this._morph) this._morph.setProgress(p - 1);
+      else if (p > 1) void this.setMorphProgress(p - 1);
+    }
+  }
+
+  private cancelDimension(): void {
+    if (this._dimensionRaf) cancelAnimationFrame(this._dimensionRaf);
+    this._dimensionRaf = 0;
+    this._dimensionRun++;
+  }
+
+  /**
+   * Animate from where the view is to `target` (0–2) at `transition-time` per
+   * dimension, passing through the topology between the other two.
+   */
+  private animateTo(target: number): void {
+    this.cancelDimension();
+    const run = this._dimensionRun;
+    const from = this.viewPosition;
+    const ms = this.transitionTime * Math.abs(target - from);
+    if (ms <= 0 || from === target || prefersReducedMotion()) {
+      this.applyPosition(target);
+      return;
+    }
+    const go = (): void => {
+      if (run !== this._dimensionRun) return;
+      const start = performance.now();
+      const step = (now: number): void => {
+        const f = Math.min(1, (now - start) / ms);
+        const x = 0.5 - 0.5 * Math.cos(Math.PI * f);
+        this.applyPosition(f >= 1 ? target : from + (target - from) * x);
+        this._dimensionRaf = f < 1 ? requestAnimationFrame(step) : 0;
+      };
+      this._dimensionRaf = requestAnimationFrame(step);
+    };
+    // Set the 3-D view up before the clock starts, so the first frames don't stall.
+    if (Math.max(from, target) > 1) {
+      void this.loadMorph().then((m) => {
+        m?.precompute();
+        go();
+      });
+    } else {
+      go();
+    }
   }
 
   /** Sequence-view options from the attributes (`sequence-wrap`). */
@@ -3308,9 +3406,9 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Extra data series plotted as lanes under each row of the sequence view,
-   * after the lanes for `residueColours` and `residueWidths`. Values are keyed
-   * by chain ID, then residue number, like those.
+   * Extra data series drawn as colour strips under each row of the sequence
+   * view, after the strip for `residueColours`. Values are keyed by chain ID,
+   * then residue number, like those.
    */
   get sequenceTracks(): SequenceTrack[] {
     return this._sequenceTracks;
@@ -3321,99 +3419,43 @@ export class TopologyDisplay extends HTMLElement {
     this.render({ keepView: true });
   }
 
-  /** Data lanes of the sequence view for `chainId`. */
+  /** Colour strips of the sequence view for `chainId`. */
   private sequenceLanes(chainId: string, residues: SeqResidue[]): SeqLane[] {
     const lanes: SeqLane[] = [];
-    const display = this.chainDisplayData(chainId);
-    const colour = display?.style.colour;
+    const colour = this.chainDisplayData(chainId)?.style.colour;
     if (colour) {
       lanes.push({
-        kind: 'colour',
         label: this.getAttribute('colour-label') || 'Colour',
         colourAt: (i) => colour(residues[i].resSeq),
-      });
-    }
-    const widths = display?.style.widths;
-    if (widths && widths.size > 0) {
-      const max = Math.max(1, ...widths.values());
-      lanes.push({
-        kind: 'bar',
-        label: 'Width',
-        valueAt: (i) => widths.get(residues[i].resSeq),
-        domain: [0, max],
       });
     }
     for (const track of this._sequenceTracks) {
       const values = track.values?.[chainId];
       if (!values) continue;
-      const valueAt = (i: number): number | undefined => {
-        const v = values[residues[i].resSeq];
-        return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-      };
-      const nums = residues.map((_, i) => valueAt(i)).filter((v): v is number => v !== undefined);
-      if (nums.length === 0) continue;
-      const domain: [number, number] = track.domain ?? [Math.min(0, ...nums), Math.max(0, ...nums)];
+      const nums = residues
+        .map((r) => values[r.resSeq])
+        .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+      const [lo, hi] = track.domain ?? [Math.min(...nums), Math.max(...nums)];
+      const stops = (track.scale ?? this._theme.dataScale)
+        .map(parseColour)
+        .filter((c): c is NonNullable<typeof c> => c !== null);
       lanes.push({
-        kind: track.type === 'line' ? 'line' : 'bar',
         label: track.label ?? 'Data',
-        valueAt,
-        domain,
-        colour: track.colour,
+        colourAt: (i) => {
+          const v = values[residues[i].resSeq];
+          if (typeof v === 'string') return v;
+          if (typeof v !== 'number' || !Number.isFinite(v) || stops.length === 0) return undefined;
+          return interpolateStops(stops, hi > lo ? (v - lo) / (hi - lo) : 0.5);
+        },
       });
     }
     return lanes;
   }
 
-  /** Show the sequence view (animated). */
-  showSequence(): void {
-    this.goToView(0);
-  }
-
   /**
-   * Travel along the spectrum to `target` (0 sequence, 1 topology, 2
-   * structure), passing through the topology between the other two.
-   */
-  private goToView(target: 0 | 1 | 2): void {
-    const seq = this._seq;
-    if (!seq) return;
-    if (target === 2 && !this._morphSource) target = 1;
-    const toMorph = (goal: 0 | 1): void => {
-      void this.loadMorph().then((m) => m?.animateTo(goal));
-    };
-    if (target === 0) {
-      if (this.morphProgress > 0) {
-        void this.loadMorph().then((m) => m?.animateTo(0, () => seq.animateTo(0)));
-      } else {
-        seq.animateTo(0);
-      }
-    } else if (target === 1) {
-      if (seq.progress < 1) seq.animateTo(1);
-      else if (this._morph) toMorph(0);
-    } else if (seq.progress < 1) {
-      seq.animateTo(1, () => toMorph(1));
-    } else {
-      toMorph(1);
-    }
-  }
-
-  /** Jump to `p` on the spectrum (scrubbing). */
-  private setViewPosition(p: number): void {
-    const seq = this._seq;
-    if (!seq) return;
-    if (p < 1) {
-      if (this.morphProgress > 0) this._morph?.setProgress(0);
-      seq.setProgress(p);
-    } else {
-      seq.setProgress(1);
-      if (p > 1 || this._morph) void this.setMorphProgress(p - 1);
-    }
-  }
-
-  /**
-   * The view switch: Sequence / Topology / Structure buttons and a scrubber
-   * along the whole spectrum. Structure is disabled when the chain has no 3-D
-   * view. Pointing at or focusing the bar loads the morph code and does its
-   * set-up ahead of the click.
+   * The view switch: 1D (sequence), 2D (topology) and 3D (structure). 3D is
+   * disabled when the chain has no 3-D view. Pointing at or focusing the
+   * switch loads the morph code and does its set-up ahead of the click.
    */
   private renderMorphBar(available: boolean): HTMLDivElement {
     const bar = document.createElement('div');
@@ -3421,37 +3463,30 @@ export class TopologyDisplay extends HTMLElement {
     const group = document.createElement('div');
     group.className = 'view-switch';
     group.setAttribute('role', 'group');
-    group.setAttribute('aria-label', 'View');
-    const views: [string, string, string][] = [
-      ['sequence', 'Sequence', 'Flatten the chain into its amino-acid sequence (1-D)'],
-      ['topology', 'Topology', 'Show the membrane topology (2-D)'],
-      ['structure', 'Structure', 'Roll the topology up into the 3-D structure'],
+    group.setAttribute('aria-label', 'Dimensions');
+    const views: [string, string][] = [
+      ['1D', 'Sequence: the chain flattened into its amino-acid sequence'],
+      ['2D', 'Topology: the chain unrolled across the membrane'],
+      ['3D', 'Structure: the topology rolled up into the 3-D structure'],
     ];
-    const buttons = views.map(([view, text, label], k) => {
+    const buttons = views.map(([text, label], k) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'view-button';
-      if (view === 'structure') b.classList.add('morph-toggle');
-      b.dataset.view = view;
+      if (k === 2) b.classList.add('morph-toggle');
+      b.dataset.dimension = String(k + 1);
       b.textContent = text;
       b.title = label;
-      b.setAttribute('aria-pressed', view === 'topology' ? 'true' : 'false');
-      b.addEventListener('click', () => this.goToView(k as 0 | 1 | 2));
+      b.setAttribute('aria-label', label);
+      b.setAttribute('aria-pressed', k === 1 ? 'true' : 'false');
+      b.addEventListener('click', () => (this.dimension = k + 1));
       group.appendChild(b);
       return b;
     });
-    const scrub = document.createElement('input');
-    scrub.type = 'range';
-    scrub.className = 'morph-scrub';
-    scrub.min = '0';
-    scrub.max = available ? '2000' : '1000';
-    scrub.value = '1000';
-    scrub.setAttribute('aria-label', 'Move between the sequence, topology and 3-D structure');
     const hint = document.createElement('span');
     hint.className = 'morph-hint';
     hint.textContent = 'Drag to rotate';
-    bar.append(group, scrub, hint);
-    scrub.addEventListener('input', () => this.setViewPosition(Number(scrub.value) / 1000));
+    bar.append(group, hint);
     if (!available) {
       buttons[2].disabled = true;
       buttons[2].title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
@@ -3465,20 +3500,26 @@ export class TopologyDisplay extends HTMLElement {
     return bar;
   }
 
-  /** Bring the switch and scrubber in step with the view. */
+  /** Bring the switch in step with the view, and tell the page where it is. */
   private syncViewBar(bar: HTMLDivElement): void {
     const p = this.viewPosition;
-    const goal =
-      this._seq && this._seq.target < 1 ? 0 : this._morph && this._morph.target >= 0.5 ? 2 : 1;
-    const scrub = bar.querySelector<HTMLInputElement>('.morph-scrub')!;
-    scrub.value = String(Math.round(p * 1000));
+    const shown = Math.round(this._dimensionRaf ? this.targetPosition : p) + 1;
     for (const b of bar.querySelectorAll<HTMLButtonElement>('.view-button')) {
-      const k = ['sequence', 'topology', 'structure'].indexOf(b.dataset.view ?? '');
-      b.setAttribute('aria-pressed', k === goal ? 'true' : 'false');
+      b.setAttribute('aria-pressed', Number(b.dataset.dimension) === shown ? 'true' : 'false');
     }
     bar.classList.toggle('is-3d', p > 1);
     // The views resize and scroll the picture, so the edges change too.
     this._scrollBox?.update();
+    if (p !== this._lastPosition) {
+      this._lastPosition = p;
+      this.dispatchEvent(
+        new CustomEvent('dimension-change', {
+          detail: { dimension: 1 + p },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
   }
 
   private bindSequenceBar(bar: HTMLDivElement, seq: SequenceController): void {
@@ -3491,17 +3532,21 @@ export class TopologyDisplay extends HTMLElement {
   }
 }
 
-/** A data series for the sequence view (see {@link TopologyDisplay.sequenceTracks}). */
+/**
+ * A data series for the sequence view (see {@link TopologyDisplay.sequenceTracks}),
+ * drawn as a colour strip.
+ */
 export interface SequenceTrack {
-  /** Shown beside the lane. */
+  /** Shown beside the strip. */
   label?: string;
-  /** Values keyed by chain ID, then residue number. */
-  values: Record<string, Record<string | number, number>>;
-  /** Bars (default) or a line. */
-  type?: 'bar' | 'line';
-  /** CSS colour; the theme's accent by default. */
-  colour?: string;
-  /** Value range; by default the data's, extended to include 0. */
+  /**
+   * Values keyed by chain ID, then residue number: numbers are coloured on
+   * the scale, strings are taken as CSS colours.
+   */
+  values: Record<string, Record<string | number, number | string>>;
+  /** Colour stops, low → high; the theme's data scale by default. */
+  scale?: string[];
+  /** Value range; by default the data's. */
   domain?: [number, number];
 }
 

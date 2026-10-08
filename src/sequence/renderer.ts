@@ -294,62 +294,18 @@ export class SequenceRenderer {
     label.appendChild(title);
     this.add(label, { fill: 'textMuted', 'font-family': 'fontFamily' }, g);
 
-    if (lane.kind === 'colour') {
-      for (let i = first; i <= last; i++) {
-        const c = lane.colourAt(i);
-        if (!c) continue;
-        const r = el('rect', {
-          x: (layout.x[i] - cell / 2).toFixed(2),
-          y: top + 1,
-          width: cell,
-          height: H - 2,
-          fill: c,
-        });
-        g.appendChild(r);
-      }
-      return;
-    }
-    const [lo, hi] = lane.domain;
-    const span = hi - lo || 1;
-    const yOf = (v: number): number =>
-      top + H - 1 - ((Math.max(lo, Math.min(hi, v)) - lo) / span) * (H - 2);
-    const base = yOf(Math.max(lo, Math.min(hi, 0)));
-    if (lo < 0 && hi > 0) {
-      const zero = el('line', { x1: xa, x2: xb, y1: base, y2: base, 'stroke-width': 0.5 });
-      this.add(zero, { stroke: 'border' }, g);
-    }
-    const colour = lane.colour;
-    if (lane.kind === 'bar') {
-      for (let i = first; i <= last; i++) {
-        const v = lane.valueAt(i);
-        if (v === undefined || !Number.isFinite(v)) continue;
-        const y = yOf(v);
-        const r = el('rect', {
-          x: (layout.x[i] - cell / 2 + 1).toFixed(2),
-          y: Math.min(y, base).toFixed(2),
-          width: cell - 2,
-          height: Math.max(0.5, Math.abs(base - y)).toFixed(2),
-        });
-        if (colour) r.setAttribute('fill', colour);
-        this.add(r, colour ? undefined : { fill: 'accent' }, g);
-      }
-      return;
-    }
-    let d = '';
-    let pen = false;
     for (let i = first; i <= last; i++) {
-      const v = lane.valueAt(i);
-      if (v === undefined || !Number.isFinite(v)) {
-        pen = false;
-        continue;
-      }
-      d += `${pen ? 'L' : 'M'}${layout.x[i].toFixed(2)},${yOf(v).toFixed(2)}`;
-      pen = true;
+      const c = lane.colourAt(i);
+      if (!c) continue;
+      const r = el('rect', {
+        x: (layout.x[i] - cell / 2).toFixed(2),
+        y: top + 1,
+        width: cell,
+        height: H - 2,
+        fill: c,
+      });
+      g.appendChild(r);
     }
-    if (!d) return;
-    const path = el('path', { d, fill: 'none', 'stroke-width': 1.5, 'stroke-linejoin': 'round' });
-    if (colour) path.setAttribute('stroke', colour);
-    this.add(path, colour ? undefined : { stroke: 'accent' }, g);
   }
 
   /** Loops, then helices and strands, row by row; connectors join the rows near the topology. */
