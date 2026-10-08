@@ -169,6 +169,7 @@ describe('TopologyLoader', () => {
     });
     const el = attach(new TopologyLoader());
     el.setAttribute('distortions', DIST_URL);
+    el.setAttribute('membrane-detail', 'annular');
     el.setAttribute('pdb-id', '1abc');
 
     await flushPromises();
@@ -178,6 +179,11 @@ describe('TopologyLoader', () => {
     expect(display).toBeInstanceOf(TopologyDisplay);
     expect(display.distortions?.midplane).toBeCloseTo(40, 6);
     expect(display.membrane?.bulk.upper).toBeCloseTo(19, 6);
+
+    // membrane-detail is passed through, before and after the display exists.
+    expect(display.membraneDetail).toBe('annular');
+    el.setAttribute('membrane-detail', 'bulk');
+    expect(display.membraneDetail).toBe('bulk');
   });
 
   it('still draws the structure when the distortions file cannot be fetched', async () => {

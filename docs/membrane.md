@@ -12,6 +12,19 @@ outside in, shows:
    under each residue, when a MemProtMD distortions file gives them. Without
    one the band stays at the annular positions along the protein.
 
+`membrane-detail` (or the `membraneDetail` property) chooses how far down that
+list the diagram goes:
+
+| `membrane-detail` | Drawn                                                          |
+| ----------------- | -------------------------------------------------------------- |
+| `bulk`            | One flat band at the bulk leaflets (annular settings ignored). |
+| `annular`         | Bulk at the ends, the annular leaflets along the protein.      |
+| `local` (default) | All three, when a distortions file gives local heights.        |
+
+The 3-D view follows the same choice, and `element.membrane` reports the
+membrane as drawn. A structure lined up with a distortions file stays lined
+up whatever the detail. `<topology-loader>` passes the attribute on.
+
 The 10 px widths are in diagram units (SVG px at the drawing's own scale), so
 they keep their on-screen size if the Å-to-px scale changes. Every switch is a
 smoothstep, and the local heights are averaged along x with a Gaussian
@@ -48,6 +61,7 @@ All positions are in Å from the bulk midplane, positive up.
 | `membrane-lower`         | −20                     | Bulk lower-leaflet headgroup surface (Å) |
 | `membrane-annular-upper` | the bulk upper          | Upper leaflet next to the protein (Å)    |
 | `membrane-annular-lower` | the bulk lower          | Lower leaflet next to the protein (Å)    |
+| `membrane-detail`        | `local`                 | `bulk`, `annular` or `local` (see above) |
 
 The default ±20 Å is the phosphate-to-phosphate thickness of a DPPC bilayer:
 the five MemProtMD files described below have bulk thicknesses of 39.2–40.5 Å.

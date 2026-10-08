@@ -5,6 +5,7 @@ import {
   MEMBRANE_EDGE_PX,
   MEMBRANE_OVERHANG_PX,
   alignToDistortions,
+  membraneAtDetail,
   membraneProfile,
   parseDistortions,
   resolveMembrane,
@@ -202,6 +203,26 @@ describe('resolveMembrane — the three ways of placing the membrane', () => {
     );
     expect(over.bulk.upper).toBe(21);
     expect(over.annular.lower).toBe(-12);
+  });
+
+  it('membraneAtDetail: local as is, annular without surfaces, bulk flat', () => {
+    const d = parseDistortions(
+      syntheticDistortions({
+        ...PATCH,
+        half: 19,
+        bump: (x, y) => (Math.hypot(x - 60, y - 60) < 25 ? -4 : 0),
+      }),
+    );
+    const m = resolveMembrane({}, d, boxFrameBundle());
+    expect(membraneAtDetail(m, 'local')).toBe(m);
+    const annular = membraneAtDetail(m, 'annular');
+    expect(annular).toEqual({ ...m, surfaces: null });
+    const bulk = membraneAtDetail(m, 'bulk');
+    expect(bulk).toEqual({ bulk: m.bulk, annular: m.bulk, surfaces: null, shift: m.shift });
+    expect(bulk.annular).not.toBe(m.bulk);
+    // The input is left alone.
+    expect(m.surfaces).not.toBeNull();
+    expect(m.annular.upper).toBeLessThan(18);
   });
 
   it('uses only the file’s bulk positions when the structure is in another frame', () => {

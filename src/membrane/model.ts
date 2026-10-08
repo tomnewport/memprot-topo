@@ -28,6 +28,19 @@ export interface Point3 {
   z: number;
 }
 
+/**
+ * How much of the membrane the diagram follows (`membrane-detail`):
+ * - `bulk`: a flat band at the bulk leaflets;
+ * - `annular`: bulk at the ends, the annular leaflets along the protein;
+ * - `local`: as `annular`, then the local surfaces under the residues when a
+ *   distortions file gives them. The default.
+ */
+export type MembraneDetail = 'bulk' | 'annular' | 'local';
+
+export const MEMBRANE_DETAILS: readonly MembraneDetail[] = ['bulk', 'annular', 'local'];
+
+export const DEFAULT_MEMBRANE_DETAIL: MembraneDetail = 'local';
+
 /** Leaflet positions given explicitly; anything missing falls back. */
 export interface MembraneSettings {
   bulk?: Partial<LeafletPair>;
@@ -143,4 +156,18 @@ export function resolveMembrane(
     lower: settings.annular?.lower ?? fromSurface.lower ?? bulk.lower,
   };
   return { bulk, annular, surfaces, shift: shift ?? 0 };
+}
+
+/**
+ * `membrane` as drawn at `detail`: `annular` drops the local surfaces;
+ * `bulk` drops them too and puts the annular leaflets at the bulk ones. The
+ * shift is kept, so the structure stays where the distortions file put it.
+ */
+export function membraneAtDetail(membrane: Membrane, detail: MembraneDetail): Membrane {
+  if (detail === 'local') return membrane;
+  return {
+    ...membrane,
+    annular: detail === 'bulk' ? { ...membrane.bulk } : membrane.annular,
+    surfaces: null,
+  };
 }

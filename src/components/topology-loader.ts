@@ -13,7 +13,7 @@ const STYLES = `
 `;
 
 /** Attributes passed through to the inner `<topology-display>`. */
-const FORWARDED = ['theme', 'theme-light', 'theme-dark'];
+const FORWARDED = ['theme', 'theme-light', 'theme-dark', 'membrane-detail'];
 
 export class TopologyLoader extends HTMLElement {
   static observedAttributes = ['pdb-id', 'sim-id', 'distortions', ...FORWARDED];

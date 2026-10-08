@@ -8,7 +8,7 @@
  * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
  */
 import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
-import { DEFAULT_BULK } from './membrane/model.js';
+import { DEFAULT_BULK, DEFAULT_MEMBRANE_DETAIL, MEMBRANE_DETAILS } from './membrane/model.js';
 import { registerTheme } from './theme/index.js';
 import {
   DEFAULT_MIN_HELIX_LENGTH,
@@ -225,6 +225,15 @@ export const DEMO_CONTROLS: DemoControl[] = [
     step: 0.5,
     scope: 'all',
     description: 'Lower leaflet next to the protein (Å); follows the bulk unless set.',
+  },
+  {
+    attribute: 'membrane-detail',
+    kind: 'select',
+    default: DEFAULT_MEMBRANE_DETAIL,
+    options: [...MEMBRANE_DETAILS],
+    scope: 'all',
+    description:
+      'Membrane drawn: flat at the bulk leaflets, annular next to the protein, or the local surface from a distortions file.',
   },
   {
     attribute: 'theme',

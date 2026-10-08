@@ -139,6 +139,59 @@ describe('TopologyDisplay membrane', () => {
     expect(slab.surface!.upper(95, 60, 6)).toBeCloseTo(19, 1);
   });
 
+  it('membrane-detail: bulk, annular or local, keeping the shift', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const el = mount();
+    el.distortions = syntheticDistortions({
+      midplane: 50,
+      half: 19,
+      centre: { x: 60, y: 60 },
+      radius: 40,
+      bump: THINNING,
+    });
+    el.proteinData = hairpinProtein(50);
+    expect(el.membraneDetail).toBe('local');
+    const local = el.membrane!;
+    expect(local.surfaces).not.toBeNull();
+    expect(local.annular.upper).toBeLessThan(18);
+    const slab = () =>
+      (el as unknown as { _morphSource: { scene: { slab: MorphScene['slab'] } } })._morphSource
+        .scene.slab;
+
+    // annular: the file's annular leaflets along the protein, no local surface.
+    el.membraneDetail = 'annular';
+    expect(el.getAttribute('membrane-detail')).toBe('annular');
+    expect(el.membrane).toMatchObject({
+      shift: local.shift,
+      annular: local.annular,
+      surfaces: null,
+    });
+    const upper = upperEdge(el);
+    expect(upper[0].z).toBeCloseTo(19, 2);
+    const under = upper.filter((p) => p.x >= 0 && p.x <= upper[upper.length - 1].x - 12);
+    for (const p of under) expect(p.z).toBeCloseTo(local.annular.upper, 2);
+    expect(slab().annular).toEqual(local.annular);
+    expect(slab().surface).toBeUndefined();
+
+    // bulk: one flat band, even with explicit annular leaflets.
+    el.setAttribute('membrane-annular-upper', '10');
+    el.setAttribute('membrane-detail', 'bulk');
+    expect(el.membrane).toMatchObject({ shift: local.shift, annular: local.bulk, surfaces: null });
+    expect(new Set(band(el).map((p) => p.z.toFixed(2)))).toEqual(new Set(['19.00', '-19.00']));
+    expect(slab().annular).toEqual(local.bulk);
+    // Still seen as transmembrane, so the structure stayed on the midplane.
+    expect(el.shadowRoot!.querySelector('.chain-note')).toBeNull();
+
+    // Unknown values and removal give the default.
+    el.setAttribute('membrane-detail', 'wobbly');
+    expect(el.membraneDetail).toBe('local');
+    el.membraneDetail = null;
+    expect(el.hasAttribute('membrane-detail')).toBe(false);
+    expect(el.membrane!.surfaces).not.toBeNull();
+    // The structure lines up with the file throughout: no frame warning.
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('uses only the bulk of a distortions file in another frame, with a warning', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const el = mount();

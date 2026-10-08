@@ -56,11 +56,15 @@ import type { MorphOptions } from '../morph/renderer.js';
 import { PROJECTIONS } from '../morph/projections.js';
 import {
   DEFAULT_BULK,
+  DEFAULT_MEMBRANE_DETAIL,
+  MEMBRANE_DETAILS,
+  membraneAtDetail,
   membraneProfile,
   parseDistortions,
   resolveMembrane,
   type LeafletPair,
   type Membrane,
+  type MembraneDetail,
   type MembraneDistortions,
   type MembraneProfile,
   type MembraneSettings,
@@ -2235,6 +2239,7 @@ export class TopologyDisplay extends HTMLElement {
     'membrane-lower',
     'membrane-annular-upper',
     'membrane-annular-lower',
+    'membrane-detail',
     'selection',
     'residue-colours',
     'residue-widths',
@@ -2254,11 +2259,13 @@ export class TopologyDisplay extends HTMLElement {
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
   private _distortions: MembraneDistortions | null = null;
-  /** Membrane resolved for the current data, distortions and settings. */
+  /** Membrane resolved for the current data, distortions and settings, and as drawn. */
   private _membraneCache: {
     data: ProteinData;
     distortions: MembraneDistortions | null;
     key: string;
+    resolved: Membrane;
+    detail: MembraneDetail;
     membrane: Membrane;
   } | null = null;
   private _residueColours: ResidueColourValues | null = null;
@@ -2471,14 +2478,34 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * The membrane the protein is drawn against: bulk and annular leaflet
-   * positions (Å), any local surfaces, and the z shift applied to the
-   * structure. Null until protein data is set.
+   * How much of the membrane the diagram follows (`membrane-detail`): `bulk`,
+   * a flat band at the bulk leaflets; `annular`, bulk at the ends and the
+   * annular leaflets along the protein; `local` (the default), the local
+   * surfaces under the residues as well, when a distortions file gives them.
+   * Unset or unknown values give `local`. The 3-D view follows the same
+   * detail; the chain-picker icons always use the bulk.
+   */
+  get membraneDetail(): MembraneDetail {
+    const value = this.getAttribute('membrane-detail');
+    return MEMBRANE_DETAILS.find((d) => d === value) ?? DEFAULT_MEMBRANE_DETAIL;
+  }
+
+  /** Set the detail; writes the `membrane-detail` attribute (null removes it). */
+  set membraneDetail(value: MembraneDetail | null) {
+    if (value === null) this.removeAttribute('membrane-detail');
+    else this.setAttribute('membrane-detail', value);
+  }
+
+  /**
+   * The membrane the protein is drawn against, at {@link membraneDetail}:
+   * bulk and annular leaflet positions (Å), any local surfaces, and the z
+   * shift applied to the structure. Null until protein data is set.
    */
   get membrane(): Membrane | null {
     const data = this._data;
     if (!data) return null;
     const settings = this.membraneSettings;
+    const detail = this.membraneDetail;
     const key = JSON.stringify(settings);
     const cached = this._membraneCache;
     if (
@@ -2487,17 +2514,23 @@ export class TopologyDisplay extends HTMLElement {
       cached.distortions === this._distortions &&
       cached.key === key
     ) {
+      // Only the detail changed: no need to resolve (or warn) again.
+      if (cached.detail !== detail) {
+        cached.detail = detail;
+        cached.membrane = membraneAtDetail(cached.resolved, detail);
+      }
       return cached.membrane;
     }
     const calphas = (data.chains ?? []).flatMap((c) => (Array.isArray(c.calphas) ? c.calphas : []));
-    const membrane = resolveMembrane(settings, this._distortions, calphas);
-    if (this._distortions && !membrane.surfaces) {
+    const resolved = resolveMembrane(settings, this._distortions, calphas);
+    if (this._distortions && !resolved.surfaces) {
       console.warn(
         'topology-display: the structure is not in the distortions file’s frame; ' +
           'using its bulk leaflet positions only',
       );
     }
-    this._membraneCache = { data, distortions: this._distortions, key, membrane };
+    const membrane = membraneAtDetail(resolved, detail);
+    this._membraneCache = { data, distortions: this._distortions, key, resolved, detail, membrane };
     return membrane;
   }
 
