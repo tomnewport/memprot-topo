@@ -67,8 +67,9 @@ The default ±20 Å is the phosphate-to-phosphate thickness of a DPPC bilayer:
 the five MemProtMD files described below have bulk thicknesses of 39.2–40.5 Å.
 It is the headgroup surface, not the hydrophobic boundary (OPM's ±12–15 Å).
 
-The resolved membrane is readable as `element.membrane`
-(`{ bulk, annular, surfaces, shift }`).
+The membrane as drawn, at `membrane-detail`, is readable as `element.membrane`
+(`{ bulk, annular, surfaces, shift }`); at the default `local` detail that is
+the membrane resolved as above.
 
 ## Distortions files
 
@@ -168,20 +169,31 @@ reference planes (±19.6 Å) are used.
 The demo's "MemProtMD bilayer distortions" checkbox loads thinned copies of
 the five sample files (`demo/distortions/`, made with
 `scripts/thin-distortions.mjs`: every second rim point and one interior point
-per 2 Å square, about a quarter of the points). The demo's structures are OPM's,
-which fit neither frame above: for 7AHL, OPM's membrane centre sits 11.3 Å
-above MemProtMD's bulk midplane on the protein and its normal is 6.6° off. A
-radial or z-only correction does not fix that, so each structure is moved
+per 2 Å square, about a quarter of the points). The demo's structures are
+OPM's, which fit neither frame above. OPM's membrane differs from
+MemProtMD's by a shift along the normal and a tilt, which vary by protein:
+
+| PDB  | OPM centre above MemProtMD's midplane | Tilt between normals | Cα RMSD of the superposition |
+| ---- | ------------------------------------- | -------------------- | ---------------------------- |
+| 7AHL | 11.3 Å                                | 6.6°                 | 0.35 Å (2051 Cα)             |
+| 2J1N | 5.3 Å                                 | 1.0°                 | 0.12 Å (1038 Cα)             |
+| 2OMF | −11.4 Å                               | 1.1°                 | 0.20 Å (1020 Cα)             |
+| 3K19 | 3.1 Å                                 | 1.2°                 | 0.17 Å (1020 Cα)             |
+| 5G53 | 0.5 Å                                 | 9.6°                 | 0.36 Å (479 Cα)              |
+
+A radial or z-only correction does not fix that, so each structure is moved
 into the simulation's frame by the rigid transform that superposes it on
 MemProtMD's own model (`src/demo-distortions.ts`), and then drawn as a
 box-frame structure. The structure is moved before the file is set, and moved
-back when the box is unchecked.
+back when the box is unchecked. Once moved, every structure passes the frame
+check above (shift = −midplane), and in the 2J1N, 2OMF and 3K19 files the
+centre of the hole in each leaflet's surface (the trimer's footprint) is within
+1.5 Å in xy of the moved protein's Cα centroid.
 
 `scripts/register-memprotmd.ts` finds that transform from the structure and
-any MemProtMD PDB of the same simulation (e.g. its head-contacts file).
-MemProtMD renumbers residues and may put every chain in one, in another order,
-so chains are matched by residue-name sequence and, for identical chains, the
-assignment that superposes best is kept. OPM 7AHL onto MemProtMD's model: Cα
-RMSD 0.35 Å over 2051 Cα. Only 7AHL has a transform so far; the other four
-proteins are left unchanged until their MemProtMD structures are available,
-and the demo says so.
+any MemProtMD PDB of the same simulation: its head-contacts file or the
+final-frame `at.pdb` (the two give the same transform). MemProtMD renumbers
+residues and may put every chain in one, in another order, so chains are
+matched by residue-name sequence and, for identical chains, the assignment
+that superposes best is kept. A demo protein without a transform would be left
+unchanged, and the demo says so.

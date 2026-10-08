@@ -182,8 +182,13 @@ describe('TopologyLoader', () => {
 
     // membrane-detail is passed through, before and after the display exists.
     expect(display.membraneDetail).toBe('annular');
+    const calls = fetchMock.mock.calls.length;
     el.setAttribute('membrane-detail', 'bulk');
     expect(display.membraneDetail).toBe('bulk');
+    // … without loading the structure again.
+    await flushPromises();
+    expect(fetchMock.mock.calls.length).toBe(calls);
+    expect(el.shadowRoot!.querySelector('topology-display')).toBe(display);
   });
 
   it('still draws the structure when the distortions file cannot be fetched', async () => {

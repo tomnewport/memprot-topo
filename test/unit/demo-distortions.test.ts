@@ -40,9 +40,25 @@ afterEach(() => {
 });
 
 describe('demo distortions', () => {
-  it('has a thinned file for every demo protein', () => {
+  it('has a thinned file and a registration for every demo protein', () => {
     expect(Object.keys(DEMO_DISTORTIONS).sort()).toEqual(['2j1n', '2omf', '3k19', '5g53', '7ahl']);
-    for (const { url } of Object.values(DEMO_DISTORTIONS)) expect(url()).toMatch(/\.pdb$/);
+    for (const { url, registration } of Object.values(DEMO_DISTORTIONS)) {
+      expect(url()).toMatch(/\.pdb$/);
+      // A proper rotation: orthonormal rows (to the 6 decimals stored), determinant +1.
+      const R = registration!.rotation;
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          const dot = R[i][0] * R[j][0] + R[i][1] * R[j][1] + R[i][2] * R[j][2];
+          expect(dot).toBeCloseTo(i === j ? 1 : 0, 5);
+        }
+      }
+      const det =
+        R[0][0] * (R[1][1] * R[2][2] - R[1][2] * R[2][1]) -
+        R[0][1] * (R[1][0] * R[2][2] - R[1][2] * R[2][0]) +
+        R[0][2] * (R[1][0] * R[2][1] - R[1][1] * R[2][0]);
+      expect(det).toBeCloseTo(1, 5);
+      expect(registration!.rmsd).toBeLessThan(0.5);
+    }
   });
 
   it('moves every Cα by the registration and leaves the input alone', () => {
@@ -120,7 +136,8 @@ describe('demo distortions', () => {
   it('loads the file and moves registered structures into MemProtMD’s frame, and back', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const load = vi.fn(async () => AHL_DEMO_DISTORTIONS);
-    const { status, targets, reset, toggle } = setup(['7ahl', '2j1n'], load);
+    // A protein with no registration ('abcd') is left alone.
+    const { status, targets, reset, toggle } = setup(['7ahl', 'abcd'], load);
     const [ahl, other] = targets;
 
     await toggle(true);
@@ -130,10 +147,11 @@ describe('demo distortions', () => {
     expect(ahl.el.membrane!.shift).toBeCloseTo(-38.08, 1);
     expect(ahl.el.membrane!.surfaces).not.toBeNull();
     // Unregistered proteins are left as they were.
+    expect(load).not.toHaveBeenCalledWith(expect.stringContaining('abcd'));
     expect(other.el.distortions).toBeNull();
     expect(other.el.proteinData).toBe(other.data);
     expect(status.textContent).toBe(
-      'Shown for 7AHL, in MemProtMD’s frame. 2J1N need MemProtMD’s coordinates to line up, so are unchanged.',
+      'Shown for 7AHL, in MemProtMD’s frame. ABCD need MemProtMD’s coordinates to line up, so are unchanged.',
     );
     // Never drawn against a file it doesn't line up with.
     expect(warn).not.toHaveBeenCalled();

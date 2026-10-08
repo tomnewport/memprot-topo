@@ -2455,8 +2455,9 @@ export class TopologyDisplay extends HTMLElement {
    * or the result of {@link parseDistortions}. It sets the bulk leaflet
    * positions and, when the structure is in the same frame as the file (as
    * MemProtMD's own structure files are), moves the structure onto the bulk
-   * midplane and draws the local leaflet surfaces under its residues. Text
-   * that can't be parsed is ignored with a warning. See docs/membrane.md.
+   * midplane and, at the default {@link membraneDetail}, draws the local
+   * leaflet surfaces under its residues. Text that can't be parsed is ignored
+   * with a warning. See docs/membrane.md.
    */
   get distortions(): MembraneDistortions | null {
     return this._distortions;

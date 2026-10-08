@@ -210,6 +210,12 @@ describe('TopologyDisplay membrane', () => {
     expect(el.membrane!.bulk.upper).toBeCloseTo(19, 6);
     expect(new Set(band(el).map((p) => p.z))).toEqual(new Set([19, -19]));
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/not in the distortions file/));
+    // Changing only the detail doesn't resolve the membrane again, or warn again.
+    const warnings = warn.mock.calls.length;
+    el.membraneDetail = 'annular';
+    el.membraneDetail = 'bulk';
+    el.membraneDetail = null;
+    expect(warn).toHaveBeenCalledTimes(warnings);
   });
 
   it('ignores distortions text it cannot parse', () => {

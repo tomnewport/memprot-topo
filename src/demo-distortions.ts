@@ -2,12 +2,13 @@
  * Demo: MemProtMD bilayer-distortions files for the demo proteins (#24).
  *
  * The demo's structures are OPM's, but a distortions file is in the frame of
- * MemProtMD's simulation, which places the membrane differently (for 7AHL its
- * midplane is 11 Å lower on the protein and its normal 6.6° off OPM's). So a
- * structure is first moved into the simulation's frame, with the rigid
- * transform that superposes it on MemProtMD's own model
- * (`scripts/register-memprotmd.ts`). Proteins without one are left as they
- * are. The files are thinned copies (`scripts/thin-distortions.mjs`).
+ * MemProtMD's simulation, which places the membrane differently (for the five
+ * demo proteins its midplane sits 0.5–11.4 Å from OPM's along the normal, and
+ * its normal is 1–9.6° off OPM's). So a structure is first moved into the
+ * simulation's frame, with the rigid transform that superposes it on
+ * MemProtMD's own model (`scripts/register-memprotmd.ts`). Proteins without
+ * one are left as they are. The files are thinned copies
+ * (`scripts/thin-distortions.mjs`).
  */
 import type { TopologyDisplay } from './components/topology-display.js';
 import type { ProteinData } from './types.js';
@@ -34,10 +35,58 @@ export interface DemoDistortions {
 }
 
 export const DEMO_DISTORTIONS: Record<string, DemoDistortions> = {
-  '2j1n': { url: () => new URL('../demo/distortions/2j1n.pdb', import.meta.url).href },
-  '2omf': { url: () => new URL('../demo/distortions/2omf.pdb', import.meta.url).href },
-  '3k19': { url: () => new URL('../demo/distortions/3k19.pdb', import.meta.url).href },
-  '5g53': { url: () => new URL('../demo/distortions/5g53.pdb', import.meta.url).href },
+  '2j1n': {
+    url: () => new URL('../demo/distortions/2j1n.pdb', import.meta.url).href,
+    registration: {
+      rotation: [
+        [0.480728, 0.87672, 0.016205],
+        [-0.876797, 0.480844, -0.004012],
+        [-0.011309, -0.01228, 0.999861],
+      ],
+      translation: [75.342673, 79.441951, 60.334653],
+      rmsd: 0.121,
+      source: '2j1n_default_dppc head contacts (1038 Cα)',
+    },
+  },
+  '2omf': {
+    url: () => new URL('../demo/distortions/2omf.pdb', import.meta.url).href,
+    registration: {
+      rotation: [
+        [0.150844, -0.988477, 0.01264],
+        [0.988494, 0.150677, -0.013239],
+        [0.011181, 0.014492, 0.999832],
+      ],
+      translation: [65.922312, 56.887071, 49.196959],
+      rmsd: 0.204,
+      source: '2omf_default_dppc head contacts (1020 Cα)',
+    },
+  },
+  '3k19': {
+    url: () => new URL('../demo/distortions/3k19.pdb', import.meta.url).href,
+    registration: {
+      rotation: [
+        [-0.863634, -0.503864, -0.016041],
+        [0.504061, -0.863582, -0.01223],
+        [-0.00769, -0.018648, 0.999797],
+      ],
+      translation: [74.764384, 77.767787, 56.502292],
+      rmsd: 0.174,
+      source: '3k19_default_dppc head contacts (1020 Cα)',
+    },
+  },
+  '5g53': {
+    url: () => new URL('../demo/distortions/5g53.pdb', import.meta.url).href,
+    registration: {
+      rotation: [
+        [-0.862579, 0.478268, 0.164978],
+        [-0.488386, -0.872275, -0.024791],
+        [0.13205, -0.101958, 0.985986],
+      ],
+      translation: [61.210348, 55.185245, 90.056628],
+      rmsd: 0.364,
+      source: '5g53_default_dppc head contacts (479 Cα)',
+    },
+  },
   '7ahl': {
     url: () => new URL('../demo/distortions/7ahl.pdb', import.meta.url).href,
     registration: {
