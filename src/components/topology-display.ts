@@ -205,9 +205,18 @@ const STYLES = `
     stroke: var(--mp-hover);
     stroke-width: var(--mp-hover-width);
   }
-  .ss-element.selected, .loop.selected { stroke: var(--mp-selection); }
+  /* Selection: a wider outline in the element's own edge colour, and a glow
+     in its own colour, brightened. */
+  .ss-element[data-type='helix'] { --glow-base: var(--mp-helix); }
+  .ss-element[data-type='strand'] { --glow-base: var(--mp-strand); }
+  .loop { --glow-base: var(--mp-loop); }
+  .ss-element.selected, .loop.selected {
+    --glow: color-mix(in srgb, var(--glow-base), white var(--mp-selection-glow-brighten));
+    filter: drop-shadow(0 0 var(--mp-selection-glow-blur) var(--glow));
+  }
   .ss-element.selected { stroke-width: var(--mp-selection-width); }
   .ss-element.selected:hover, .ss-element.selected:focus-visible {
+    filter: brightness(1.15) drop-shadow(0 0 var(--mp-selection-glow-blur) var(--glow));
     stroke-width: calc(var(--mp-selection-width) + 1px);
   }
   .loop.selected { stroke-width: calc(var(--mp-selection-width) + 0.5px); }
