@@ -496,10 +496,12 @@ describe('<topology-display> 3-D morph', () => {
     return el;
   }
 
-  it('offers a 3D toggle and scrubber next to the 2-D view', () => {
+  it('offers a Sequence / Topology / Structure switch and scrubber next to the 2-D view', () => {
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
-    expect(root.querySelector('.morph-toggle')?.textContent).toBe('3D');
+    const labels = [...root.querySelectorAll('.view-button')].map((b) => b.textContent);
+    expect(labels).toEqual(['Sequence', 'Topology', 'Structure']);
+    expect(root.querySelector('.morph-toggle')?.textContent).toBe('Structure');
     expect(root.querySelector('.morph-scrub')).not.toBeNull();
     expect(el.morphProgress).toBe(0);
   });
@@ -593,7 +595,7 @@ describe('<topology-display> 3-D morph', () => {
     expect(el.morphProgress).toBeCloseTo(0.6);
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg?.classList.contains('morph-svg')).toBe(true);
-    expect(el.shadowRoot!.querySelector('.morph-scrub')).toHaveProperty('value', '600');
+    expect(el.shadowRoot!.querySelector('.morph-scrub')).toHaveProperty('value', '1600');
   });
 
   it('keeps the 3-D view when the selection moves to another chain', async () => {

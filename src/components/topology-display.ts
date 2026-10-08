@@ -54,6 +54,11 @@ import type {
 import type { MorphController, MorphView } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
 import { PROJECTIONS } from '../morph/projections.js';
+import type { SeqElement, SeqResidue, SequenceSource, TracePoint } from '../sequence/types.js';
+import { oneLetter } from '../sequence/amino-acids.js';
+import { SequenceController } from '../sequence/controller.js';
+import { DEFAULT_SEQUENCE_OPTIONS, type SequenceOptions } from '../sequence/renderer.js';
+import type { SeqLane } from '../sequence/types.js';
 import {
   getTheme,
   onThemeRegistered,
@@ -181,7 +186,7 @@ const STYLES = `
     font-size: 0.75rem;
     color: var(--mp-text-muted);
   }
-  .morph-toggle {
+  .view-button {
     font: inherit;
     font-weight: 600;
     padding: 0.15rem 0.6rem;
@@ -191,8 +196,16 @@ const STYLES = `
     color: var(--mp-accent);
     cursor: pointer;
   }
-  .morph-toggle[aria-pressed='true'] { background: var(--mp-accent); color: var(--mp-accent-text); }
-  .morph-toggle:focus-visible, .morph-scrub:focus-visible {
+  .view-switch { display: inline-flex; }
+  .view-switch .view-button { border-radius: 0; margin-left: -1px; }
+  .view-switch .view-button:first-child {
+    border-radius: var(--mp-corner-radius) 0 0 var(--mp-corner-radius);
+    margin-left: 0;
+  }
+  .view-switch .view-button:last-child { border-radius: 0 var(--mp-corner-radius) var(--mp-corner-radius) 0; }
+  .view-button[aria-pressed='true'] { background: var(--mp-accent); color: var(--mp-accent-text); }
+  .view-button:disabled { opacity: 0.45; cursor: default; }
+  .view-button:focus-visible, .morph-scrub:focus-visible {
     outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
@@ -848,6 +861,32 @@ const LOOP_STROKE_PX = 1.8;
 const LOOP_MIN_WIDTH_PX = 0.5;
 
 /**
+ * A loop curve (centripetal Catmull-Rom through its control points) as a dense
+ * polyline in (arc, z) Å, 16 points per Bézier piece.
+ */
+function flattenLoop(points: { arc: number; z: number }[]): { x: number; y: number }[] {
+  const bez = catmullRomBezier(points.map((p) => ({ x: p.arc, y: p.z, z: 0 })));
+  const flat: { x: number; y: number }[] = [{ x: bez.start.x, y: bez.start.y }];
+  let p0 = bez.start;
+  for (const seg of bez.segments) {
+    for (let i = 1; i <= 16; i++) {
+      const t = i / 16;
+      const u = 1 - t;
+      const b0 = u * u * u;
+      const b1 = 3 * u * u * t;
+      const b2 = 3 * u * t * t;
+      const b3 = t * t * t;
+      flat.push({
+        x: b0 * p0.x + b1 * seg.c1.x + b2 * seg.c2.x + b3 * seg.end.x,
+        y: b0 * p0.y + b1 * seg.c1.y + b2 * seg.c2.y + b3 * seg.end.y,
+      });
+    }
+    p0 = seg.end;
+  }
+  return flat;
+}
+
+/**
  * Draw a loop's residues as consecutive pieces over the loop curve, each
  * coloured and sized by its residue's data. Residues share the curve's length
  * equally, in sequence order, since the loop is a smoothed connector rather
@@ -870,26 +909,7 @@ function drawLoopData(
   );
   if (!hasData) return false;
 
-  // Flatten the curve's Bézier pieces into a dense polyline to measure along.
-  const bez = catmullRomBezier(points.map((p) => ({ x: p.arc, y: p.z, z: 0 })));
-  const flat: { x: number; y: number }[] = [{ x: bez.start.x, y: bez.start.y }];
-  let p0 = bez.start;
-  for (const seg of bez.segments) {
-    for (let i = 1; i <= 16; i++) {
-      const t = i / 16;
-      const u = 1 - t;
-      const b0 = u * u * u;
-      const b1 = 3 * u * u * t;
-      const b2 = 3 * u * t * t;
-      const b3 = t * t * t;
-      flat.push({
-        x: b0 * p0.x + b1 * seg.c1.x + b2 * seg.c2.x + b3 * seg.end.x,
-        y: b0 * p0.y + b1 * seg.c1.y + b2 * seg.c2.y + b3 * seg.end.y,
-      });
-    }
-    p0 = seg.end;
-  }
-  const poly = measure(flat);
+  const poly = measure(flattenLoop(points));
   const total = poly[poly.length - 1].d;
   if (total <= 0) return false;
 
@@ -1036,6 +1056,7 @@ function drawLoop(
     to: nextRun ? { seg: rec.seg, sample: nextRun.startSample } : null,
     seg: rec.seg,
     order: rec.recorder.order++,
+    residues: loopResidues.map((r) => r.resSeq),
   });
 }
 
@@ -1434,6 +1455,165 @@ interface AssemblyContext {
   focalChainId: string;
 }
 
+/** The 2-D view's per-sample sequence position: residue `i` of `residues` sits at `f = i`. */
+function sampleToF(anchors: { sample: number; f: number }[]): (sample: number) => number {
+  return (sample) => {
+    const n = anchors.length;
+    if (n === 0) return 0;
+    if (sample <= anchors[0].sample) return anchors[0].f;
+    if (sample >= anchors[n - 1].sample) return anchors[n - 1].f;
+    let lo = 0;
+    let hi = n - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (anchors[mid].sample <= sample) lo = mid;
+      else hi = mid;
+    }
+    const a = anchors[lo];
+    const b = anchors[hi];
+    return b.sample > a.sample
+      ? a.f + ((sample - a.sample) / (b.sample - a.sample)) * (b.f - a.f)
+      : a.f;
+  };
+}
+
+/**
+ * Where the 2-D picture drew each residue of `chain`, for the sequence view
+ * and its transition: the drawn chain as one dense polyline tagged with
+ * sequence position, the elements and dashed stretches along it, and each
+ * residue's depth. Neighbouring (faded) protomers are left out.
+ */
+function buildSequenceSource(
+  chain: ChainData,
+  layouts: SegmentLayout[],
+  recorder: SceneRecorder,
+  focalFlags: boolean[] | null,
+  origin: { x: number; y: number },
+  frame2d: SequenceSource['frame2d'],
+  slab: SequenceSource['slab'],
+  display: ChainDisplayData | undefined,
+): SequenceSource {
+  const residues: SeqResidue[] = chain.calphas.map((c) => ({
+    resSeq: c.resSeq,
+    iCode: c.iCode,
+    code: oneLetter(c.resName),
+    ss: ssTypeAt(chain.segments, c.resSeq),
+  }));
+  const px = PLOT.arcPxPerA;
+  const toSvg = (arc: number, z: number): { x: number; y: number } => ({
+    x: origin.x + arc * px,
+    y: origin.y - z * px,
+  });
+  const z = residues.map(() => NaN);
+  const focal = (s: number): boolean => !focalFlags || focalFlags[s];
+
+  // Match each drawn residue to its place in the chain (in order, so repeated
+  // numbers with insertion codes still land on the right residue).
+  const fOf: ((sample: number) => number)[] = [];
+  const indexOfResSeq = new Map<number, number[]>();
+  residues.forEach((r, i) =>
+    indexOfResSeq.set(r.resSeq, [...(indexOfResSeq.get(r.resSeq) ?? []), i]),
+  );
+  let cursor = 0;
+  const globalIndex = (resSeq: number): number | undefined => {
+    const hits = indexOfResSeq.get(resSeq);
+    if (!hits) return undefined;
+    const i = hits.find((h) => h >= cursor) ?? hits[0];
+    cursor = i;
+    return i;
+  };
+  layouts.forEach((layout, s) => {
+    if (!focal(s)) {
+      fOf.push(() => 0);
+      return;
+    }
+    const anchors: { sample: number; f: number }[] = [];
+    for (const r of layout.residues) {
+      const i = globalIndex(r.resSeq);
+      if (i === undefined) continue;
+      anchors.push({ sample: r.sampleIndex, f: i });
+      z[i] = layout.samples[r.sampleIndex]?.z ?? NaN;
+    }
+    fOf.push(sampleToF(anchors));
+  });
+
+  const pieces: TracePoint[][] = [];
+  const elements: SeqElement[] = [];
+  for (const e of recorder.elements) {
+    if (!focal(e.seg) || e.faded) continue;
+    const samples = layouts[e.seg].samples;
+    const pts: TracePoint[] = [];
+    for (let k = e.start; k <= e.end; k++)
+      pts.push({ ...toSvg(samples[k].arc, samples[k].z), f: fOf[e.seg](k) });
+    pieces.push(pts);
+    elements.push({
+      type: e.type,
+      from: pts[0].f,
+      to: pts[pts.length - 1].f,
+      withArrow: e.withArrow,
+    });
+  }
+  const dashed: [number, number][] = [];
+  const firstIndex = new Map<number, number>();
+  residues.forEach((r, i) => {
+    if (!firstIndex.has(r.resSeq)) firstIndex.set(r.resSeq, i);
+  });
+  for (const loop of recorder.loops) {
+    if (loop.faded || !focal(loop.seg)) continue;
+    const idx = (loop.residues ?? [])
+      .map((r) => firstIndex.get(r))
+      .filter((i): i is number => i !== undefined);
+    const f0 = loop.from ? fOf[loop.from.seg](loop.from.sample) : (idx[0] ?? 0) - 0.5;
+    const f1 = loop.to ? fOf[loop.to.seg](loop.to.sample) : (idx[idx.length - 1] ?? f0) + 0.5;
+    // Residues share the curve equally, as in the 2-D drawing.
+    const knots = [{ s: 0, f: f0 }];
+    idx.forEach((i, k) => knots.push({ s: (k + 0.5) / idx.length, f: i }));
+    knots.push({ s: 1, f: Math.max(f1, knots[knots.length - 1].f) });
+    for (let k = 1; k < knots.length; k++) knots[k].f = Math.max(knots[k].f, knots[k - 1].f);
+    const flat = flattenLoop(loop.points);
+    const poly = measure(flat);
+    const total = poly[poly.length - 1].d;
+    let k = 0;
+    const pts = poly.map((p) => {
+      const s = total > 0 ? p.d / total : 0;
+      while (k < knots.length - 2 && knots[k + 1].s < s) k++;
+      const a = knots[k];
+      const b = knots[k + 1];
+      const f = b.s > a.s ? a.f + ((s - a.s) / (b.s - a.s)) * (b.f - a.f) : a.f;
+      return { ...toSvg(p.x, p.y), f };
+    });
+    pieces.push(pts);
+    if (loop.discontinuous) dashed.push([f0, knots[knots.length - 1].f]);
+  }
+  pieces.sort((a, b) => a[0].f - b[0].f || a[a.length - 1].f - b[b.length - 1].f);
+  const trace: TracePoint[] = [];
+  for (const piece of pieces) {
+    for (const p of piece) {
+      const last = trace[trace.length - 1];
+      if (last && p.f < last.f) continue;
+      if (last && p.f - last.f < 1e-6 && Math.hypot(p.x - last.x, p.y - last.y) < 1e-6) continue;
+      trace.push(p);
+    }
+  }
+  const colour = display?.style.colour ?? null;
+  return {
+    residues,
+    trace,
+    dashed,
+    elements,
+    z,
+    membraneHalf: PLOT.membraneHalf,
+    frame2d,
+    origin2d: { x: origin.x, y: origin.y, pxPerA: px },
+    slab,
+    colourAt: colour ? (i) => colour(residues[i].resSeq) : null,
+    lanes: [],
+    halfWidthPx: SS_BODY.halfWidthPx,
+    arrowHalfWidthPx: SS_BODY.arrowHalfWidthPx,
+    arrowLengthPx: SS_BODY.arrowLengthPx,
+  };
+}
+
 function renderChainSvg(
   chain: ChainData,
   opts: LoopRenderOptions,
@@ -1442,7 +1622,12 @@ function renderChainSvg(
   theme: Theme,
   assembly?: AssemblyContext,
   display?: ChainDisplayData,
-): { svg: SVGSVGElement; scene: MorphScene | null } {
+): {
+  svg: SVGSVGElement;
+  scene: MorphScene | null;
+  sequence: SequenceSource;
+  decor2d: Element[];
+} {
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
   // unwraps by angle; everything else uses the arc-length unroll.
@@ -1616,6 +1801,14 @@ function renderChainSvg(
         to: { seg: s, sample: next.index },
         seg: s,
         order: recorder.order++,
+        residues: [
+          ...prevLayout.residues
+            .filter((r) => !lastSs || r.resSeq > lastSs.endResSeq)
+            .map((r) => r.resSeq),
+          ...layout.residues
+            .filter((r) => !firstSs || r.resSeq < firstSs.startResSeq)
+            .map((r) => r.resSeq),
+        ],
       });
     }
   }
@@ -1690,6 +1883,23 @@ function renderChainSvg(
         },
       };
 
+  const sequence = buildSequenceSource(
+    chain,
+    layouts,
+    recorder,
+    focalFlags,
+    { x: cx, y: cy },
+    {
+      minX: expanded ? minX : 0,
+      minY: expanded ? minY : 0,
+      width: expanded ? finalWidth : svgWidth,
+      height: expanded ? finalHeight : svgHeight,
+    },
+    { x0: 0, x1: totalArc },
+    display,
+  );
+  const decor2d: Element[] = [labelsGroup];
+
   // Colour legend under the plot. Added after the 3-D scene's frame is fixed:
   // the 3-D view replaces the whole picture, legend included.
   if (display?.colouring) {
@@ -1703,13 +1913,17 @@ function renderChainSvg(
     );
     group.setAttribute('transform', `translate(${legendX}, ${legendY})`);
     svg.appendChild(group);
+    decor2d.push(group);
     const h = vb[3] + 4 + height + 12;
     svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${h}`);
     svg.setAttribute('height', `${h}`);
   }
 
   repaint(svg, theme);
-  return { svg, scene };
+  // The sequence view grows to the 2-D picture's full height (legend included).
+  const vb = svg.getAttribute('viewBox')!.split(' ').map(Number);
+  sequence.frame2d = { minX: vb[0], minY: vb[1], width: vb[2], height: vb[3] };
+  return { svg, scene, sequence, decor2d };
 }
 
 /** Residue data for the chain being drawn: its styling and the legend to show. */
@@ -2104,6 +2318,8 @@ export class TopologyDisplay extends HTMLElement {
     'loop-extreme-points',
     'loop-extreme-threshold',
     'show-contacts',
+    'view',
+    'sequence-wrap',
     'morph-sweep',
     'morph-projection',
     'morph-strand-width',
@@ -2140,6 +2356,10 @@ export class TopologyDisplay extends HTMLElement {
     bar: HTMLDivElement;
   } | null = null;
   private _morph: MorphController | null = null;
+  /** The displayed chain's sequence ↔ topology transition. */
+  private _seq: SequenceController | null = null;
+  /** Extra data lanes for the sequence view (see {@link sequenceTracks}). */
+  private _sequenceTracks: SequenceTrack[] = [];
   private _morphLoad: Promise<MorphController | null> | null = null;
   /** A view a redraw is restoring while the morph code loads. */
   private _pendingView: MorphView | null = null;
@@ -2257,6 +2477,7 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
     repaint(this._shown.svg, theme);
+    this._seq?.restyle(theme);
     if (this._morphSource) {
       Object.assign(this._morphSource.scene.style, morphColours(theme));
       this._morph?.restyle();
@@ -2331,6 +2552,15 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, old: string | null, value: string | null) {
+    if (name === 'view') {
+      // Travel along the spectrum to the named view, keeping everything else.
+      if (value !== old && this._seq) this.goToView(this.viewIndex);
+      return;
+    }
+    if (name === 'sequence-wrap') {
+      this._seq?.setOptions(this.sequenceOptions);
+      return;
+    }
     if (name === 'theme' || name === 'theme-light' || name === 'theme-dark') {
       // Restyled in place: the view is kept.
       this.applyTheme();
@@ -2644,6 +2874,9 @@ export class TopologyDisplay extends HTMLElement {
             }
           : null));
     this._pendingView = null;
+    const seqView = keepView && this._seq ? this._seq.progress : null;
+    this._seq?.dispose();
+    this._seq = null;
     this._morph?.dispose();
     this._morph = null;
     this._morphSource = null;
@@ -2806,7 +3039,7 @@ export class TopologyDisplay extends HTMLElement {
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
-    const { svg, scene } = renderChainSvg(
+    const { svg, scene, sequence, decor2d } = renderChainSvg(
       selectedChain,
       this.loopOptions,
       analysis,
@@ -2820,7 +3053,18 @@ export class TopologyDisplay extends HTMLElement {
     this._shown = { chain: selectedChain, svg };
     this.bindElements(svg, selectedChain.chainId);
     this.applySelection();
+    sequence.lanes = this.sequenceLanes(selectedChain.chainId, sequence.residues);
+    const seq = new SequenceController(
+      scroll,
+      svg,
+      sequence,
+      this.sequenceOptions,
+      this._theme,
+      decor2d,
+    );
+    this._seq = seq;
     const bar = this.renderMorphBar(scene !== null);
+    this.bindSequenceBar(bar, seq);
     if (scene) {
       this._morphSource = {
         scroll,
@@ -2837,6 +3081,13 @@ export class TopologyDisplay extends HTMLElement {
     this._contentEl.appendChild(region);
 
     if (view) this.restoreView(view);
+    if (seqView !== null) {
+      if (seqView < 1) seq.setProgress(seqView);
+    } else {
+      const target = this.viewIndex;
+      if (target === 0) seq.setProgress(0);
+      else if (target === 2 && scene) void this.setMorphProgress(1);
+    }
   }
 
   /** Put the re-rendered chain back in `view`, loading the morph only if needed. */
@@ -3030,38 +3281,177 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Toggle + scrubber for the 2-D ↔ 3-D morph; disabled when the chain has no
-   * 3-D view. Pointing at or focusing the bar loads the morph code and does
-   * its set-up ahead of the click.
+   * Where the view stands on the Sequence (0) → Topology (1) → Structure (2)
+   * spectrum.
+   */
+  get viewPosition(): number {
+    const u = this._seq?.progress ?? 1;
+    return u < 1 ? u : 1 + this.morphProgress;
+  }
+
+  /** The `view` attribute as a point on the spectrum (topology by default). */
+  private get viewIndex(): 0 | 1 | 2 {
+    const v = this.getAttribute('view');
+    return v === 'sequence' ? 0 : v === 'structure' ? 2 : 1;
+  }
+
+  /** Sequence-view options from the attributes (`sequence-wrap`). */
+  private get sequenceOptions(): SequenceOptions {
+    const raw = this.getAttribute('sequence-wrap');
+    const n = raw === null || raw === 'auto' ? NaN : Number.parseInt(raw, 10);
+    return { ...DEFAULT_SEQUENCE_OPTIONS, wrap: Number.isFinite(n) && n > 0 ? n : null };
+  }
+
+  /**
+   * Extra data series plotted as lanes under each row of the sequence view,
+   * after the lanes for `residueColours` and `residueWidths`. Values are keyed
+   * by chain ID, then residue number, like those.
+   */
+  get sequenceTracks(): SequenceTrack[] {
+    return this._sequenceTracks;
+  }
+
+  set sequenceTracks(tracks: SequenceTrack[] | null) {
+    this._sequenceTracks = Array.isArray(tracks) ? tracks : [];
+    this.render({ keepView: true });
+  }
+
+  /** Data lanes of the sequence view for `chainId`. */
+  private sequenceLanes(chainId: string, residues: SeqResidue[]): SeqLane[] {
+    const lanes: SeqLane[] = [];
+    const display = this.chainDisplayData(chainId);
+    const colour = display?.style.colour;
+    if (colour) {
+      lanes.push({
+        kind: 'colour',
+        label: this.getAttribute('colour-label') || 'Colour',
+        colourAt: (i) => colour(residues[i].resSeq),
+      });
+    }
+    const widths = display?.style.widths;
+    if (widths && widths.size > 0) {
+      const max = Math.max(1, ...widths.values());
+      lanes.push({
+        kind: 'bar',
+        label: 'Width',
+        valueAt: (i) => widths.get(residues[i].resSeq),
+        domain: [0, max],
+      });
+    }
+    for (const track of this._sequenceTracks) {
+      const values = track.values?.[chainId];
+      if (!values) continue;
+      const valueAt = (i: number): number | undefined => {
+        const v = values[residues[i].resSeq];
+        return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+      };
+      const nums = residues.map((_, i) => valueAt(i)).filter((v): v is number => v !== undefined);
+      if (nums.length === 0) continue;
+      const domain: [number, number] = track.domain ?? [Math.min(0, ...nums), Math.max(0, ...nums)];
+      lanes.push({
+        kind: track.type === 'line' ? 'line' : 'bar',
+        label: track.label ?? 'Data',
+        valueAt,
+        domain,
+        colour: track.colour,
+      });
+    }
+    return lanes;
+  }
+
+  /** Show the sequence view (animated). */
+  showSequence(): void {
+    this.goToView(0);
+  }
+
+  /**
+   * Travel along the spectrum to `target` (0 sequence, 1 topology, 2
+   * structure), passing through the topology between the other two.
+   */
+  private goToView(target: 0 | 1 | 2): void {
+    const seq = this._seq;
+    if (!seq) return;
+    if (target === 2 && !this._morphSource) target = 1;
+    const toMorph = (goal: 0 | 1): void => {
+      void this.loadMorph().then((m) => m?.animateTo(goal));
+    };
+    if (target === 0) {
+      if (this.morphProgress > 0) {
+        void this.loadMorph().then((m) => m?.animateTo(0, () => seq.animateTo(0)));
+      } else {
+        seq.animateTo(0);
+      }
+    } else if (target === 1) {
+      if (seq.progress < 1) seq.animateTo(1);
+      else if (this._morph) toMorph(0);
+    } else if (seq.progress < 1) {
+      seq.animateTo(1, () => toMorph(1));
+    } else {
+      toMorph(1);
+    }
+  }
+
+  /** Jump to `p` on the spectrum (scrubbing). */
+  private setViewPosition(p: number): void {
+    const seq = this._seq;
+    if (!seq) return;
+    if (p < 1) {
+      if (this.morphProgress > 0) this._morph?.setProgress(0);
+      seq.setProgress(p);
+    } else {
+      seq.setProgress(1);
+      if (p > 1 || this._morph) void this.setMorphProgress(p - 1);
+    }
+  }
+
+  /**
+   * The view switch: Sequence / Topology / Structure buttons and a scrubber
+   * along the whole spectrum. Structure is disabled when the chain has no 3-D
+   * view. Pointing at or focusing the bar loads the morph code and does its
+   * set-up ahead of the click.
    */
   private renderMorphBar(available: boolean): HTMLDivElement {
     const bar = document.createElement('div');
     bar.className = 'morph-bar';
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'morph-toggle';
-    toggle.textContent = '3D';
-    toggle.setAttribute('aria-pressed', 'false');
-    toggle.setAttribute('aria-label', 'Roll the topology up into a 3-D view');
+    const group = document.createElement('div');
+    group.className = 'view-switch';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'View');
+    const views: [string, string, string][] = [
+      ['sequence', 'Sequence', 'Flatten the chain into its amino-acid sequence (1-D)'],
+      ['topology', 'Topology', 'Show the membrane topology (2-D)'],
+      ['structure', 'Structure', 'Roll the topology up into the 3-D structure'],
+    ];
+    const buttons = views.map(([view, text, label], k) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'view-button';
+      if (view === 'structure') b.classList.add('morph-toggle');
+      b.dataset.view = view;
+      b.textContent = text;
+      b.title = label;
+      b.setAttribute('aria-pressed', view === 'topology' ? 'true' : 'false');
+      b.addEventListener('click', () => this.goToView(k as 0 | 1 | 2));
+      group.appendChild(b);
+      return b;
+    });
     const scrub = document.createElement('input');
     scrub.type = 'range';
     scrub.className = 'morph-scrub';
     scrub.min = '0';
-    scrub.max = '1000';
-    scrub.value = '0';
-    scrub.setAttribute('aria-label', 'Morph between the 2-D topology and the 3-D view');
+    scrub.max = available ? '2000' : '1000';
+    scrub.value = '1000';
+    scrub.setAttribute('aria-label', 'Move between the sequence, topology and 3-D structure');
     const hint = document.createElement('span');
     hint.className = 'morph-hint';
     hint.textContent = 'Drag to rotate';
-    bar.append(toggle, scrub, hint);
+    bar.append(group, scrub, hint);
+    scrub.addEventListener('input', () => this.setViewPosition(Number(scrub.value) / 1000));
     if (!available) {
-      toggle.disabled = true;
-      scrub.disabled = true;
-      bar.title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
+      buttons[2].disabled = true;
+      buttons[2].title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
       return bar;
     }
-    toggle.addEventListener('click', () => void this.toggle3d());
-    scrub.addEventListener('input', () => void this.setMorphProgress(Number(scrub.value) / 1000));
     const warm = (): void => {
       void this.loadMorph().then((m) => m?.precompute());
     };
@@ -3070,18 +3460,44 @@ export class TopologyDisplay extends HTMLElement {
     return bar;
   }
 
+  /** Bring the switch and scrubber in step with the view. */
+  private syncViewBar(bar: HTMLDivElement): void {
+    const p = this.viewPosition;
+    const goal =
+      this._seq && this._seq.target < 1 ? 0 : this._morph && this._morph.target >= 0.5 ? 2 : 1;
+    const scrub = bar.querySelector<HTMLInputElement>('.morph-scrub')!;
+    scrub.value = String(Math.round(p * 1000));
+    for (const b of bar.querySelectorAll<HTMLButtonElement>('.view-button')) {
+      const k = ['sequence', 'topology', 'structure'].indexOf(b.dataset.view ?? '');
+      b.setAttribute('aria-pressed', k === goal ? 'true' : 'false');
+    }
+    bar.classList.toggle('is-3d', p > 1);
+    // The views resize and scroll the picture, so the edges change too.
+    this._scrollBox?.update();
+  }
+
+  private bindSequenceBar(bar: HTMLDivElement, seq: SequenceController): void {
+    seq.onChange = () => this.syncViewBar(bar);
+  }
+
   /** Keep the bar in step with the morph once it is loaded. */
   private bindMorphBar(bar: HTMLDivElement, morph: MorphController): void {
-    const toggle = bar.querySelector<HTMLButtonElement>('.morph-toggle')!;
-    const scrub = bar.querySelector<HTMLInputElement>('.morph-scrub')!;
-    morph.onChange = (tau, goal) => {
-      scrub.value = String(Math.round(tau * 1000));
-      toggle.setAttribute('aria-pressed', goal >= 0.5 ? 'true' : 'false');
-      bar.classList.toggle('is-3d', tau > 0);
-      // The morph resizes and scrolls the picture, so the edges change too.
-      this._scrollBox?.update();
-    };
+    morph.onChange = () => this.syncViewBar(bar);
   }
+}
+
+/** A data series for the sequence view (see {@link TopologyDisplay.sequenceTracks}). */
+export interface SequenceTrack {
+  /** Shown beside the lane. */
+  label?: string;
+  /** Values keyed by chain ID, then residue number. */
+  values: Record<string, Record<string | number, number>>;
+  /** Bars (default) or a line. */
+  type?: 'bar' | 'line';
+  /** CSS colour; the theme's accent by default. */
+  colour?: string;
+  /** Value range; by default the data's, extended to include 0. */
+  domain?: [number, number];
 }
 
 if (!customElements.get('topology-display')) {
