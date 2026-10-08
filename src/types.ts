@@ -9,6 +9,8 @@ export interface SecondaryStructureSegment {
 export interface Calpha {
   resSeq: number;
   iCode: string;
+  /** Residue name as given in the structure file (e.g. `ALA`), when known. */
+  resName?: string;
   x: number;
   y: number;
   z: number;

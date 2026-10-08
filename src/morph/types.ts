@@ -79,6 +79,8 @@ export interface MorphLoop {
   /** Segment a stub belongs to (used when one end is null). */
   seg: number;
   order: number;
+  /** Residue numbers the loop stands for, in order (used by the sequence view). */
+  residues?: number[];
 }
 
 export interface MorphLabel {

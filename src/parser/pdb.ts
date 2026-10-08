@@ -55,7 +55,8 @@ export function parsePdb(content: string): RawChain[] {
 
     if (acc.residues.has(resKey)) continue;
     acc.residues.add(resKey);
-    acc.calphas.push({ resSeq, iCode, x, y, z });
+    const resName = line.slice(17, 20).trim();
+    acc.calphas.push(resName ? { resSeq, iCode, resName, x, y, z } : { resSeq, iCode, x, y, z });
   }
 
   return Array.from(chainMap.entries()).map(([chainId, acc]) => ({

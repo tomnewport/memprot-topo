@@ -75,9 +75,9 @@ ATOM      4  CA  VAL A 101       3.000   0.000   0.000  1.00  0.00           C
     const chains = parsePdb(SAMPLE_PDB);
     const chainA = chains.find((c) => c.chainId === 'A')!;
     expect(chainA.calphas).toHaveLength(4);
-    expect(chainA.calphas[0]).toEqual({ resSeq: 1, iCode: '', x: 1, y: 0, z: 0 });
-    expect(chainA.calphas[2]).toEqual({ resSeq: 3, iCode: '', x: 7.6, y: 0, z: 0 });
-    expect(chainA.calphas[3]).toEqual({ resSeq: 4, iCode: '', x: 10, y: 0, z: 0 });
+    expect(chainA.calphas[0]).toEqual({ resSeq: 1, iCode: '', resName: 'GLY', x: 1, y: 0, z: 0 });
+    expect(chainA.calphas[2]).toEqual({ resSeq: 3, iCode: '', resName: 'LEU', x: 7.6, y: 0, z: 0 });
+    expect(chainA.calphas[3]).toEqual({ resSeq: 4, iCode: '', resName: 'MSE', x: 10, y: 0, z: 0 });
   });
 
   it('records insertion codes on the Cα entry', () => {
@@ -86,6 +86,13 @@ ATOM      1  CA  GLY A 100       0.000   0.000   0.000  1.00  0.00           C
 ATOM      2  CA  ALA A 100A      1.000   2.000   3.000  1.00  0.00           C
 `;
     const chains = parsePdb(content);
-    expect(chains[0].calphas[1]).toEqual({ resSeq: 100, iCode: 'A', x: 1, y: 2, z: 3 });
+    expect(chains[0].calphas[1]).toEqual({
+      resSeq: 100,
+      iCode: 'A',
+      resName: 'ALA',
+      x: 1,
+      y: 2,
+      z: 3,
+    });
   });
 });
