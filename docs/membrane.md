@@ -148,3 +148,26 @@ lower-leaflet points are clamped at −10 Å (displaced more than 10 Å toward
 the midplane), and its outer rim is only ~42 Å from the axis on the lower
 leaflet, so the rim (±17.5 Å) would understate the bulk; the B-factor
 reference planes (±19.6 Å) are used.
+
+## In the demo
+
+The demo's "MemProtMD bilayer distortions" checkbox loads thinned copies of
+the five sample files (`demo/distortions/`, made with
+`scripts/thin-distortions.mjs`: every second rim point and one interior point
+per 2 Å square, about a quarter of the points). The demo's structures are OPM's,
+which fit neither frame above: for 7AHL, OPM's membrane centre sits 11.3 Å
+above MemProtMD's bulk midplane on the protein and its normal is 6.6° off. A
+radial or z-only correction does not fix that, so each structure is moved
+into the simulation's frame by the rigid transform that superposes it on
+MemProtMD's own model (`src/demo-distortions.ts`), and then drawn as a
+box-frame structure. The structure is moved before the file is set, and moved
+back when the box is unchecked.
+
+`scripts/register-memprotmd.ts` finds that transform from the structure and
+any MemProtMD PDB of the same simulation (e.g. its head-contacts file).
+MemProtMD renumbers residues and may put every chain in one, in another order,
+so chains are matched by residue-name sequence and, for identical chains, the
+assignment that superposes best is kept. OPM 7AHL onto MemProtMD's model: Cα
+RMSD 0.35 Å over 2051 Cα. Only 7AHL has a transform so far; the other four
+proteins are left unchanged until their MemProtMD structures are available,
+and the demo says so.
