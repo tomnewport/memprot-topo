@@ -262,3 +262,36 @@ describe('TopologyDisplay selection across protein changes', () => {
     expect(el.getAttribute('selection')).toBe('A:1-14');
   });
 });
+
+describe('TopologyDisplay selection in the 3-D view', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const selected3d = (el: TopologyDisplay): (string | null)[] =>
+    [...el.shadowRoot!.querySelectorAll('.morph-svg g.selected')].map((g) =>
+      g.getAttribute('data-type'),
+    );
+
+  it('marks the selected elements and loops, and follows changes in place', async () => {
+    const el = mount('A:1-14');
+    await el.setMorphProgress(1);
+    const svg = el.shadowRoot!.querySelector('.morph-svg');
+    expect(new Set(selected3d(el))).toEqual(new Set(['helix']));
+    // Outlines are drawn wider while selected.
+    const outlines = (): number =>
+      [...el.shadowRoot!.querySelectorAll('.morph-svg path[stroke-width]')]
+        .map((p) => Number(p.getAttribute('stroke-width')))
+        .reduce((a, b) => a + b, 0);
+    const wide = outlines();
+
+    el.setAttribute('selection', 'A:15-18');
+    expect(new Set(selected3d(el))).toEqual(new Set(['loop']));
+    expect(el.shadowRoot!.querySelector('.morph-svg')).toBe(svg);
+    expect(el.morphProgress).toBe(1);
+
+    el.removeAttribute('selection');
+    expect(selected3d(el)).toEqual([]);
+    expect(outlines()).toBeLessThan(wide);
+  });
+});

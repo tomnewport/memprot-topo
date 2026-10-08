@@ -1,6 +1,6 @@
 import { buildMorphModel } from './model.js';
 import { DEFAULT_MORPH_OPTIONS, MorphRenderer, type MorphOptions, type Orbit } from './renderer.js';
-import type { MorphScene } from './types.js';
+import type { MorphScene, ResidueSpan } from './types.js';
 
 /** Duration (ms) of a full 2-D → 3-D transition. */
 const DURATION_MS = 2800;
@@ -52,6 +52,8 @@ export class MorphController {
   private readonly orbit: Orbit = { az: 0, el: 0 };
   private drag: { x: number; y: number; id: number; touch: boolean } | null = null;
   private options: MorphOptions;
+  /** Model ids of the selected elements and loops. */
+  private selectedIds: number[] = [];
   private readonly resize: ResizeObserver | null = null;
   /** Called after every rendered frame with the current progress. */
   onChange: ((tau: number, goal: number) => void) | null = null;
@@ -183,6 +185,23 @@ export class MorphController {
     this.setOptions(this.options);
   }
 
+  /**
+   * Show the elements and loops with a residue in `range` as selected (null:
+   * none), redrawing the current frame.
+   */
+  setSelection(range: ResidueSpan | null): void {
+    const { elements, loops } = this.scene;
+    const hit = (r: ResidueSpan | undefined): boolean =>
+      !!range && !!r && r.start <= range.end && r.end >= range.start;
+    const ids: number[] = [];
+    elements.forEach((e, i) => hit(e.residues) && ids.push(i));
+    // Model ids number loops after the elements (see buildMorphModel).
+    loops.forEach((l, i) => hit(l.residues) && ids.push(elements.length + i));
+    this.selectedIds = ids;
+    this.renderer?.setSelected(ids);
+    if (this.mounted && !this.raf) this.show(this.tau);
+  }
+
   dispose(): void {
     this.cancel();
     this.resize?.disconnect();
@@ -221,6 +240,7 @@ export class MorphController {
         this.options,
         this.idPrefix,
       );
+      this.renderer.setSelected(this.selectedIds);
       this.bindOrbit(this.renderer.svg);
     }
     return this.renderer;

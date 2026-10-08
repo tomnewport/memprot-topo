@@ -26,6 +26,7 @@ const STYLE: MorphScene['style'] = {
   midplane: '#666',
   contact: '#c98a3b',
   background: '#ffffff',
+  selectionWidthScale: 2,
   labelFontFamily: 'sans-serif',
   labelFill: '#333',
   labelFontSize: 11,

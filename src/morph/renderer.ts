@@ -604,6 +604,8 @@ export class MorphRenderer {
   };
   /** The background: fog and faded elements mix towards it. */
   private readonly ground: RGB;
+  /** Ids of the selected elements and loops. */
+  private selected: ReadonlySet<number> = new Set();
 
   constructor(
     readonly model: MorphModel,
@@ -640,6 +642,22 @@ export class MorphRenderer {
     this.labelsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG.setAttribute('font-family', st.labelFontFamily);
     svg.append(this.defs, backG, this.runsG, this.labelsG);
+  }
+
+  /**
+   * Mark elements and loops (by model id) as selected: their runs are drawn
+   * with wider strokes and carry `class="selected"` and `data-type`, for the
+   * page's glow. Takes effect from the next frame.
+   */
+  setSelected(ids: Iterable<number>): void {
+    this.selected = new Set(ids);
+  }
+
+  /** `helix`, `strand` or `loop` for a selectable model id. */
+  private typeOf(id: number): string | null {
+    const els = this.model.elements;
+    if (id < 0) return null;
+    return id < els.length ? els[id].type : 'loop';
   }
 
   /**
@@ -2593,6 +2611,10 @@ export class MorphRenderer {
       }
       slot.g.set('display', null);
       slot.g.set('opacity', run.faded && fadeA < 0.999 ? fadeA.toFixed(3) : null);
+      const sel = this.selected.has(run.id);
+      slot.g.set('class', sel ? 'selected' : null);
+      slot.g.set('data-type', sel ? this.typeOf(run.id) : null);
+      const widthScale = sel ? this.model.scene.style.selectionWidthScale : 1;
       const tint = run.faded ? lighten : (c: RGB): RGB => c;
       const ops = run.sortedOps();
       for (let j = 0; j < ops.length; j++) {
@@ -2612,7 +2634,10 @@ export class MorphRenderer {
         if (op.spec.kind === 'stroke') {
           path.set('fill', 'none');
           path.set('stroke', rgbStr(avg));
-          path.set('stroke-width', (op.width[0] / Math.max(1, op.width[1])).toFixed(2));
+          path.set(
+            'stroke-width',
+            ((op.width[0] / Math.max(1, op.width[1])) * widthScale).toFixed(2),
+          );
           path.set('stroke-linecap', op.spec.linecap ?? 'round');
           path.set('stroke-linejoin', 'round');
           path.set('stroke-dasharray', op.spec.dash ?? null);
