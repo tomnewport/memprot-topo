@@ -220,6 +220,14 @@ const STYLES = `
     stroke-width: calc(var(--mp-selection-width) + 1px);
   }
   .loop.selected { stroke-width: calc(var(--mp-selection-width) + 0.5px); }
+  /* While there is a selection, everything else is a little less saturated. */
+  .has-selection .ss-element:not(.selected), .has-selection .loop:not(.selected) {
+    filter: saturate(var(--mp-unselected-saturation));
+  }
+  .has-selection .ss-element:not(.selected):hover,
+  .has-selection .ss-element:not(.selected):focus-visible {
+    filter: saturate(var(--mp-unselected-saturation)) brightness(1.15);
+  }
   /* The same glow in the 3-D view (its wider outlines are drawn by the renderer). */
   .morph-svg .selected[data-type='helix'] { --glow-base: var(--mp-helix); }
   .morph-svg .selected[data-type='strand'] { --glow-base: var(--mp-strand); }
@@ -2017,6 +2025,7 @@ function iconColours(theme: Theme): IconColours {
 type MorphThemeStyle = Pick<
   MorphStyle,
   | 'selectionWidthScale'
+  | 'unselectedSaturation'
   | 'helixFill'
   | 'helixStroke'
   | 'strandFill'
@@ -2047,6 +2056,7 @@ function morphColours(theme: Theme): MorphThemeStyle {
     labelFill: theme.label,
     labelFontFamily: theme.fontFamily,
     selectionWidthScale: theme.selectionWidth / theme.outlineWidth,
+    unselectedSaturation: theme.unselectedSaturation,
   };
 }
 
@@ -3046,12 +3056,15 @@ export class TopologyDisplay extends HTMLElement {
     if (!this._shown) return;
     const sel = this.selection;
     const hit = sel && sel.chainId === this._shown.chain.chainId ? sel : null;
+    let any = false;
     for (const el of this._shown.svg.querySelectorAll<SVGElement>('.ss-element, .loop')) {
       const on =
         hit !== null && Number(el.dataset.start) <= hit.end && Number(el.dataset.end) >= hit.start;
+      any ||= on;
       el.classList.toggle('selected', on);
       if (el.classList.contains('ss-element')) el.setAttribute('aria-pressed', String(on));
     }
+    this._shown.svg.classList.toggle('has-selection', any);
     this._morph?.setSelection(this.morphSelection());
   }
 

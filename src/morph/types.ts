@@ -127,4 +127,6 @@ export interface MorphStyle {
   fadedOpacity: number;
   /** Stroke widths of selected elements and loops are scaled by this. */
   selectionWidthScale: number;
+  /** Saturation of the elements and loops outside a non-empty selection (1 = unchanged). */
+  unselectedSaturation: number;
 }
