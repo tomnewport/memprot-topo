@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
   pull_request:
+# Two runs for the same branch would publish to the same folder: keep the newest.
+concurrency:
+  group: gallery-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 jobs:
   gallery:
     runs-on: ubuntu-latest
@@ -32,14 +36,12 @@ jobs:
           HEAD="${{ github.head_ref || github.ref_name }}"
           echo "sanitized=$(echo "$HEAD" | tr '/' '-')" >> "$GITHUB_OUTPUT"
       - name: Publish current screenshots to gallery-images branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gallery-images
-          publish_dir: ./gallery-output/current
-          destination_dir: ${{ steps.branch.outputs.sanitized }}
-          keep_files: true
-          commit_message: 'gallery: update ${{ steps.branch.outputs.sanitized }} [skip ci]'
+        # Retries a push rejected by another run publishing at the same time.
+        run: scripts/gallery-publish.sh gallery-output/current "${{ steps.branch.outputs.sanitized }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
       - name: Download base branch gallery (PRs only)
         if: github.event_name == 'pull_request'
         run: node scripts/gallery-download-base.mjs
