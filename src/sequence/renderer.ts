@@ -13,7 +13,14 @@ import {
 } from '../components/ss-outline.js';
 import { paint, type Paint, type Theme } from '../theme/index.js';
 import { laneTop, layoutSequence, residuesPerRow, SEQ, type SequenceLayout } from './layout.js';
-import { ease, indexAt, pointAt, SequenceTransition, type ChunkFrame } from './transition.js';
+import {
+  ease,
+  indexAt,
+  pointAt,
+  SequenceTransition,
+  UNWRAP_END,
+  type ChunkFrame,
+} from './transition.js';
 import type { SeqLane, SequenceSource, TracePoint } from './types.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -21,11 +28,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 export interface SequenceOptions {
   /** Residues per row; null fits whole ten-residue blocks to the width. */
   wrap: number | null;
-  /** Stagger of the rows during the transition (0 = all at once). */
-  sweep: number;
 }
 
-export const DEFAULT_SEQUENCE_OPTIONS: SequenceOptions = { wrap: null, sweep: 0.5 };
+export const DEFAULT_SEQUENCE_OPTIONS: SequenceOptions = { wrap: null };
 
 type Range = [number, number];
 
@@ -78,6 +83,8 @@ export class SequenceRenderer {
   private transition: SequenceTransition | null = null;
   /** Where the 2-D picture sits in the transition's coordinates. */
   private offset = { x: 0, y: 0 };
+  /** The 2-D trace in the transition's coordinates. */
+  private trace: TracePoint[] = [];
   private width = 0;
   private readonly elementRanges: Range[];
   private readonly dashed: Range[];
@@ -114,7 +121,19 @@ export class SequenceRenderer {
       y: p.y + this.offset.y,
       f: p.f,
     }));
-    this.transition = new SequenceTransition(trace, this.layout);
+    this.trace = trace;
+    // The rows unwrap onto one line, squeezed to fit the membrane slab where
+    // it is on screen, otherwise the box.
+    const o = this.src.origin2d;
+    const slabX0 = o.x + this.src.slab.x0 * o.pxPerA + this.offset.x;
+    const slabX1 = o.x + this.src.slab.x1 * o.pxPerA + this.offset.x;
+    const right = this.layout.width - SEQ.gutterRightPx;
+    this.transition = new SequenceTransition(trace, this.layout, {
+      x0: slabX0 >= 0 && slabX0 < right ? slabX0 : SEQ.gutterRightPx,
+      x1: Math.min(slabX1, right),
+      // The first row stays put and the others snake up to join it.
+      y: this.layout.rows.length > 0 ? this.layout.rows[0].y + SEQ.cartoonPx : o.y + this.offset.y,
+    });
   }
 
   setOptions(options: SequenceOptions): void {
@@ -140,20 +159,22 @@ export class SequenceRenderer {
     svg.replaceChildren();
 
     // The picture grows or shrinks between the two heights; the width is the container's.
+    const frames = transition.frame(t);
     const h2 = this.src.frame2d.height;
     const width = layout.width;
-    const height = layout.height + (h2 - layout.height) * ease(t);
+    // The picture shrinks (or grows) to the topology's height as the last row
+    // joins the line, so no row is cut off on its way.
+    const lastUnwrap = frames.length > 0 ? frames[frames.length - 1].unwrap : 1;
+    const height = layout.height + (h2 - layout.height) * lastUnwrap;
     svg.setAttribute('viewBox', `0 0 ${width.toFixed(2)} ${height.toFixed(2)}`);
     svg.setAttribute('width', width.toFixed(2));
     svg.setAttribute('height', height.toFixed(2));
 
-    const a1 = 1 - ease(t / 0.45); // sequence-only furniture
-    const a2 = ease((t - 0.45) / 0.55); // topology-only furniture
-    const frames = transition.frame(t, this.options.sweep);
-
-    if (a2 > 0) this.drawSlab(a2);
+    const a1 = 1 - ease(t / (UNWRAP_END * 0.5)); // sequence-only furniture
+    const v = (t - UNWRAP_END) / (1 - UNWRAP_END);
+    if (v > 0) this.drawSlab(ease(v / 0.3), transition.waveFront(t));
     if (a1 > 0) this.drawRowFurniture(layout, a1);
-    this.drawChain(frames);
+    this.drawChain(frames, t);
     this.drawLetters(layout, frames);
     const a3 = ease((t - 0.8) / 0.2);
     if (a3 > 0) {
@@ -173,10 +194,16 @@ export class SequenceRenderer {
     return e;
   }
 
-  private drawSlab(alpha: number): void {
+  /** The membrane slab, revealed from the left up to the folding wave. */
+  private drawSlab(alpha: number, front: number): void {
     const { origin2d: o, slab, membraneHalf } = this.src;
     const x0 = o.x + slab.x0 * o.pxPerA + this.offset.x;
-    const x1 = o.x + slab.x1 * o.pxPerA + this.offset.x;
+    const last = this.trace.length - 1;
+    const full = o.x + slab.x1 * o.pxPerA + this.offset.x;
+    const x1 =
+      last < 0 || front >= this.trace[last].f
+        ? full
+        : Math.max(x0, Math.min(full, pointAt(this.trace, front).x));
     const g = this.add(el('g', { opacity: alpha.toFixed(3) }));
     const rect = el('rect', {
       x: x0,
@@ -326,7 +353,7 @@ export class SequenceRenderer {
   }
 
   /** Loops, then helices and strands, row by row; connectors join the rows near the topology. */
-  private drawChain(frames: ChunkFrame[]): void {
+  private drawChain(frames: ChunkFrame[], t: number): void {
     const src = this.src;
     const dims = {
       halfWidth: src.halfWidthPx,
@@ -340,16 +367,20 @@ export class SequenceRenderer {
     });
     const elements = this.add(el('g'));
 
-    // Joins between rows: zero length in the topology, gone in the sequence view.
-    for (let r = 0; r + 1 < frames.length; r++) {
+    // Joins between rows while they unwrap: a carriage-return curve from the
+    // end of one row to the start of the next, shrinking to nothing as they
+    // meet on the line.
+    const join = t >= UNWRAP_END ? 0 : ease(t / 0.04);
+    for (let r = 0; join > 0.01 && r + 1 < frames.length; r++) {
       const a = frames[r];
       const b = frames[r + 1];
-      const alpha = Math.min(a.e, b.e) ** 2;
-      if (alpha <= 0.01) continue;
       const p = a.pts[a.pts.length - 1];
       const q = b.pts[0];
-      const line = el('line', { x1: p.x, y1: p.y, x2: q.x, y2: q.y, opacity: alpha.toFixed(3) });
-      loops.appendChild(line);
+      const gap = Math.hypot(q.x - p.x, q.y - p.y);
+      if (gap < 0.5) continue;
+      const h = Math.min(30, gap / 2);
+      const d = `M${p.x.toFixed(2)},${p.y.toFixed(2)} C${(p.x + h).toFixed(2)},${p.y.toFixed(2)} ${(q.x - h).toFixed(2)},${q.y.toFixed(2)} ${q.x.toFixed(2)},${q.y.toFixed(2)}`;
+      loops.appendChild(el('path', { d, opacity: (join * 0.4).toFixed(3) }));
     }
 
     for (const fr of frames) {
@@ -367,7 +398,7 @@ export class SequenceRenderer {
             this.drawLoop(loops, slice(fr.pts, a, b), dashed);
           }
           const hidden = subtract(r[0], r[1], [this.drawn]);
-          const alpha = 1 - ease(fr.e / 0.6);
+          const alpha = 1 - ease((t - UNWRAP_END) / (1 - UNWRAP_END) / 0.5);
           if (hidden.length === 0 || alpha <= 0.01) continue;
           const g = el('g', { opacity: alpha.toFixed(3) });
           loops.appendChild(g);
@@ -450,7 +481,7 @@ export class SequenceRenderer {
     });
     const lift = SEQ.cartoonPx - SEQ.letterBaselinePx;
     for (const fr of frames) {
-      const alpha = 1 - ease(fr.e / 0.5);
+      const alpha = 1 - ease(fr.unwrap / 0.4);
       if (alpha <= 0.01) continue;
       const row = layout.rows[fr.row];
       const rg = el('g', { opacity: alpha.toFixed(3) });

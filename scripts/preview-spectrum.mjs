@@ -5,7 +5,8 @@
  *   node scripts/preview-spectrum.mjs <pdbId> <outPrefix> [positions 0–2...]
  *
  * Env: W / H viewport, TRACKS=1 (hydropathy lane), COLOURS=1 (residue colours),
- * THEME, VIDEO=<dir> with SEQ=0,2,0 (views to animate to).
+ * THEME, VIDEO=<dir> with SEQ=0,2,0 (views to animate to), RESIZE=500,1300
+ * (sequence view re-wrapped at each body width).
  */
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -99,6 +100,18 @@ if (video) {
     await page.waitForTimeout(800);
   }
   await ctx.close();
+} else if (process.env.RESIZE) {
+  // Sequence view at each body width in turn (checks the re-wrap).
+  await page.evaluate(() => document.getElementById('td').setViewPosition(0));
+  for (const w of process.env.RESIZE.split(',').map(Number)) {
+    await page.evaluate((w) => (document.body.style.width = `${w}px`), w);
+    await page.waitForTimeout(200);
+    const perRow = await page.evaluate(
+      () => document.getElementById('td')._seq.renderer.sequenceLayout.perRow,
+    );
+    console.log(`width ${w}: ${perRow} per row`);
+    await (await page.$('#td')).screenshot({ path: `${out}-w${w}.png` });
+  }
 } else {
   for (const p of positions) {
     await page.evaluate((p) => document.getElementById('td').setViewPosition(p), p);

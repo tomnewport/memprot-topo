@@ -1,18 +1,28 @@
 /**
- * Geometry of the 1-D ↔ 2-D transition.
+ * Geometry of the 1-D ↔ 2-D transition, in two stages.
  *
- * Each row of the sequence view is a stretch of the chain. Going from the
- * topology to the sequence, every stretch is pulled taut like a string: its
- * pieces keep their order and blend their lengths from the 2-D picture's to
- * one cell per residue, while every bend along it relaxes by the same
- * fraction, so a zig-zag of helices straightens out into a line instead of
- * its residues flying about independently. The stretch's centre travels from
- * where it sat in the topology to its row. At progress 1 every point is
- * exactly where the 2-D picture drew it; at 0 exactly on its row.
+ * 1. Unwrap (progress 0 → {@link UNWRAP_END}): the rows snake together into
+ *    one line, N-terminal row first: the first row stays where it is and the
+ *    others rise to join its end. The x-axis shrinks as they go, so the whole
+ *    chain fits on the line.
+ * 2. Fold (→ 1): a wave runs from the left-most residue to the right; as it
+ *    passes, each part of the line rises into its place in the topology.
+ *
+ * At progress 0 every point is exactly on its row, at {@link UNWRAP_END} on the
+ * line, and at 1 exactly where the 2-D picture drew it.
  */
 
 import { rowPoint, type SequenceLayout } from './layout.js';
 import type { TracePoint } from './types.js';
+
+/** Progress at which the rows have become one line. */
+export const UNWRAP_END = 0.4;
+
+/** Width of the folding wave, as a fraction of the line. */
+export const WAVE = 0.35;
+
+/** Stagger of the rows while they unwrap (0 = all at once, 1 = one after another). */
+const ROW_STAGGER = 0.6;
 
 export function ease(x: number): number {
   return 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
@@ -69,122 +79,87 @@ function chunkFs(trace: TracePoint[], fa: number, fb: number): number[] {
   return out;
 }
 
+/** The single line the rows unwrap onto: from x0 to x1 at height y. */
+export interface SequenceLine {
+  x0: number;
+  x1: number;
+  y: number;
+}
+
 interface Chunk {
   row: number;
   fs: number[];
-  /** Segment lengths and headings in 1-D and 2-D. */
-  len1: number[];
-  len2: number[];
-  head2: number[];
-  c1: { x: number; y: number };
-  c2: { x: number; y: number };
+  /** Positions on the row, on the line and in the topology. */
+  p1: { x: number; y: number }[];
+  pl: { x: number; y: number }[];
+  p2: { x: number; y: number }[];
 }
 
 export interface ChunkFrame {
   row: number;
-  /** This row's own (eased) progress: 0 = on its row, 1 = in the topology. */
-  e: number;
+  /** How far this row has unwrapped onto the line (0 → 1). */
+  unwrap: number;
   pts: TracePoint[];
-}
-
-/** Length-weighted centroid of a polyline (vertex mean when it has no length). */
-function centroid(xs: number[], ys: number[]): { x: number; y: number } {
-  let sx = 0;
-  let sy = 0;
-  let total = 0;
-  for (let j = 0; j + 1 < xs.length; j++) {
-    const l = Math.hypot(xs[j + 1] - xs[j], ys[j + 1] - ys[j]);
-    sx += l * (xs[j] + xs[j + 1]) * 0.5;
-    sy += l * (ys[j] + ys[j + 1]) * 0.5;
-    total += l;
-  }
-  if (total > 1e-9) return { x: sx / total, y: sy / total };
-  const n = xs.length;
-  return {
-    x: xs.reduce((a, b) => a + b, 0) / n,
-    y: ys.reduce((a, b) => a + b, 0) / n,
-  };
 }
 
 export class SequenceTransition {
   private readonly chunks: Chunk[];
+  private readonly count: number;
 
   /**
    * `trace` is the 2-D drawn chain in the transition's coordinates (already
    * offset from the 2-D SVG's); `layout` is the sequence view's.
    */
-  constructor(trace: TracePoint[], layout: SequenceLayout) {
+  constructor(trace: TracePoint[], layout: SequenceLayout, line: SequenceLine) {
+    const n = Math.max(1, layout.x.length);
+    this.count = n;
+    const onLine = (f: number): { x: number; y: number } => ({
+      x: line.x0 + ((f + 0.5) / n) * (line.x1 - line.x0),
+      y: line.y,
+    });
     this.chunks = layout.rows.map((row, r) => {
       const fs = chunkFs(trace, row.first - 0.5, row.last + 0.5);
-      const p2 = fs.map((f) => pointAt(trace, f));
-      const p1 = fs.map((f) => rowPoint(layout, r, f));
-      const len1: number[] = [];
-      const len2: number[] = [];
-      const head2: number[] = [];
-      let prev: number | null = null;
-      for (let j = 0; j + 1 < fs.length; j++) {
-        len1.push(Math.abs(p1[j + 1].x - p1[j].x));
-        const dx = p2[j + 1].x - p2[j].x;
-        const dy = p2[j + 1].y - p2[j].y;
-        const l = Math.hypot(dx, dy);
-        len2.push(l);
-        let h: number | null = l > 1e-6 ? Math.atan2(dy, dx) : prev;
-        // Unwrap so consecutive headings never jump by more than half a turn.
-        if (h !== null && prev !== null) {
-          while (h - prev > Math.PI) h -= 2 * Math.PI;
-          while (h - prev < -Math.PI) h += 2 * Math.PI;
-        }
-        head2.push(h ?? NaN);
-        if (h !== null) prev = h;
-      }
-      // Leading zero-length pieces take the first real heading.
-      const firstReal = head2.find((h) => !Number.isNaN(h)) ?? 0;
-      for (let j = 0; j < head2.length && Number.isNaN(head2[j]); j++) head2[j] = firstReal;
       return {
         row: r,
         fs,
-        len1,
-        len2,
-        head2,
-        c1: centroid(
-          p1.map((p) => p.x),
-          p1.map((p) => p.y),
-        ),
-        c2: centroid(
-          p2.map((p) => p.x),
-          p2.map((p) => p.y),
-        ),
+        p1: fs.map((f) => rowPoint(layout, r, f)),
+        pl: fs.map(onLine),
+        p2: fs.map((f) => pointAt(trace, f)),
       };
     });
   }
 
-  /**
-   * The chain at progress `u` (0 = sequence, 1 = topology). With `sweep` > 0
-   * the rows move one after another, N- to C-terminal, each starting
-   * `sweep / (rows − 1)` of the way after the previous.
-   */
-  frame(u: number, sweep = 0): ChunkFrame[] {
-    const n = this.chunks.length;
-    const delay = n > 1 ? Math.min(0.9, Math.max(0, sweep)) / (n - 1) : 0;
-    const span = 1 - delay * (n - 1);
+  /** The folding wave's progress at sequence position `f` (0 = on the line, 1 = folded). */
+  foldAt(u: number, f: number): number {
+    const v = (u - UNWRAP_END) / (1 - UNWRAP_END);
+    if (v <= 0) return 0;
+    const s = (f + 0.5) / this.count;
+    return ease((v * (1 + WAVE) - s) / WAVE);
+  }
+
+  /** Sequence position (`f`) of the folding wave's middle at progress `u`. */
+  waveFront(u: number): number {
+    const v = Math.max(0, (u - UNWRAP_END) / (1 - UNWRAP_END));
+    return (v * (1 + WAVE) - WAVE / 2) * this.count - 0.5;
+  }
+
+  /** The chain at progress `u` (0 = sequence, 1 = topology). */
+  frame(u: number): ChunkFrame[] {
+    const rows = this.chunks.length;
+    const a = Math.max(0, Math.min(1, u / UNWRAP_END));
+    const delay = rows > 1 ? ROW_STAGGER / (rows - 1) : 0;
+    const span = 1 - delay * (rows - 1);
     return this.chunks.map((c, r) => {
-      const e = ease((u - r * delay) / span);
-      const xs = [0];
-      const ys = [0];
-      for (let j = 0; j < c.len1.length; j++) {
-        const l = c.len1[j] + (c.len2[j] - c.len1[j]) * e;
-        const h = c.head2[j] * e;
-        xs.push(xs[j] + l * Math.cos(h));
-        ys.push(ys[j] + l * Math.sin(h));
-      }
-      const c0 = centroid(xs, ys);
-      const tx = c.c1.x + (c.c2.x - c.c1.x) * e - c0.x;
-      const ty = c.c1.y + (c.c2.y - c.c1.y) * e - c0.y;
-      return {
-        row: c.row,
-        e,
-        pts: c.fs.map((f, j) => ({ x: xs[j] + tx, y: ys[j] + ty, f })),
-      };
+      const unwrap = ease((a - r * delay) / span);
+      const pts = c.fs.map((f, j) => {
+        const q = {
+          x: c.p1[j].x + (c.pl[j].x - c.p1[j].x) * unwrap,
+          y: c.p1[j].y + (c.pl[j].y - c.p1[j].y) * unwrap,
+        };
+        const e = this.foldAt(u, f);
+        return { x: q.x + (c.p2[j].x - q.x) * e, y: q.y + (c.p2[j].y - q.y) * e, f };
+      });
+      return { row: c.row, unwrap, pts };
     });
   }
 }

@@ -59,6 +59,7 @@ import { oneLetter } from '../sequence/amino-acids.js';
 import { SequenceController } from '../sequence/controller.js';
 import { DEFAULT_SEQUENCE_OPTIONS, type SequenceOptions } from '../sequence/renderer.js';
 import type { SeqLane } from '../sequence/types.js';
+import { SEQ } from '../sequence/layout.js';
 import {
   getTheme,
   onThemeRegistered,
@@ -180,6 +181,7 @@ const STYLES = `
   .placeholder { font-style: italic; color: var(--mp-text-muted); }
   .morph-bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.6rem;
     margin-bottom: 0.35rem;
@@ -3299,7 +3301,10 @@ export class TopologyDisplay extends HTMLElement {
   private get sequenceOptions(): SequenceOptions {
     const raw = this.getAttribute('sequence-wrap');
     const n = raw === null || raw === 'auto' ? NaN : Number.parseInt(raw, 10);
-    return { ...DEFAULT_SEQUENCE_OPTIONS, wrap: Number.isFinite(n) && n > 0 ? n : null };
+    if (Number.isFinite(n) && n > 0) return { ...DEFAULT_SEQUENCE_OPTIONS, wrap: n };
+    // fit="content" sizes the box to the picture, so there is no width to fit.
+    const wrap = this.getAttribute('fit') === 'content' ? SEQ.fallbackPerRow : null;
+    return { ...DEFAULT_SEQUENCE_OPTIONS, wrap };
   }
 
   /**

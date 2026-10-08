@@ -34,20 +34,24 @@ One-letter codes come from the residue names in the structure file
 
 ## Transition
 
-Each row is a stretch of the chain. Going from Topology to Sequence every
-stretch is pulled taut like a string: its pieces keep their order and blend
-their length from the 2-D picture's to one cell per residue, and every bend
-along it relaxes by the same fraction, so the zig-zag of helices straightens
-into a line rather than residues flying about independently. The stretch's
-centre travels from where it sat in the topology to its row. Rows move one
-after another, N- to C-terminal (half the transition is stagger). At the ends
-every point is exactly where the other view draws it (unit-tested), and the
-static 2-D SVG is swapped back in at the topology end.
+Sequence → Topology runs in two stages (reversed on the way back):
 
-The membrane slab, residue-number labels and legend fade in near the
-topology; letters, row numbers, membrane shading and lanes fade in near the
-sequence. Residues the topology leaves out (an assembly barrel's cap) fade
-as they shrink into the drawn chain's end.
+1. **Unwrap.** The rows snake together into one line, first row first: the
+   first row stays where it is and shrinks along x, and each following row
+   rises to join the end of the one before, so the whole chain ends up on one
+   line that fits the box (or the membrane slab, where that is on screen).
+   While they move, a faint curve joins each row's end to the next row's
+   start. Letters, row numbers, membrane shading and lanes fade out.
+2. **Fold.** A wave runs from the left-most residue to the right; as it
+   passes, each part of the line rises into its place in the topology, and the
+   membrane slab is revealed behind it. Residue-number labels and the legend
+   fade in at the end.
+
+At the ends every point is exactly where the other view draws it, and at the
+end of the unwrap every point is on the line in sequence order (all
+unit-tested). The static 2-D SVG is swapped back in at the topology end.
+Residues the topology leaves out (an assembly barrel's cap) fade as they
+shrink into the drawn chain's end.
 
 ## Known limitations (prototype)
 
@@ -55,5 +59,5 @@ as they shrink into the drawn chain's end.
 - Missing residues show as a dashed stretch one cell per resolved neighbour,
   not as a gap of their real length.
 - Residue widths are drawn as a lane, not as cartoon width.
-- While rows are mid-flight they overlap; near the topology end the cartoon
-  shows faint seams where a helix crosses a row break.
+- Near the topology end the cartoon shows faint seams where a helix crosses
+  a row break.
