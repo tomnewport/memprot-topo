@@ -247,6 +247,65 @@ function smoothLoops(
   }
 }
 
+/**
+ * Put each sample's curtain angle back where the sample really is round the
+ * barrel.
+ *
+ * The 2-D unwrap holds its angle while the chain dips inside the barrel
+ * (e.g. OmpF/OmpC's L3 loop), so the plot doesn't fan out, and drops however
+ * far the chain turned in there. Everything after such a dip then sits at the
+ * wrong angle on the curtain — up to half a turn — and reaches its true
+ * position only through huge normal/tangent offsets. Positions still come out
+ * right, but the curtain's heading, which orients strand ribbons and their
+ * lighting, belongs to the wrong side of the barrel: front strands turned
+ * edge-on and showed as twisted, faceted slivers.
+ *
+ * The correction is the (continuous) difference between the real angle and the
+ * unwrap angle on the barrel wall; samples near the axis, where the real angle
+ * is unstable, interpolate it from the wall samples either side. Within a
+ * segment it changes smoothly, so the curtain coordinate stays continuous.
+ */
+function alignToRealAngle(
+  theta: Float64Array,
+  px: Float64Array,
+  py: Float64Array,
+  cx: number,
+  cy: number,
+  minRadius: number,
+  segStart: number[],
+  n: number,
+): void {
+  const delta = new Float64Array(n);
+  const known = new Uint8Array(n);
+  let prev = NaN;
+  for (let g = 0; g < n; g++) {
+    if (Math.hypot(px[g] - cx, py[g] - cy) < minRadius) continue;
+    const raw = wrapPi(Math.atan2(py[g] - cy, px[g] - cx) - theta[g]);
+    delta[g] = Number.isNaN(prev) ? raw : prev + wrapPi(raw - prev);
+    prev = delta[g];
+    known[g] = 1;
+  }
+  if (Number.isNaN(prev)) return;
+  for (let s = 0; s < segStart.length; s++) {
+    const lo = segStart[s];
+    const hi = s + 1 < segStart.length ? segStart[s + 1] - 1 : n - 1;
+    let last = -1;
+    for (let g = lo; g <= hi + 1; g++) {
+      if (g <= hi && !known[g]) continue;
+      // Fill the gap (last, g) between wall samples of this segment.
+      for (let k = last + 1 < lo ? lo : last + 1; k < g; k++) {
+        if (last >= lo && g <= hi)
+          delta[k] = delta[last] + ((k - last) / (g - last)) * (delta[g] - delta[last]);
+        else if (last >= lo) delta[k] = delta[last];
+        else if (g <= hi) delta[k] = delta[g];
+        else delta[k] = prev;
+      }
+      last = g;
+    }
+  }
+  for (let g = 0; g < n; g++) theta[g] += delta[g];
+}
+
 export interface MorphModelOptions {
   /**
    * Which sample stays put while the curtain rolls up around it.
@@ -371,6 +430,7 @@ export function buildMorphModel(scene: MorphScene, options: MorphModelOptions = 
     radius = n > 0 ? rSum / n : 1;
     cx = n > 0 ? cx / n : 0;
     cy = n > 0 ? cy / n : 0;
+    alignToRealAngle(theta, px, py, cx, cy, 0.4 * radius, segStart, n);
     sign = n > 1 && theta[n - 1] < theta[0] ? -1 : 1;
     for (let k = 0; k < n; k++) {
       ua[k] = sign * radius * theta[k];

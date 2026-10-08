@@ -24,6 +24,15 @@ sits exactly where it is in the structure (unit tests check this is a rigid
 motion of the real coordinates). Strands slide along the barrel curtain from
 their laid-out 2-D spacing to their true spacing as it closes.
 
+On the barrel curtain, each sample's position along it is its real angle round
+the barrel, not the 2-D unwrap's. The unwrap holds its angle while the chain
+dips inside the barrel (OmpF/OmpC's L3 loop), so the plot doesn't fan out, and
+so drops however far the chain turned in there. Using that angle put every
+later strand up to half a turn away from its curtain point: positions still
+came out right through large offsets, but the curtain's heading (which orients
+the strand ribbons and their lighting) belonged to the wrong side of the
+barrel, and the strands rendered as twisted, edge-on slivers.
+
 Things the 2-D layout invents are blended out as the curtain rolls:
 
 - loop gaps are a fixed width in 2-D — the curtain stretches them to their real
@@ -81,9 +90,10 @@ it returns to the 2-D view of the default chain and forgets the user's chain
 pick, selection and orbit (attributes the page set are kept).
 
 `morph-strand-width` and `morph-strand-thickness` set the strand ribbon size
-in Å (defaults 3.8 × 1.0; the arrowhead scales with the width). The issue's
-suggested ~10 × 2.5 Å works, but neighbouring barrel strands (≈ 4.8 Å apart)
-then overlap heavily.
+in Å (defaults 2.85 × 1.0; the arrowhead, 4.65 Å, scales with the width).
+Neighbouring barrel strands are ≈ 4.8 Å apart, so the default leaves a gap
+between ribbons and keeps arrowheads from cutting into the next strand. The
+issue's suggested ~10 × 2.5 Å works, but the strands then overlap heavily.
 
 `morph-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent
@@ -131,21 +141,29 @@ finished 3-D view stays vector (and exportable).
   trace (a smoothed local axis, which bends and hooks at the ends where its
   window is one-sided) is pulled onto a line fitted to it as the cylinder
   grows, or onto two lines meeting at a real kink (> 20° between the halves'
-  axes, decided once from the real structure). Samples are spread along the
+  axes, each half at least 7.5 Å of trace, decided once from the real
+  structure; shorter halves let the end hooks pass for kinks, and the helix
+  grew a stub cylinder at a sharp angle on its end). Samples are spread along the
   line by their fraction of the trace's length, so a hooked trace can't fold
   the cylinder back on itself. Loops ease onto the moved helix ends within a
-  few Å.
+  few Å. A gentle kink bends one cylinder outline; one of 45° or more is drawn
+  as two cylinders meeting at a ball joint, as a single outline bent that far
+  opened at the outside of the bend and showed the inside of the tube.
 - Shading is Lambert lighting from the upper left with depth fog. Cylinders get
   a smooth gradient across their width (one per straight stretch, as an SVG
   gradient is straight). Strand faces get a gradient along each straight
   stretch, and loops become tubes with edge lines and a highlight. Shading,
   fog, outlines and the membrane surfaces all fade in from the flat 2-D style.
 - Strands are thin boxes: the long side walls keep one dark tone for the
-  ribbon's thickness, and the blunt start is lit like a face. Arrowhead
-  shoulders have no walls: seen face-on while the arrowhead is edge-on, they
-  showed as small detached rectangles. Where two visible faces of a strand
-  meet (face and side wall), a thin line in the wall colour covers the
-  anti-aliasing hairline the abutting polygons would leave.
+  ribbon's thickness, and the blunt start is lit like a face. The arrowhead
+  shoulders' walls face back along the strand and are drawn only when seen
+  from behind (left out, the strand's inside showed through as a notch). Where
+  two visible faces of a strand meet (face and side wall), a thin line in the
+  wall colour covers the anti-aliasing hairline the abutting polygons would
+  leave.
+- A helix's far end is drawn as the end of its side, in the side's gradient,
+  in its own path beneath the body: sharing the body's path, the overlapping
+  polygons cancelled under the non-zero fill rule and left white holes.
 - Anything that should look the same from frame to frame is computed per
   element, not per depth-sorted run: colours averaged over whichever sections
   happen to share a run, round line ends at run joins, dash patterns restarted
