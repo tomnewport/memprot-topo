@@ -734,6 +734,11 @@ export class MorphRenderer {
     return this.blend !== null;
   }
 
+  /** Whether the 3-D membrane (lines or surface) shows at progress τ. */
+  showsMembrane(tau: number): boolean {
+    return sheetsIn(tau) > 0.001;
+  }
+
   /** How far (0–1) the membrane blend is along, from the next frame. */
   setNetBlend(t: number): void {
     if (this.blend) this.blend = { ...this.blend, t, drawn: null };
@@ -1105,7 +1110,7 @@ export class MorphRenderer {
     this.fadeOpacity = lerp(st.fadedOpacity, 1, smooth(0.02, 0.3, tau));
     const eW = smooth(0.0, 0.55, tau);
     const eLoop = smooth(0.0, 0.7, tau);
-    const eDisc = smooth(0.35, 0.95, tau);
+    const eDisc = sheetsIn(tau);
     const labelAlpha = 1 - smooth(0, 0.22, tau);
     const tieAlpha = 1 - smooth(0, 0.3, tau);
 
@@ -2582,8 +2587,7 @@ export class MorphRenderer {
     if (eDisc <= 0 || !surface) hideBands();
     if (eDisc <= 0) return;
     // Seen from above, the lower leaflet is the far one.
-    const eyeZ = Number.isFinite(cam.dist) ? cam.eye[2] : cam.p.el;
-    const fromAbove = eyeZ > 0;
+    const fromAbove = seenFromAbove(cam);
     if (surface) {
       for (const leaf of ['upper', 'lower'] as const) {
         const bands = this.back.surface[(leaf === 'upper') === fromAbove ? 1 : 0];
@@ -2674,8 +2678,8 @@ export class MorphRenderer {
       }
       out[band] += d + 'Z';
     };
-    const triangle = (a: number, b: number, c: number) => {
-      const poly = [a, b, c].flatMap((v) => [p[v * 2], p[v * 2 + 1], zs[v] - bulk]);
+    // A triangle as flat (screen x, screen y, rise) triples.
+    const triangle = (poly: number[]) => {
       const lo = surfaceBand(Math.min(poly[2], poly[5], poly[8]));
       const hi = surfaceBand(Math.max(poly[2], poly[5], poly[8]));
       for (let band = lo; band <= hi; band++) {
@@ -2685,18 +2689,45 @@ export class MorphRenderer {
         emit(band, piece);
       }
     };
+    const vertex = (v: number) => [p[v * 2], p[v * 2 + 1], zs[v] - bulk];
+    // A point of a quad at final (ox, oy) and height h, as a triple.
+    const point = (ox: number, oy: number, h: number) => {
+      cam.project(cxw + k * ox, cyw + k * oy, bulk + grow * (h - bulk), this.tmp);
+      return [this.tmp[0], this.tmp[1], h - bulk];
+    };
     const q = mesh.quads;
+    const xy = mesh.xy;
     for (let i = 0; i < q.length; i += 4) {
-      const [a, b, c, e] = [q[i], q[i + 1], q[i + 2], q[i + 3]];
-      // Split along the diagonal that keeps the most of a quad with one
-      // corner in a pore.
-      if (Number.isNaN(zs[a] + zs[c])) {
-        if (!Number.isNaN(zs[a] + zs[b] + zs[e])) triangle(a, b, e);
-        if (!Number.isNaN(zs[b] + zs[c] + zs[e])) triangle(b, c, e);
-      } else {
-        if (!Number.isNaN(zs[b])) triangle(a, b, c);
-        if (!Number.isNaN(zs[e])) triangle(a, c, e);
+      const corners = [q[i], q[i + 1], q[i + 2], q[i + 3]];
+      const open = corners.map((v) => Number.isNaN(zs[v]));
+      if (!open.includes(true)) {
+        const [a, b, c, e] = corners.map(vertex);
+        triangle([...a, ...b, ...c]);
+        triangle([...a, ...c, ...e]);
+        continue;
       }
+      // Next to a pore, the quarter of the quad nearest each lipid corner,
+      // with heights as the sampler gives them (open corners left out of the
+      // bilinear mean), so the hole matches where the tint stops.
+      const finite = corners.filter((_, j) => !open[j]);
+      if (!finite.length) continue;
+      const mx = corners.reduce((sum, v) => sum + xy[v * 2], 0) / 4;
+      const my = corners.reduce((sum, v) => sum + xy[v * 2 + 1], 0) / 4;
+      const centre = point(mx, my, finite.reduce((sum, v) => sum + zs[v], 0) / finite.length);
+      const half = (v: number, w: number) =>
+        point(
+          (xy[v * 2] + xy[w * 2]) / 2,
+          (xy[v * 2 + 1] + xy[w * 2 + 1]) / 2,
+          Number.isNaN(zs[w]) ? zs[v] : (zs[v] + zs[w]) / 2,
+        );
+      corners.forEach((v, j) => {
+        if (open[j]) return;
+        const c = vertex(v);
+        const toNext = half(v, corners[(j + 1) % 4]);
+        const toPrev = half(v, corners[(j + 3) % 4]);
+        triangle([...c, ...toNext, ...centre]);
+        triangle([...c, ...centre, ...toPrev]);
+      });
     }
     return out;
   }
@@ -2716,7 +2747,22 @@ export class MorphRenderer {
       const t = (i - half) / half;
       return t >= 0 ? mixRgb(fill, raised, t) : mixRgb(fill, lowered, -t);
     });
-    return { heightAt, mesh, k, colours };
+    const range = (zs: Float64Array): [number, number] => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const z of zs) {
+        if (z < lo) lo = z;
+        if (z > hi) hi = z;
+      }
+      return lo <= hi ? [lo, hi] : [0, 0];
+    };
+    return {
+      heightAt,
+      mesh,
+      range: { upper: range(mesh.upper), lower: range(mesh.lower) },
+      k,
+      colours,
+    };
   }
 
   /** Rims of the leaflet sheets, depth-sorted with the protein. */
@@ -3350,6 +3396,19 @@ const SURFACE_BANDS = 13;
 /** … and the rise or drop (Å) at which the colour is strongest. */
 const SURFACE_RANGE = 6;
 
+/** Horizontal step (Å) of the march for where a line of sight meets the surface. */
+const VEIL_STEP = 1;
+
+/** Fade-in (0–1) of the leaflet sheets and the membrane drawn with them, at progress τ. */
+function sheetsIn(tau: number): number {
+  return smooth(0.35, 0.95, tau);
+}
+
+/** Whether the camera looks down on the membrane (the lower leaflet is the far one). */
+function seenFromAbove(cam: Camera): boolean {
+  return (Number.isFinite(cam.dist) ? cam.eye[2] : cam.p.el) > 0;
+}
+
 /** Colour band of a rise (Å, positive up) of the surface above its bulk plane. */
 function surfaceBand(dz: number): number {
   const half = (SURFACE_BANDS - 1) / 2;
@@ -3384,11 +3443,13 @@ function clipHeight(poly: number[], level: number, side: 1 | -1): number[] {
 }
 
 /** The surface style's heights and colours, shared by the sheets and the veil. */
-interface SurfaceShading {
+export interface SurfaceShading {
   /** Final height of a leaflet about the final disc centre (NaN in a pore). */
   heightAt: (leaf: Leaf, ox: number, oy: number) => number;
   /** The leaflets' mesh, about the final disc centre. */
   mesh: SurfaceMesh;
+  /** Lowest and highest final height of each leaflet. */
+  range: Record<Leaf, [number, number]>;
   /** Scale from the final disc to the current one. */
   k: number;
   /** Colour of each band. */
@@ -3404,10 +3465,12 @@ interface SurfaceShading {
  * changes, so the boundary is where the line of sight meets the sheet's edge
  * or the piece passes through the plane. In the surface style the sheets
  * follow the leaflets' heights and the tint is the colour where the line of
- * sight crosses them.
+ * sight crosses them. Exported for tests.
  */
-class Veil {
+export class Veil {
   private readonly alpha: [number, number];
+  /** Whether the eye is above the membrane, so the lower leaflet is the far one. */
+  private readonly fromAbove: boolean;
 
   constructor(
     private readonly cam: Camera,
@@ -3421,6 +3484,7 @@ class Veil {
     private readonly fill: RGB,
     private readonly surface: SurfaceShading | null = null,
   ) {
+    this.fromAbove = seenFromAbove(cam);
     this.alpha = surface
       ? [SURFACE_ALPHA.upper * on, SURFACE_ALPHA.lower * on]
       : [SHEET_ALPHA[0] * on, SHEET_ALPHA[1] * on];
@@ -3450,36 +3514,95 @@ class Veil {
       dz = -cam.v[2];
     }
     if (Math.abs(dz) < 1e-12) return 0;
-    const surface = this.surface;
     let lv = 0;
     for (let k = 0; k < 2; k++) {
       const plane = k === 0 ? this.upper : this.lower;
-      let s = (plane - z) / dz;
-      let band = 0;
-      if (surface) {
-        // Where the ray meets the leaflet's (grown) heights: a few fixed-point steps from the plane.
-        const leaf = k === 0 ? 'upper' : 'lower';
-        let h = plane;
-        for (let it = 0; it < 3 && s > 0; it++) {
-          const hx = (x + s * dx - this.cx) / surface.k;
-          const hy = (y + s * dy - this.cy) / surface.k;
-          const final = surface.heightAt(leaf, hx, hy);
-          if (Number.isNaN(final)) {
-            s = -1;
-            break;
-          }
-          h = plane + this.on * (final - plane);
-          band = surfaceBand(final - plane);
-          s = (h - z) / dz;
-        }
+      if (this.surface) {
+        const band = this.bandCrossed(
+          k === 0 ? 'upper' : 'lower',
+          plane,
+          x,
+          y,
+          z,
+          dx,
+          dy,
+          dz,
+          reach,
+        );
+        if (band >= 0) lv += (1 + band) * (k === 0 ? 1 : SURFACE_BANDS + 1);
+        continue;
       }
-      if (s <= 0 || s >= reach) continue;
-      const qx = x + s * dx - this.cx;
-      const qy = y + s * dy - this.cy;
-      if (qx * qx + qy * qy > this.r * this.r) continue;
-      lv += surface ? (1 + band) * (k === 0 ? 1 : SURFACE_BANDS + 1) : 1 << k;
+      const s = (plane - z) / dz;
+      if (s > 0 && s < reach && this.inDisc(x + s * dx, y + s * dy)) lv += 1 << k;
     }
     return lv;
+  }
+
+  /**
+   * The colour band where the ray P + s·d (0 < s < reach) first meets a
+   * leaflet's surface (grown out of its bulk plane with the sheets), or -1 if
+   * it doesn't, or meets it over a pore or outside the disc. The ray is
+   * marched through the leaflet's height range about every
+   * {@link VEIL_STEP} Å of horizontal travel and the crossing bisected.
+   */
+  private bandCrossed(
+    leaf: Leaf,
+    plane: number,
+    x: number,
+    y: number,
+    z: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    reach: number,
+  ): number {
+    const sf = this.surface!;
+    const on = this.on;
+    const [lo, hi] = sf.range[leaf];
+    // Where the ray is within the grown height range, just widened so that a
+    // flat leaflet still brackets its crossing.
+    let s0 = (plane + on * (lo - plane) - 0.01 - z) / dz;
+    let s1 = (plane + on * (hi - plane) + 0.01 - z) / dz;
+    if (s0 > s1) [s0, s1] = [s1, s0];
+    s0 = Math.max(s0, 0);
+    s1 = Math.min(s1, reach);
+    if (!(s0 < s1)) return -1;
+    const height = (t: number) =>
+      sf.heightAt(leaf, (x + t * dx - this.cx) / sf.k, (y + t * dy - this.cy) / sf.k);
+    // Height of the ray above the grown surface (NaN over a pore).
+    const above = (t: number, h: number) => z + t * dz - plane - on * (h - plane);
+    const travel = (Math.hypot(dx, dy) * (s1 - s0)) / sf.k;
+    const n = Math.min(64, Math.max(1, Math.ceil(travel / VEIL_STEP)));
+    let sa = s0;
+    let fa = above(s0, height(s0));
+    for (let i = 1; i <= n; i++) {
+      const sb = s0 + ((s1 - s0) * i) / n;
+      const fb = above(sb, height(sb));
+      if (fa <= 0 !== fb <= 0 && !Number.isNaN(fa + fb)) {
+        let l = sa;
+        let r = sb;
+        for (let it = 0; it < 10; it++) {
+          const m = (l + r) / 2;
+          const fm = above(m, height(m));
+          if (Number.isNaN(fm)) return -1;
+          if (fm <= 0 === fa <= 0) l = m;
+          else r = m;
+        }
+        const t = (l + r) / 2;
+        const h = height(t);
+        if (Number.isNaN(h) || !this.inDisc(x + t * dx, y + t * dy)) return -1;
+        return surfaceBand(h - plane);
+      }
+      sa = sb;
+      fa = fb;
+    }
+    return -1;
+  }
+
+  private inDisc(wx: number, wy: number): boolean {
+    const qx = wx - this.cx;
+    const qy = wy - this.cy;
+    return qx * qx + qy * qy <= this.r * this.r;
   }
 
   /** Colour `c` as seen through sheets `lv`. */
@@ -3487,13 +3610,12 @@ class Veil {
     if (lv === 0) return c;
     const surface = this.surface;
     if (surface) {
-      // The lower leaflet is further from the eye: tint by it first.
+      // Tint by the leaflet further from the eye first.
       const up = lv % (SURFACE_BANDS + 1);
       const low = Math.floor(lv / (SURFACE_BANDS + 1));
-      let out = c;
-      if (low) out = mixRgb(out, surface.colours[low - 1], this.alpha[1]);
-      if (up) out = mixRgb(out, surface.colours[up - 1], this.alpha[0]);
-      return out;
+      const tint = (out: RGB, band: number, k: 0 | 1) =>
+        band ? mixRgb(out, surface.colours[band - 1], this.alpha[k]) : out;
+      return this.fromAbove ? tint(tint(c, low, 1), up, 0) : tint(tint(c, up, 0), low, 1);
     }
     let keep = 1;
     if (lv & 1) keep *= 1 - this.alpha[0];

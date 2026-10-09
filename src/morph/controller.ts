@@ -160,14 +160,15 @@ export class MorphController {
 
   /**
    * Blend the 3-D membrane over `ms` from `from` (another controller's
-   * {@link membraneNet} of the same chain) to this one's. Skipped in 2-D,
-   * while the view is moving, with reduced motion, or if the two membranes
-   * have different points. The first frame changes on the next animation
+   * {@link membraneNet} of the same chain) to this one's. Skipped before the
+   * 3-D membrane shows, while the view is moving, with reduced motion, or if
+   * the two membranes have different points. The first frame changes on the next animation
    * frame, so until then the new membrane shows.
    */
   blendMembraneFrom(from: Fishnet | null, ms: number): void {
     const r = this.renderer;
     if (!from || !r || !this.mounted || this.raf || ms <= 0 || prefersReducedMotion()) return;
+    if (!r.showsMembrane(this.tau)) return;
     if (!r.blendNetFrom(from)) return;
     this.blending = true;
     const start = performance.now();

@@ -1,14 +1,18 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { unrollChain, unwrapBarrel } from '../../../src/unroll/index.js';
 import { analyseBarrel } from '../../../src/contacts/index.js';
 import { buildMorphModel } from '../../../src/morph/model.js';
 import { computePose, localProgress } from '../../../src/morph/curtain.js';
 import {
   MorphRenderer,
+  Veil,
   fitLine,
   findKink,
   DEFAULT_MORPH_OPTIONS,
+  type SurfaceShading,
 } from '../../../src/morph/renderer.js';
+import { Camera } from '../../../src/morph/camera.js';
+import { buildFishnet } from '../../../src/morph/net.js';
 import type { MorphScene, MorphSegment, MorphElement } from '../../../src/morph/types.js';
 import type { UnrollResult } from '../../../src/unroll/index.js';
 import type {
@@ -606,6 +610,100 @@ describe('helix axis fit', () => {
   });
 });
 
+describe('Veil, surface style', () => {
+  const BANDS = 13;
+  const band = (dz: number) => Math.max(0, Math.min(BANDS - 1, Math.round(dz) + 6));
+  /** Surface shading over a disc of radius 30 Å around an 8 Å ring of protein. */
+  function shading(annular: { upper: number; lower: number }): SurfaceShading {
+    const ring = Array.from({ length: 32 }, (_, i) => [
+      8 * Math.cos((i * Math.PI) / 16),
+      8 * Math.sin((i * Math.PI) / 16),
+    ]).flat();
+    const net = buildFishnet({
+      centre: { x: 0, y: 0 },
+      radius: 30,
+      margin: 5,
+      style: 'surface',
+      bulk: { upper: 20, lower: -20 },
+      annular,
+      protein: ring,
+    });
+    const mesh = net.mesh!;
+    const range = (zs: Float64Array): [number, number] => [Math.min(...zs), Math.max(...zs)];
+    return {
+      heightAt: net.heightAt,
+      mesh,
+      range: { upper: range(mesh.upper), lower: range(mesh.lower) },
+      k: 1,
+      colours: Array.from({ length: BANDS }, (_, i): [number, number, number] => [i * 10, 0, 0]),
+    };
+  }
+  const camera = (el: number) =>
+    new Camera({ target: [0, 0, 0], az: 0.3, el, scale: 4, fov: 0, diag: 1000, cx: 0, cy: 0 });
+
+  /** The level a fine march along the line of sight finds. */
+  function marched(cam: Camera, sf: SurfaceShading, x: number, y: number, z: number): number {
+    const [dx, dy, dz] = [-cam.v[0], -cam.v[1], -cam.v[2]];
+    let lv = 0;
+    for (const [leaf, plane, mult] of [
+      ['upper', 20, 1],
+      ['lower', -20, BANDS + 1],
+    ] as const) {
+      let prev = NaN;
+      for (let s = 0; s < 200; s += 0.04) {
+        const [px, py, pz] = [x + s * dx, y + s * dy, z + s * dz];
+        if (Math.abs(pz) > 40) break;
+        const h = sf.heightAt(leaf, px, py);
+        const f = pz - h;
+        if (!Number.isNaN(prev) && !Number.isNaN(f) && f <= 0 !== prev <= 0) {
+          if (Math.hypot(px, py) <= 30) lv += (1 + band(h - plane)) * mult;
+          break;
+        }
+        prev = f;
+      }
+    }
+    return lv;
+  }
+
+  it('tints by the band where the line of sight meets a raised or lowered surface', () => {
+    for (const annular of [
+      { upper: 24, lower: -16 },
+      { upper: 15, lower: -25 },
+    ]) {
+      const sf = shading(annular);
+      for (const el of [0.6, 0.28, -0.5]) {
+        const cam = camera(el);
+        const veil = new Veil(cam, 0, 0, 30, 20, -20, 1, [200, 200, 200], sf);
+        let agree = 0;
+        let total = 0;
+        for (let x = -15; x <= 15; x += 5)
+          for (let y = -15; y <= 15; y += 5)
+            for (let z = -27; z <= 27; z += 3) {
+              total++;
+              if (veil.level(x, y, z) === marched(cam, sf, x, y, z)) agree++;
+            }
+        // Only points within a hair of a band edge may differ.
+        expect(agree / total).toBeGreaterThan(0.98);
+      }
+    }
+    // Under a raised upper leaflet but above its bulk plane, seen from above.
+    const sf = shading({ upper: 24, lower: -20 });
+    const veil = new Veil(camera(0.6), 0, 0, 30, 20, -20, 1, [200, 200, 200], sf);
+    expect(veil.level(-11, 0, 21) % (BANDS + 1)).toBeGreaterThan(band(0) + 1);
+  });
+
+  it('tints by the far leaflet first, from above or below', () => {
+    const sf = shading({ upper: 20, lower: -20 });
+    const lv = 1 + 9 + (1 + 3) * (BANDS + 1);
+    const c: [number, number, number] = [0, 0, 0];
+    const from = (el: number) =>
+      new Veil(camera(el), 0, 0, 30, 20, -20, 1, [200, 200, 200], sf).apply(c, lv)[0];
+    // Upper band 9 (90), lower band 3 (30); upper 40 % opaque, lower 30 %.
+    expect(from(0.6)).toBeCloseTo((0.7 * 0 + 0.3 * 30) * 0.6 + 0.4 * 90, 9);
+    expect(from(-0.5)).toBeCloseTo((0.6 * 0 + 0.4 * 90) * 0.7 + 0.3 * 30, 9);
+  });
+});
+
 describe('<topology-display> 3-D morph', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -777,70 +875,171 @@ describe('<topology-display> 3-D morph', () => {
     expect(net().style).toBe('grid');
   });
 
-  it('blends the membrane to a new membrane-detail, in 2-D and in 3-D', async () => {
-    const frames: FrameRequestCallback[] = [];
-    let now = 1000;
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-      frames[id - 1] = () => {};
+  describe('membrane-detail blending', () => {
+    // Animation frames run by hand, at a clock the test sets.
+    let frames: Map<number, FrameRequestCallback>;
+    let nextId: number;
+    let now: number;
+    beforeEach(() => {
+      frames = new Map();
+      nextId = 1;
+      now = 1000;
+      vi.spyOn(performance, 'now').mockImplementation(() => now);
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        frames.set(nextId, cb);
+        return nextId++;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
     });
     /** Run the frames asked for so far, at time `t`. */
     const tick = (t: number) => {
       now = t;
-      for (const cb of frames.splice(0)) cb(t);
+      for (const [id, cb] of [...frames]) {
+        if (!frames.delete(id)) continue;
+        cb(t);
+      }
     };
-    try {
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    const BLEND = 625;
+
+    function setUp() {
       const el = mount(hairpinChain());
-      const root = el.shadowRoot!;
       el.setAttribute('membrane-annular-upper', '15');
       el.setAttribute('membrane-detail', 'annular');
-      tick(1000);
-      const band = () => root.querySelector('path.membrane')!.getAttribute('d')!;
+      tick(now + 10 * BLEND);
+      // The 2-D drawing's band, also while the 3-D view stands in for it.
       const tops = () =>
-        band()
+        (el as unknown as { _shown: { svg: SVGSVGElement } })._shown.svg
+          .querySelector('path.membrane')!
+          .getAttribute('d')!
           .match(/-?\d+(?:\.\d+)?/g)!
           .map(Number)
           .filter((_, i) => i % 2);
+      return { el, tops };
+    }
+
+    type Net = { upper: Float64Array[] };
+    type Internals3d = {
+      _morph: { blending: boolean; renderer: { drawnNet: Net; net: Net } };
+    };
+    const zs = (net: Net) => net.upper.flatMap((l) => [...l]);
+
+    it('blends the 2-D band, ending on the new one', () => {
+      const { el, tops } = setUp();
       const annular = tops();
+      now = 5000;
       el.setAttribute('membrane-detail', 'bulk');
       // The new band shows at once; the blend starts on the next frame.
       const bulk = tops();
       expect(bulk).not.toEqual(annular);
-      tick(1000 + 0.5 * 625);
-      const mid = tops();
-      mid.forEach((z, i) => expect(z).toBeCloseTo((annular[i] + bulk[i]) / 2, 1));
-      tick(1000 + 625);
+      tick(5000 + BLEND / 2);
+      tops().forEach((z, i) => expect(z).toBeCloseTo((annular[i] + bulk[i]) / 2, 1));
+      tick(5000 + BLEND);
       expect(tops()).toEqual(bulk);
-      expect(frames).toHaveLength(0);
+      expect(frames.size).toBe(0);
+    });
 
-      // 3-D: the net's heights blend too.
-      type Net = { upper: Float64Array[] };
-      type WithNet = { _morph: { renderer: { drawnNet: Net; net: Net } } };
-      await el.setMorphProgress(1);
-      const zs = (net: Net) => net.upper.flatMap((l) => [...l]);
-      const drawn = () => zs((el as unknown as WithNet)._morph.renderer.drawnNet);
-      const flat = drawn();
+    it('blends from the band part-way through a blend, and leaves no frames behind', () => {
+      const { el, tops } = setUp();
+      const annular = tops();
       now = 5000;
+      el.setAttribute('membrane-detail', 'bulk');
+      const bulk = tops();
+      tick(5000 + BLEND / 2);
+      const halfway = tops();
+      // Back again: from the halfway band to the annular one.
+      now = 6000;
       el.setAttribute('membrane-detail', 'annular');
-      await new Promise((r) => setTimeout(r, 0));
+      expect(tops()).toEqual(annular);
+      tick(6000);
+      tops().forEach((z, i) => expect(z).toBeCloseTo(halfway[i], 1));
+      tick(6000 + BLEND);
+      expect(tops()).toEqual(annular);
+      expect(frames.size).toBe(0);
+      expect(halfway).not.toEqual(bulk);
+    });
+
+    it('switches at once while the view moves, and finishes a blend when the view leaves 2-D', async () => {
+      const { el, tops } = setUp();
+      // Have the 3-D code loaded, so the transition starts on the next frame.
+      await el.setMorphProgress(0);
+      now = 5000;
+      el.setAttribute('membrane-detail', 'bulk');
+      const bulk = tops();
+      tick(5000 + BLEND / 4);
+      expect(tops()).not.toEqual(bulk);
+      // Off towards 3-D: the 2-D band is the morph's first frame, so it ends now.
+      el.dimension = 3;
+      await settle();
+      tick(5000 + BLEND / 2);
+      expect(tops()).toEqual(bulk);
+      // A detail change mid-transition doesn't blend the band.
+      el.setAttribute('membrane-detail', 'annular');
+      const annular = tops();
+      tick(5000 + BLEND);
+      expect(tops()).toEqual(annular);
+      // Finish the transition at once.
+      el.setAttribute('transition-time', '0');
+      el.dimension = 2;
+      expect(frames.size).toBe(0);
+    });
+
+    it('blends the 3-D membrane, and stops cleanly when the style changes', async () => {
+      const { el } = setUp();
+      await el.setMorphProgress(1);
+      const internals = () => (el as unknown as Internals3d)._morph;
+      const flat = zs(internals().renderer.drawnNet);
+      now = 5000;
+      el.setAttribute('membrane-detail', 'bulk');
+      await settle();
       expect(el.morphProgress).toBe(1);
-      const target = zs((el as unknown as WithNet)._morph.renderer.net);
+      const target = zs(internals().renderer.net);
       expect(target).not.toEqual(flat);
       tick(5000);
-      drawn().forEach((z, i) => expect(z).toBeCloseTo(flat[i], 9));
-      tick(5000 + 625);
-      drawn().forEach((z, i) => expect(z).toBeCloseTo(target[i], 9));
+      zs(internals().renderer.drawnNet).forEach((z, i) => expect(z).toBeCloseTo(flat[i], 9));
+      tick(5000 + BLEND / 2);
+      expect(internals().blending).toBe(true);
+      // A new style is a new membrane: the blend ends.
+      el.setAttribute('morph-membrane-style', 'polar');
+      expect(internals().blending).toBe(false);
+      expect(internals().renderer.drawnNet).toBe(internals().renderer.net);
+      tick(5000 + BLEND);
+      expect(frames.size).toBe(0);
+      expect(el.morphProgress).toBe(1);
+    });
 
-      // No blend with transition-time 0.
+    it('does not blend with transition-time 0, reduced motion or no change in detail', async () => {
+      const { el } = setUp();
+      await el.setMorphProgress(1);
       el.setAttribute('transition-time', '0');
       el.setAttribute('membrane-detail', 'bulk');
-      await new Promise((r) => setTimeout(r, 0));
-      expect(frames).toHaveLength(0);
-    } finally {
-      vi.unstubAllGlobals();
-      vi.restoreAllMocks();
-    }
+      await settle();
+      expect(frames.size).toBe(0);
+      el.removeAttribute('transition-time');
+      // An unknown detail is the default, local: the same as no attribute.
+      el.removeAttribute('membrane-detail');
+      await settle();
+      tick(now + 10 * BLEND);
+      el.setAttribute('membrane-detail', 'nonsense');
+      await settle();
+      expect(frames.size).toBe(0);
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query.includes('reduce'),
+        media: query,
+        addEventListener() {},
+        removeEventListener() {},
+      }));
+      el.setAttribute('membrane-detail', 'annular');
+      await settle();
+      await el.setMorphProgress(0);
+      el.setAttribute('membrane-detail', 'bulk');
+      await settle();
+      expect(frames.size).toBe(0);
+    });
   });
 
   it('changes 3-D settings in place, keeping the 3-D view', async () => {

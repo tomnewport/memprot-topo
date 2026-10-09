@@ -42,11 +42,13 @@ membrane as drawn. A structure lined up with a distortions file stays lined
 up whatever the detail. `<topology-loader>` passes the attribute on.
 
 Changing the detail blends the membrane from the old heights to the new over a
-quarter of `transition-time` (625 ms by default), in 2-D and in 3-D. It
-switches at once with `transition-time="0"`, with reduced motion, while the
-2-D ↔ 3-D transition is running, or when the two 3-D membranes don't share
-their points. `element.membrane` and the drawing's final state change at
-once; only the frames in between are blended.
+quarter of `transition-time` (625 ms by default), in the 2-D topology and in
+the 3-D view. It switches at once with `transition-time="0"`, with reduced
+motion, while the view is moving between dimensions, part-way into 3-D before
+the membrane's sheets appear (the first 35 % of the transition), or when the
+two 3-D membranes don't share their points. A blend in the 2-D topology ends
+at once when the view leaves it. `element.membrane` and the drawing's final
+state change at once; only the frames in between are blended.
 
 The px widths are in diagram units (SVG px at the drawing's own scale), so
 they keep their on-screen size if the Å-to-px scale changes. Every switch is a

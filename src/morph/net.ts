@@ -539,8 +539,10 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
   const W = 2 * M + 1;
   const pos = (a: number): [number, number] => [(Math.floor(a / W) - M) * h, ((a % W) - M) * h];
   const iso = spacing * Math.max(1, Math.floor(ISO_REACH / spacing));
-  // d: distance (Å) out from the interface; NaN in the protein's pores,
-  // which no path outside the interface joins to the bulk.
+  // d: distance (Å) out from the interface. The protein's pores, which no
+  // path outside the interface joins to the bulk, count as protein (-1), so
+  // the interface ring closes past a pore that only touches the outside
+  // diagonally.
   const d = new Float64Array(W * W);
   const rho = new Float64Array(W * W);
   const reached = new Uint8Array(W * W);
@@ -563,13 +565,12 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
       queue.push(b);
     }
   }
-  for (let a = 0; a < W * W; a++) if (d[a] > 0 && !reached[a]) d[a] = NaN;
+  for (let a = 0; a < W * W; a++) if (d[a] > 0 && !reached[a]) d[a] = -1;
   // u: 0 on the last constant-distance ring, 1 on the inner circle.
   const u = new Float64Array(W * W);
   const free: number[] = [];
   for (let a = 0; a < W * W; a++) {
     if (rho[a] >= inner) u[a] = 1;
-    else if (Number.isNaN(d[a])) u[a] = NaN;
     else if (d[a] <= iso) u[a] = 0;
     else {
       free.push(a);
@@ -577,24 +578,26 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
     }
   }
   relax(u, free, (a, visit) => {
-    for (const s of steps) if (!Number.isNaN(u[a + s])) visit(a + s);
+    for (const s of steps) visit(a + s);
   });
   // How far the harmonic band reaches, on average: its rings are spread over that.
   let gap = 0;
   let edge = 0;
   for (const a of free) {
-    if (steps.some((s) => !Number.isNaN(d[a + s]) && d[a + s] <= iso && rho[a + s] < inner)) {
+    if (steps.some((s) => d[a + s] <= iso && rho[a + s] < inner)) {
       gap += inner - rho[a];
       edge++;
     }
   }
   const span = edge ? gap / edge : 0;
+  // Free nodes stay above the last constant-distance ring by their distance
+  // past it (up to a lattice step), so that ring follows d even in a pocket
+  // the circle can't reach, where u is 0 to within the solver's tolerance.
   const phi = new Float64Array(W * W);
   for (let a = 0; a < W * W; a++) {
-    if (Number.isNaN(d[a])) phi[a] = NaN;
-    else if (rho[a] >= inner) phi[a] = iso + span;
+    if (rho[a] >= inner) phi[a] = iso + span;
     else if (d[a] <= iso) phi[a] = d[a];
-    else phi[a] = iso + u[a] * span;
+    else phi[a] = iso + Math.max(u[a] * span, Math.min(d[a] - iso, h));
   }
 
   const lineStep = Math.max(MIN_STEP, spacing / 2);

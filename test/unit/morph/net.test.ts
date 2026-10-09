@@ -340,6 +340,49 @@ describe('membrane styles', () => {
     }
   });
 
+  it('closes the polar rings round crevices and keeps them off the solver noise in a pocket', () => {
+    // Eight helices on a 270° arc: crevices between them, and a pocket that
+    // only reaches the bulk past the rings.
+    const helices: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const th = (i / 7) * 1.5 * Math.PI - 0.75 * Math.PI;
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * 2 * Math.PI;
+        helices.push(18 * Math.cos(th) + 2.3 * Math.cos(a), 18 * Math.sin(th) + 2.3 * Math.sin(a));
+      }
+    }
+    const net = buildFishnet({
+      centre: { x: 0, y: 0 },
+      radius: 50,
+      margin: 5,
+      spacing: 4,
+      style: 'polar',
+      bulk: BULK,
+      annular: BULK,
+      protein: helices,
+    });
+    const dist = (x: number, y: number) => {
+      let d = Infinity;
+      for (let i = 0; i < helices.length; i += 2)
+        d = Math.min(d, Math.hypot(x - helices[i], y - helices[i + 1]));
+      return d;
+    };
+    let rings = 0;
+    for (const l of net.upper) {
+      const ds: number[] = [];
+      for (let i = 0; i < l.length; i += 3) ds.push(dist(l[i], l[i + 1]));
+      // The interface ring, 4 Å out, is closed.
+      if (ds.every((d) => Math.abs(d - 4) < 0.6)) {
+        rings++;
+        expect(closed(l)).toBe(true);
+      }
+      // A closed line near the last constant-distance ring (12 Å) follows it.
+      if (closed(l) && Math.min(...ds) > 10.5 && Math.min(...ds) < 13.5)
+        for (const d of ds) expect(Math.abs(d - 12)).toBeLessThan(1);
+    }
+    expect(rings).toBeGreaterThan(0);
+  });
+
   it('builds a surface mesh with the leaflet heights, open over the pore', () => {
     const net = buildFishnet(input('surface'));
     expect(net.style).toBe('surface');

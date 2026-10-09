@@ -133,9 +133,13 @@ where it drops, reaching full strength at ±6 Å. Raised means further up the
 membrane normal, so a thinner bilayer shows as a raised lower leaflet and a
 lowered upper one. The bands meet along smooth contours. The upper leaflet is
 40 % opaque and the lower 30 %. A piece of protein seen through the surface
-takes the colour of the band its line of sight crosses (the surface's height
-there is found by iterating along the ray), so the tint matches the surface in
-front of it. Pores stay open. There is no colour key in the view yet.
+takes the colour of the band where its line of sight first crosses the
+surface (found by marching along the line of sight about every 1 Å across the
+leaflet's height range, then bisecting), so the tint matches the surface in
+front of it, with the far leaflet's colour under the near one's. Pores stay
+open: next to a pore the surface is drawn over the part of each mesh cell
+nearest its lipid corners, which is also where the tint stops. There is no
+colour key in the view yet.
 
 `morph-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent

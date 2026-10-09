@@ -2607,7 +2607,7 @@ export class TopologyDisplay extends HTMLElement {
   /** A view a redraw is restoring while the morph code loads. */
   private _pendingView: MorphView | null = null;
   /** Running blend of the 2-D membrane band after a `membrane-detail` change. */
-  private _bandRaf = 0;
+  private _band: { raf: number; path: Element; to: string } | null = null;
   private _scrollBox: ScrollBox | null = null;
   private _selectedChainId: string | null = null;
   /** The chain picker, when the protein has more than one chain. */
@@ -2940,7 +2940,9 @@ export class TopologyDisplay extends HTMLElement {
     }
     if (name === 'membrane-detail') {
       // Redraw, keeping the view, and blend from the old membrane to the new.
-      const from = value !== old ? this.membraneSnapshot() : null;
+      const detail = (v: string | null) =>
+        MEMBRANE_DETAILS.find((d) => d === v) ?? DEFAULT_MEMBRANE_DETAIL;
+      const from = detail(value) !== detail(old) ? this.membraneSnapshot() : null;
       this.render({ keepView: true, membraneFrom: from });
       return;
     }
@@ -3201,6 +3203,7 @@ export class TopologyDisplay extends HTMLElement {
    * frame is drawn (the morph code is loaded on first use).
    */
   async setMorphProgress(tau: number): Promise<void> {
+    if (tau > 0) this.finishBand();
     (await this.loadMorph())?.setProgress(tau);
   }
 
@@ -3251,8 +3254,7 @@ export class TopologyDisplay extends HTMLElement {
     keepView = false,
     membraneFrom = null,
   }: { keepView?: boolean; membraneFrom?: MembraneSnapshot | null } = {}) {
-    if (this._bandRaf) cancelAnimationFrame(this._bandRaf);
-    this._bandRaf = 0;
+    this.finishBand();
     const view: MorphView | null = !keepView
       ? null
       : (this._morph?.view ??
@@ -3449,7 +3451,12 @@ export class TopologyDisplay extends HTMLElement {
     scroll.appendChild(svg);
     box.observe(svg);
     this._shown = { chain: selectedChain, svg };
-    if (membraneFrom?.band) this.blendBand(svg, membraneFrom.band);
+    // The 2-D band blends only while the 2-D topology is shown and still.
+    const still2d =
+      !this._dimensionRaf &&
+      (!view || (view.tau <= 0 && !view.animating)) &&
+      (seqView === null || seqView >= 1);
+    if (membraneFrom?.band && still2d) this.blendBand(svg, membraneFrom.band);
     this.bindElements(svg, selectedChain.chainId);
     this.applySelection();
     sequence.lanes = this.sequenceLanes(selectedChain.chainId, sequence.residues);
@@ -3504,7 +3511,8 @@ export class TopologyDisplay extends HTMLElement {
       if (this._morphSource !== src) return;
       this._pendingView = null;
       m?.restore(view);
-      m?.blendMembraneFrom(net, this.membraneBlendTime);
+      // Not while the view moves between dimensions: that redraws every frame.
+      if (!this._dimensionRaf) m?.blendMembraneFrom(net, this.membraneBlendTime);
     });
   }
 
@@ -3536,17 +3544,32 @@ export class TopologyDisplay extends HTMLElement {
     const b = to.match(PATH_NUMBER)?.map(Number);
     if (!a || !b || a.length !== b.length || a.some((v, i) => i % 2 === 0 && v !== b[i])) return;
     const start = performance.now();
+    const band = { raf: 0, path, to };
     const step = (now: number): void => {
       const f = Math.max(0, Math.min(1, (now - start) / ms));
+      if (f >= 1) {
+        this.finishBand();
+        return;
+      }
       const t = 0.5 - 0.5 * Math.cos(Math.PI * f);
       let d = '';
       for (let i = 0; i < a.length; i += 2) {
         d += `${i === 0 ? 'M' : 'L'}${a[i]},${(a[i + 1] + t * (b[i + 1] - a[i + 1])).toFixed(2)}`;
       }
-      path.setAttribute('d', f >= 1 ? to : d + 'Z');
-      this._bandRaf = f < 1 ? requestAnimationFrame(step) : 0;
+      path.setAttribute('d', d + 'Z');
+      band.raf = requestAnimationFrame(step);
     };
-    this._bandRaf = requestAnimationFrame(step);
+    band.raf = requestAnimationFrame(step);
+    this._band = band;
+  }
+
+  /** End any 2-D band blend, showing the band it was heading for. */
+  private finishBand(): void {
+    const band = this._band;
+    if (!band) return;
+    cancelAnimationFrame(band.raf);
+    band.path.setAttribute('d', band.to);
+    this._band = null;
   }
 
   /** The chain picker, labelled by the "Select chain" heading. */
@@ -3783,6 +3806,8 @@ export class TopologyDisplay extends HTMLElement {
   private applyPosition(p: number): void {
     const seq = this._seq;
     if (!seq) return;
+    // Leaving the 2-D topology: its picture is the first frame either way.
+    if (p !== 1) this.finishBand();
     if (p < 1) {
       if (this.morphProgress > 0) this._morph?.setProgress(0);
       seq.setProgress(p);
