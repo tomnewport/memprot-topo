@@ -65,6 +65,14 @@ export interface MorphElement {
   faded: boolean;
   /** Position in the 2-D draw order. */
   order: number;
+  /** Author residue range it stands for in the selection; absent for faded (context) elements. */
+  selectable?: ResidueSpan;
+}
+
+/** Inclusive author residue-number range. */
+export interface ResidueSpan {
+  start: number;
+  end: number;
 }
 
 export interface MorphLoop {
@@ -81,6 +89,8 @@ export interface MorphLoop {
   order: number;
   /** Residue numbers the loop stands for, in order (used by the sequence view). */
   residues?: number[];
+  /** Author residue range it stands for in the selection; absent when it takes no part. */
+  selectable?: ResidueSpan;
 }
 
 export interface MorphLabel {
@@ -117,4 +127,8 @@ export interface MorphStyle {
   arrowHalfWidthPx: number;
   arrowLengthPx: number;
   fadedOpacity: number;
+  /** Stroke widths of selected elements and loops are scaled by this. */
+  selectionWidthScale: number;
+  /** Saturation of the elements and loops outside a non-empty selection (1 = unchanged). */
+  unselectedSaturation: number;
 }

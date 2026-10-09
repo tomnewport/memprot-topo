@@ -262,3 +262,71 @@ describe('TopologyDisplay selection across protein changes', () => {
     expect(el.getAttribute('selection')).toBe('A:1-14');
   });
 });
+
+describe('TopologyDisplay de-emphasis outside the selection', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('marks the 2-D view while something is selected', () => {
+    const el = mount('A:1-14');
+    expect(svgOf(el).classList.contains('has-selection')).toBe(true);
+    el.setAttribute('selection', 'A:900-950');
+    expect(svgOf(el).classList.contains('has-selection')).toBe(false);
+    el.removeAttribute('selection');
+    expect(svgOf(el).classList.contains('has-selection')).toBe(false);
+  });
+});
+
+describe('TopologyDisplay selection in the 3-D view', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const selected3d = (el: TopologyDisplay): (string | null)[] =>
+    [...el.shadowRoot!.querySelectorAll('.morph-svg g.selected')].map((g) =>
+      g.getAttribute('data-type'),
+    );
+
+  it('marks the selected elements and loops, and follows changes in place', async () => {
+    const el = mount('A:1-14');
+    await el.setMorphProgress(1);
+    const svg = el.shadowRoot!.querySelector('.morph-svg');
+    expect(new Set(selected3d(el))).toEqual(new Set(['helix']));
+    // Outlines are drawn wider while selected.
+    const outlines = (): number =>
+      [...el.shadowRoot!.querySelectorAll('.morph-svg path[stroke-width]')]
+        .map((p) => Number(p.getAttribute('stroke-width')))
+        .reduce((a, b) => a + b, 0);
+    const wide = outlines();
+
+    el.setAttribute('selection', 'A:15-18');
+    expect(new Set(selected3d(el))).toEqual(new Set(['loop']));
+    expect(el.shadowRoot!.querySelector('.morph-svg')).toBe(svg);
+    expect(el.morphProgress).toBe(1);
+
+    el.removeAttribute('selection');
+    expect(selected3d(el)).toEqual([]);
+    expect(outlines()).toBeLessThan(wide);
+  });
+
+  it('desaturates the unselected elements while there is a selection', async () => {
+    const el = mount();
+    await el.setMorphProgress(1);
+    // Spread between the largest and smallest channel, over every coloured path.
+    const chroma = (): number =>
+      [...el.shadowRoot!.querySelectorAll('.morph-svg g path')]
+        .flatMap((p) => [p.getAttribute('fill'), p.getAttribute('stroke')])
+        .filter((c): c is string => !!c && c.startsWith('rgb('))
+        .map((c) => {
+          const v = c.slice(4, -1).split(',').map(Number);
+          return Math.max(...v) - Math.min(...v);
+        })
+        .reduce((a, b) => a + b, 0);
+    const full = chroma();
+    el.setAttribute('selection', 'A:1-14');
+    expect(chroma()).toBeLessThan(full);
+    el.setAttribute('selection', 'A');
+    expect(chroma()).toBeCloseTo(full, 0);
+  });
+});

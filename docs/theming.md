@@ -72,6 +72,7 @@ the registry.
 | `label`                                                           | Residue numbers and the colour legend                                                                              |
 | `hover`                                                           | Outline of the hovered element                                                                                     |
 | `selectionGlowBlur`, `selectionGlowBrighten`                      | Glow round selected elements and loops, in the element's own colour: blur (px, 0 for none) and % of white mixed in |
+| `unselectedSaturation`                                            | Saturation of the helices, strands and loops outside the selection while there is one (1 = unchanged)              |
 | `iconBackground`, `iconCoil`, `iconOutline`, `iconGrid`           | Chain-picker icons                                                                                                 |
 | `iconMembraneDark`, `iconMembraneLight`                           | Membrane band in the icons                                                                                         |
 | `dataCategories`, `dataScale`                                     | Default per-residue palettes ([residue-data.md](residue-data.md))                                                  |
