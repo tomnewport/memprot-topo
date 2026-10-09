@@ -134,9 +134,9 @@ export interface MorphStyle {
   coil: string;
   membraneFill: string;
   membraneEdge: string;
-  /** The surface style's colours where a leaflet rises above, or drops below, its bulk plane. */
-  membraneRaised: string;
-  membraneLowered: string;
+  /** The surface style's colours where the bilayer is thinner, or thicker, than in the bulk. */
+  membraneThinned: string;
+  membraneThickened: string;
   midplane: string;
   contact: string;
   /** Diagram background: the 3-D view fogs towards it. */

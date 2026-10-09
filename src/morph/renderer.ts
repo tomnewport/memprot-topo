@@ -1142,7 +1142,7 @@ export class MorphRenderer {
     const planesOn = eDisc > 0.001 && Math.abs(cam.p.el) > 1e-3;
     const mesh = this.drawnNet?.mesh;
     const surface = mesh
-      ? this.surfaceShading(this.drawnNet!.heightAt, mesh, discR / F.disc1.r)
+      ? this.surfaceShading(this.drawnNet!.heightAt, mesh, discR / F.disc1.r, upper, lower)
       : null;
     const veil = new Veil(
       cam,
@@ -2633,8 +2633,8 @@ export class MorphRenderer {
   /**
    * One leaflet's mesh as a path per colour band, growing out of the bulk
    * plane with `grow`. Each quad is split into two triangles and each
-   * triangle cut where the height crosses a band edge (heights vary linearly
-   * across it), so the bands meet along smooth contours. Every piece is wound
+   * triangle cut where the thickness change crosses a band edge (it varies
+   * linearly across it), so the bands meet along smooth contours. Every piece is wound
    * the same way on screen, so pieces that meet or overlap within a band fill
    * once, with no seams.
    */
@@ -2649,6 +2649,7 @@ export class MorphRenderer {
   ): string[] {
     const { k, mesh } = surface;
     const zs = mesh[leaf];
+    const dt = surface.change[leaf];
     const nv = zs.length;
     const p = new Float64Array(nv * 2);
     for (let v = 0; v < nv; v++) {
@@ -2678,7 +2679,7 @@ export class MorphRenderer {
       }
       out[band] += d + 'Z';
     };
-    // A triangle as flat (screen x, screen y, rise) triples.
+    // A triangle as flat (screen x, screen y, thickness change) triples.
     const triangle = (poly: number[]) => {
       const lo = surfaceBand(Math.min(poly[2], poly[5], poly[8]));
       const hi = surfaceBand(Math.max(poly[2], poly[5], poly[8]));
@@ -2689,11 +2690,11 @@ export class MorphRenderer {
         emit(band, piece);
       }
     };
-    const vertex = (v: number) => [p[v * 2], p[v * 2 + 1], zs[v] - bulk];
-    // A point of a quad at final (ox, oy) and height h, as a triple.
-    const point = (ox: number, oy: number, h: number) => {
+    const vertex = (v: number) => [p[v * 2], p[v * 2 + 1], dt[v]];
+    // A point of a quad at final (ox, oy), height h and thickness change c, as a triple.
+    const point = (ox: number, oy: number, h: number, c: number) => {
       cam.project(cxw + k * ox, cyw + k * oy, bulk + grow * (h - bulk), this.tmp);
-      return [this.tmp[0], this.tmp[1], h - bulk];
+      return [this.tmp[0], this.tmp[1], c];
     };
     const q = mesh.quads;
     const xy = mesh.xy;
@@ -2713,13 +2714,17 @@ export class MorphRenderer {
       if (!finite.length) continue;
       const mx = corners.reduce((sum, v) => sum + xy[v * 2], 0) / 4;
       const my = corners.reduce((sum, v) => sum + xy[v * 2 + 1], 0) / 4;
-      const centre = point(mx, my, finite.reduce((sum, v) => sum + zs[v], 0) / finite.length);
-      const half = (v: number, w: number) =>
-        point(
+      const mean = (a: Float64Array) => finite.reduce((sum, v) => sum + a[v], 0) / finite.length;
+      const centre = point(mx, my, mean(zs), mean(dt));
+      const half = (v: number, w: number) => {
+        const pore = Number.isNaN(zs[w]);
+        return point(
           (xy[v * 2] + xy[w * 2]) / 2,
           (xy[v * 2 + 1] + xy[w * 2 + 1]) / 2,
-          Number.isNaN(zs[w]) ? zs[v] : (zs[v] + zs[w]) / 2,
+          pore ? zs[v] : (zs[v] + zs[w]) / 2,
+          pore ? dt[v] : (dt[v] + dt[w]) / 2,
         );
+      };
       corners.forEach((v, j) => {
         if (open[j]) return;
         const c = vertex(v);
@@ -2737,16 +2742,23 @@ export class MorphRenderer {
     heightAt: Fishnet['heightAt'],
     mesh: SurfaceMesh,
     k: number,
+    upper: number,
+    lower: number,
   ): SurfaceShading {
     const st = this.model.scene.style;
     const fill = hexRgb(st.membraneFill);
-    const raised = hexRgb(st.membraneRaised);
-    const lowered = hexRgb(st.membraneLowered);
+    const thinned = hexRgb(st.membraneThinned);
+    const thickened = hexRgb(st.membraneThickened);
     const half = (SURFACE_BANDS - 1) / 2;
     const colours = Array.from({ length: SURFACE_BANDS }, (_, i) => {
       const t = (i - half) / half;
-      return t >= 0 ? mixRgb(fill, raised, t) : mixRgb(fill, lowered, -t);
+      return t >= 0 ? mixRgb(fill, thickened, t) : mixRgb(fill, thinned, -t);
     });
+    const bulk = { upper, lower };
+    const changeAt = (leaf: Leaf, ox: number, oy: number) =>
+      thicknessChange(leaf, heightAt(leaf, ox, oy), heightAt(other(leaf), ox, oy), bulk);
+    const change = (leaf: Leaf) =>
+      mesh[leaf].map((z, v) => thicknessChange(leaf, z, mesh[other(leaf)][v], bulk));
     const range = (zs: Float64Array): [number, number] => {
       let lo = Infinity;
       let hi = -Infinity;
@@ -2760,6 +2772,8 @@ export class MorphRenderer {
       heightAt,
       mesh,
       range: { upper: range(mesh.upper), lower: range(mesh.lower) },
+      change: { upper: change('upper'), lower: change('lower') },
+      changeAt,
       k,
       colours,
     };
@@ -3393,7 +3407,7 @@ const SHEET_ALPHA: [number, number] = [0.22, 0.1];
 const SURFACE_ALPHA = { upper: 0.4, lower: 0.3 };
 /** … colour bands (odd, the middle one at the bulk height) … */
 const SURFACE_BANDS = 13;
-/** … and the rise or drop (Å) at which the colour is strongest. */
+/** … and the thickening or thinning (Å) at which the colour is strongest. */
 const SURFACE_RANGE = 6;
 
 /** Horizontal step (Å) of the march for where a line of sight meets the surface. */
@@ -3409,17 +3423,40 @@ function seenFromAbove(cam: Camera): boolean {
   return (Number.isFinite(cam.dist) ? cam.eye[2] : cam.p.el) > 0;
 }
 
-/** Colour band of a rise (Å, positive up) of the surface above its bulk plane. */
+/** Colour band of a change (Å, positive thicker) in the bilayer's thickness from the bulk. */
 function surfaceBand(dz: number): number {
   const half = (SURFACE_BANDS - 1) / 2;
   return Math.max(0, Math.min(SURFACE_BANDS - 1, Math.round((dz / SURFACE_RANGE) * half) + half));
 }
 
-/** Rise between each colour band and the next. */
+/** Thickness change between each colour band and the next. */
 const SURFACE_EDGES = Array.from(
   { length: SURFACE_BANDS - 1 },
   (_, i) => ((i + 0.5 - (SURFACE_BANDS - 1) / 2) * SURFACE_RANGE) / ((SURFACE_BANDS - 1) / 2),
 );
+
+/** The other leaflet. */
+function other(leaf: Leaf): Leaf {
+  return leaf === 'upper' ? 'lower' : 'upper';
+}
+
+/**
+ * Change (Å) in the bilayer's thickness from the bulk where a leaflet is at
+ * height `z` and the other at `facing`: NaN where the leaflet is open, and
+ * twice its own shift from the bulk where only the other is (as if the
+ * bilayer were symmetric there).
+ */
+function thicknessChange(
+  leaf: Leaf,
+  z: number,
+  facing: number,
+  bulk: Record<Leaf, number>,
+): number {
+  const out = leaf === 'upper' ? z - bulk.upper : bulk.lower - z;
+  if (Number.isNaN(facing)) return 2 * out;
+  const [up, low] = leaf === 'upper' ? [z, facing] : [facing, z];
+  return up - low - (bulk.upper - bulk.lower);
+}
 
 /**
  * The part of a convex polygon (flat x, y, h triples, h varying linearly
@@ -3450,6 +3487,10 @@ export interface SurfaceShading {
   mesh: SurfaceMesh;
   /** Lowest and highest final height of each leaflet. */
   range: Record<Leaf, [number, number]>;
+  /** Change (Å) in the bilayer's thickness from the bulk at each mesh vertex, as each leaflet shows it. */
+  change: Record<Leaf, Float64Array>;
+  /** The same at a point about the final disc centre (NaN where the leaflet is open). */
+  changeAt: (leaf: Leaf, ox: number, oy: number) => number;
   /** Scale from the final disc to the current one. */
   k: number;
   /** Colour of each band. */
@@ -3589,9 +3630,10 @@ export class Veil {
           else r = m;
         }
         const t = (l + r) / 2;
-        const h = height(t);
-        if (Number.isNaN(h) || !this.inDisc(x + t * dx, y + t * dy)) return -1;
-        return surfaceBand(h - plane);
+        const [ox, oy] = [(x + t * dx - this.cx) / sf.k, (y + t * dy - this.cy) / sf.k];
+        const c = sf.changeAt(leaf, ox, oy);
+        if (Number.isNaN(c) || !this.inDisc(x + t * dx, y + t * dy)) return -1;
+        return surfaceBand(c);
       }
       sa = sb;
       fa = fb;

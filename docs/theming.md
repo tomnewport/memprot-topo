@@ -68,7 +68,7 @@ the registry.
 | `helix`, `helixEdge`, `strand`, `strandEdge`                      | SS element fill and outline (2-D, 3-D and the picker icons)                                                        |
 | `loop`                                                            | Loops                                                                                                              |
 | `membrane`, `membraneEdge`, `midplane`                            | Membrane slab, its edges and the z = 0 line                                                                        |
-| `membraneRaised`, `membraneLowered`                               | 3-D surface style: a leaflet risen above, or dropped below, its bulk plane                                         |
+| `membraneThinned`, `membraneThickened`                            | 3-D surface style: where the bilayer is thinner, or thicker, than in the bulk                                      |
 | `contact`                                                         | β-sheet contact ties                                                                                               |
 | `label`                                                           | Residue numbers and the colour legend                                                                              |
 | `hover`                                                           | Outline of the hovered element                                                                                     |
@@ -84,8 +84,8 @@ the registry.
 | `lineJoin`                                                        | Corners of SS outlines and loop bends: `round`, `bevel`, `miter`                                                   |
 
 Colours the 3-D view shades or mixes (`helix`, `helixEdge`, `strand`,
-`strandEdge`, `loop`, `membrane`, `membraneEdge`, `membraneRaised`,
-`membraneLowered`, `midplane`, `contact`, `background`) must be `#rgb`,
+`strandEdge`, `loop`, `membrane`, `membraneEdge`, `membraneThinned`,
+`membraneThickened`, `midplane`, `contact`, `background`) must be `#rgb`,
 `#rrggbb` or `rgb(r, g, b)`; the others take any CSS colour.
 
 Per-residue data widths keep their own base width (1.8 px loops), since they

@@ -32,8 +32,8 @@ const STYLE: MorphScene['style'] = {
   coil: '#666',
   membraneFill: '#eaeaea',
   membraneEdge: '#bdbdbd',
-  membraneRaised: '#d6604d',
-  membraneLowered: '#4393c3',
+  membraneThinned: '#d6604d',
+  membraneThickened: '#4393c3',
   midplane: '#666',
   contact: '#c98a3b',
   background: '#ffffff',
@@ -630,10 +630,17 @@ describe('Veil, surface style', () => {
     });
     const mesh = net.mesh!;
     const range = (zs: Float64Array): [number, number] => [Math.min(...zs), Math.max(...zs)];
+    const thickening = (up: number, low: number) => up - low - 40;
     return {
       heightAt: net.heightAt,
       mesh,
       range: { upper: range(mesh.upper), lower: range(mesh.lower) },
+      change: {
+        upper: mesh.upper.map((z, v) => thickening(z, mesh.lower[v])),
+        lower: mesh.lower.map((z, v) => thickening(mesh.upper[v], z)),
+      },
+      changeAt: (_leaf, ox, oy) =>
+        thickening(net.heightAt('upper', ox, oy), net.heightAt('lower', ox, oy)),
       k: 1,
       colours: Array.from({ length: BANDS }, (_, i): [number, number, number] => [i * 10, 0, 0]),
     };
@@ -645,9 +652,9 @@ describe('Veil, surface style', () => {
   function marched(cam: Camera, sf: SurfaceShading, x: number, y: number, z: number): number {
     const [dx, dy, dz] = [-cam.v[0], -cam.v[1], -cam.v[2]];
     let lv = 0;
-    for (const [leaf, plane, mult] of [
-      ['upper', 20, 1],
-      ['lower', -20, BANDS + 1],
+    for (const [leaf, mult] of [
+      ['upper', 1],
+      ['lower', BANDS + 1],
     ] as const) {
       let prev = NaN;
       for (let s = 0; s < 200; s += 0.04) {
@@ -656,7 +663,7 @@ describe('Veil, surface style', () => {
         const h = sf.heightAt(leaf, px, py);
         const f = pz - h;
         if (!Number.isNaN(prev) && !Number.isNaN(f) && f <= 0 !== prev <= 0) {
-          if (Math.hypot(px, py) <= 30) lv += (1 + band(h - plane)) * mult;
+          if (Math.hypot(px, py) <= 30) lv += (1 + band(sf.changeAt(leaf, px, py))) * mult;
           break;
         }
         prev = f;
@@ -665,7 +672,7 @@ describe('Veil, surface style', () => {
     return lv;
   }
 
-  it('tints by the band where the line of sight meets a raised or lowered surface', () => {
+  it('tints by the thickness band where the line of sight meets the surface', () => {
     for (const annular of [
       { upper: 24, lower: -16 },
       { upper: 15, lower: -25 },
@@ -686,10 +693,22 @@ describe('Veil, surface style', () => {
         expect(agree / total).toBeGreaterThan(0.98);
       }
     }
-    // Under a raised upper leaflet but above its bulk plane, seen from above.
+    // Under a raised upper leaflet but above its bulk plane, seen from above:
+    // the bilayer is thicker there.
     const sf = shading({ upper: 24, lower: -20 });
     const veil = new Veil(camera(0.6), 0, 0, 30, 20, -20, 1, [200, 200, 200], sf);
-    expect(veil.level(-11, 0, 21) % (BANDS + 1)).toBeGreaterThan(band(0) + 1);
+    expect(veil.level(-11, 0, 21) % (BANDS + 1)).toBeGreaterThan(band(0) + 1 + 1);
+    // Both leaflets 4 Å up: the same thickness, so the bulk's band wherever
+    // the line of sight meets either.
+    const shifted = shading({ upper: 24, lower: -16 });
+    const flat = new Veil(camera(0.6), 0, 0, 30, 20, -20, 1, [200, 200, 200], shifted);
+    const seen = new Set<number>();
+    for (let x = -15; x <= 15; x += 5)
+      for (let z = -27; z <= 27; z += 3) {
+        const lv = flat.level(x, 0, z);
+        seen.add(lv % (BANDS + 1)).add(Math.floor(lv / (BANDS + 1)));
+      }
+    expect([...seen].sort((a, b) => a - b)).toEqual([0, 1 + band(0)]);
   });
 
   it('tints by the far leaflet first, from above or below', () => {
@@ -863,8 +882,8 @@ describe('<topology-display> 3-D morph', () => {
     expect(net().style).toBe('surface');
     expect(net().mesh).not.toBeNull();
     finite();
-    // Colour bands, coloured by height, behind the protein: the flat bulk
-    // and the raised annular leaflet.
+    // Colour bands behind the protein: the bulk, and the thicker bilayer
+    // round the protein where the upper leaflet rises.
     const fills = [...root.querySelectorAll('.svg-scroll svg > g:first-of-type path')]
       .filter(
         (p) => p.getAttribute('display') !== 'none' && p.getAttribute('fill')?.startsWith('rgb'),
@@ -873,6 +892,37 @@ describe('<topology-display> 3-D morph', () => {
     expect(new Set(fills).size).toBeGreaterThan(2);
     el.setAttribute('morph-membrane-style', 'wobbly');
     expect(net().style).toBe('grid');
+  });
+
+  it('colours the surface by how much thinner or thicker the bilayer is than the bulk', async () => {
+    const el = mount(hairpinChain());
+    const root = el.shadowRoot!;
+    el.setAttribute('membrane-upper', '15');
+    el.setAttribute('membrane-lower', '-15');
+    el.setAttribute('morph-membrane-style', 'surface');
+    await el.setMorphProgress(1);
+    const fills = async (annularUpper: number, annularLower: number) => {
+      el.setAttribute('membrane-annular-upper', String(annularUpper));
+      el.setAttribute('membrane-annular-lower', String(annularLower));
+      await el.setMorphProgress(1);
+      const out = [...root.querySelectorAll('.svg-scroll svg > g:first-of-type path')]
+        .filter((p) => p.getAttribute('display') !== 'none')
+        .map((p) => p.getAttribute('fill')?.match(/^rgb\((\d+), ?(\d+), ?(\d+)\)$/))
+        .filter((m) => m !== null && m !== undefined)
+        .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+      expect(out.length).toBeGreaterThan(0);
+      return out;
+    };
+    // Both leaflets 3 Å up round the protein: the same thickness, so no colour.
+    for (const [r, g, b] of await fills(18, -12)) expect([r, g, b]).toEqual([234, 234, 234]);
+    // 6 Å thicker round the protein: towards membraneThickened (blue) only.
+    const thick = (await fills(18, -18)).filter(([r, , b]) => r !== b);
+    expect(thick.length).toBeGreaterThan(0);
+    for (const [r, , b] of thick) expect(b).toBeGreaterThan(r);
+    // 6 Å thinner: towards membraneThinned (red) only.
+    const thin = (await fills(12, -12)).filter(([r, , b]) => r !== b);
+    expect(thin.length).toBeGreaterThan(0);
+    for (const [r, , b] of thin) expect(r).toBeGreaterThan(b);
   });
 
   describe('membrane-detail blending', () => {

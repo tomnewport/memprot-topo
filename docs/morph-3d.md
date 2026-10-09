@@ -127,11 +127,15 @@ a spacing of another spoke. Pores the protein encloses (not reachable from
 outside without crossing the interface) get no lines.
 
 The surface is a 2 Å mesh over the disc, drawn behind the protein like the
-sheets it replaces. Each leaflet is coloured in 1 Å bands from `membrane` at
-its bulk height towards `membraneRaised` where it rises and `membraneLowered`
-where it drops, reaching full strength at ±6 Å. Raised means further up the
-membrane normal, so a thinner bilayer shows as a raised lower leaflet and a
-lowered upper one. The bands meet along smooth contours. The upper leaflet is
+sheets it replaces. It is coloured by the bilayer's local thickness (upper
+leaflet height minus lower) against the bulk's, in 1 Å bands from `membrane`
+at the bulk thickness towards `membraneThinned` where the bilayer is thinner
+and `membraneThickened` where it is thicker, reaching full strength at 6 Å
+either way. Both leaflets take the same colour at each point, so a bilayer
+that bends without changing thickness stays uncoloured. Where only the other
+leaflet is open (a pore on that side alone), a leaflet's own shift from its
+bulk plane is doubled, as if the bilayer were symmetric there. The bands meet
+along smooth contours. The upper leaflet is
 40 % opaque and the lower 30 %. A piece of protein seen through the surface
 takes the colour of the band where its line of sight first crosses the
 surface (found by marching along the line of sight about every 1 Å across the

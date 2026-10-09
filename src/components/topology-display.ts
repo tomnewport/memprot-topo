@@ -2406,8 +2406,8 @@ type MorphThemeStyle = Pick<
   | 'coil'
   | 'membraneFill'
   | 'membraneEdge'
-  | 'membraneRaised'
-  | 'membraneLowered'
+  | 'membraneThinned'
+  | 'membraneThickened'
   | 'midplane'
   | 'contact'
   | 'background'
@@ -2425,8 +2425,8 @@ function morphColours(theme: Theme): MorphThemeStyle {
     coil: theme.loop,
     membraneFill: theme.membrane,
     membraneEdge: theme.membraneEdge,
-    membraneRaised: theme.membraneRaised,
-    membraneLowered: theme.membraneLowered,
+    membraneThinned: theme.membraneThinned,
+    membraneThickened: theme.membraneThickened,
     midplane: theme.midplane,
     contact: theme.contact,
     background: theme.background,

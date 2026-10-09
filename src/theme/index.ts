@@ -35,9 +35,9 @@ export interface Theme {
   loop: string;
   membrane: string;
   membraneEdge: string;
-  /** 3-D surface style: where a leaflet rises above, or drops below, its bulk plane. */
-  membraneRaised: string;
-  membraneLowered: string;
+  /** 3-D surface style: where the bilayer is thinner, or thicker, than in the bulk. */
+  membraneThinned: string;
+  membraneThickened: string;
   /** Membrane midplane (z = 0) line. */
   midplane: string;
   /** β-sheet contact ties. */
@@ -148,8 +148,8 @@ export const LIGHT_THEME: Readonly<Theme> = Object.freeze({
   loop: '#666666',
   membrane: '#eaeaea',
   membraneEdge: '#bdbdbd',
-  membraneRaised: '#d6604d',
-  membraneLowered: '#4393c3',
+  membraneThinned: '#d6604d',
+  membraneThickened: '#4393c3',
   midplane: '#666666',
   contact: '#c98a3b',
   label: '#333333',
@@ -201,8 +201,8 @@ export const DARK_THEME: Readonly<Theme> = Object.freeze({
   loop: '#a6a6a6',
   membrane: '#3b3e44',
   membraneEdge: '#62666d',
-  membraneRaised: '#f4a582',
-  membraneLowered: '#92c5de',
+  membraneThinned: '#f4a582',
+  membraneThickened: '#92c5de',
   midplane: '#8d9197',
   contact: '#dba760',
   label: '#d2d4d6',
