@@ -39,6 +39,15 @@ describe('parsePdb', () => {
     expect(chainA!.residues.has('999')).toBe(false); // HOH excluded (no CA atom)
   });
 
+  it('does not treat a calcium ion as a Cα atom', () => {
+    const calcium = `HETATM 9000 CA   CA A 501       0.000   0.000   0.000  1.00  0.00          CA`;
+    const chains = parsePdb(`${SAMPLE_PDB}\n${calcium}`);
+    const chainA = chains.find((c) => c.chainId === 'A');
+
+    expect(chainA!.residues.has('501')).toBe(false);
+    expect(chainA!.calphas).toHaveLength(4);
+  });
+
   it('returns empty array for empty content', () => {
     expect(parsePdb('')).toHaveLength(0);
   });

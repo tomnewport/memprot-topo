@@ -25,8 +25,9 @@ export function parsePdb(content: string): RawChain[] {
     const record = line.slice(0, 6);
     if (record !== 'ATOM  ' && record !== 'HETATM') continue;
 
-    const atomName = line.slice(12, 16).trim();
-    if (atomName !== 'CA') continue;
+    // The atom-name columns distinguish a protein alpha carbon (` CA `)
+    // from a calcium ion (`CA  `), even though trimming makes both `CA`.
+    if (line.slice(12, 16) !== ' CA ') continue;
 
     const chainId = line[21];
     if (!chainId || chainId === ' ') continue;
