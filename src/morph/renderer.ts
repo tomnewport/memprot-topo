@@ -98,6 +98,15 @@ function mixRgb(a: RGB, b: RGB, t: number): RGB {
 
 const WHITE: RGB = [255, 255, 255];
 
+/** The CSS `saturate(s)` filter applied to a colour. */
+function saturate([r, g, b]: RGB, s: number): RGB {
+  return [
+    (0.213 + 0.787 * s) * r + (0.715 - 0.715 * s) * g + (0.072 - 0.072 * s) * b,
+    (0.213 - 0.213 * s) * r + (0.715 + 0.285 * s) * g + (0.072 - 0.072 * s) * b,
+    (0.213 - 0.213 * s) * r + (0.715 - 0.715 * s) * g + (0.072 + 0.928 * s) * b,
+  ];
+}
+
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
 }
@@ -630,6 +639,8 @@ export class MorphRenderer {
   };
   /** The background: fog and faded elements mix towards it. */
   private readonly ground: RGB;
+  /** Ids of the selected elements and loops. */
+  private selected: ReadonlySet<number> = new Set();
 
   constructor(
     readonly model: MorphModel,
@@ -666,6 +677,22 @@ export class MorphRenderer {
     this.labelsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG.setAttribute('font-family', st.labelFontFamily);
     svg.append(this.defs, backG, this.runsG, this.labelsG);
+  }
+
+  /**
+   * Mark elements and loops (by model id) as selected: their runs are drawn
+   * with wider strokes and carry `class="selected"` and `data-type`, for the
+   * page's glow. Takes effect from the next frame.
+   */
+  setSelected(ids: Iterable<number>): void {
+    this.selected = new Set(ids);
+  }
+
+  /** `helix`, `strand` or `loop` for a selectable model id. */
+  private typeOf(id: number): string | null {
+    const els = this.model.elements;
+    if (id < 0) return null;
+    return id < els.length ? els[id].type : 'loop';
   }
 
   /**
@@ -2762,6 +2789,8 @@ export class MorphRenderer {
       bg[1] - k * (bg[1] - c[1]),
       bg[2] - k * (bg[2] - c[2]),
     ];
+    const sat = this.model.scene.style.unselectedSaturation;
+    const desaturate = (c: RGB): RGB => saturate(c, sat);
     let gi = 0;
     for (let i = 0; i < runs.length; i++) {
       const run = runs[i];
@@ -2774,7 +2803,14 @@ export class MorphRenderer {
       }
       slot.g.set('display', null);
       slot.g.set('opacity', run.faded && fadeA < 0.999 ? fadeA.toFixed(3) : null);
-      const tint = run.faded ? lighten : (c: RGB): RGB => c;
+      const sel = this.selected.has(run.id);
+      // Everything else is desaturated while there is a selection (as in 2-D,
+      // the faded neighbouring chains are left alone).
+      const dull = !sel && !run.faded && this.selected.size > 0 && this.typeOf(run.id) !== null;
+      slot.g.set('class', sel ? 'selected' : null);
+      slot.g.set('data-type', sel ? this.typeOf(run.id) : null);
+      const widthScale = sel ? this.model.scene.style.selectionWidthScale : 1;
+      const tint = run.faded ? lighten : dull ? desaturate : (c: RGB): RGB => c;
       const ops = run.sortedOps();
       for (let j = 0; j < ops.length; j++) {
         const op = ops[j];
@@ -2793,7 +2829,10 @@ export class MorphRenderer {
         if (op.spec.kind === 'stroke') {
           path.set('fill', 'none');
           path.set('stroke', rgbStr(avg));
-          path.set('stroke-width', (op.width[0] / Math.max(1, op.width[1])).toFixed(2));
+          path.set(
+            'stroke-width',
+            ((op.width[0] / Math.max(1, op.width[1])) * widthScale).toFixed(2),
+          );
           path.set('stroke-linecap', op.spec.linecap ?? 'round');
           path.set('stroke-linejoin', 'round');
           path.set('stroke-dasharray', op.spec.dash ?? null);

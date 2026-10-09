@@ -255,6 +255,22 @@ const STYLES = `
     stroke-width: calc(var(--mp-selection-width) + 1px);
   }
   .loop.selected { stroke-width: calc(var(--mp-selection-width) + 0.5px); }
+  /* While there is a selection, everything else is a little less saturated. */
+  .has-selection .ss-element:not(.selected), .has-selection .loop:not(.selected) {
+    filter: saturate(var(--mp-unselected-saturation));
+  }
+  .has-selection .ss-element:not(.selected):hover,
+  .has-selection .ss-element:not(.selected):focus-visible {
+    filter: saturate(var(--mp-unselected-saturation)) brightness(1.15);
+  }
+  /* The same glow in the 3-D view (its wider outlines are drawn by the renderer). */
+  .morph-svg .selected[data-type='helix'] { --glow-base: var(--mp-helix); }
+  .morph-svg .selected[data-type='strand'] { --glow-base: var(--mp-strand); }
+  .morph-svg .selected[data-type='loop'] { --glow-base: var(--mp-loop); }
+  .morph-svg .selected {
+    --glow: color-mix(in srgb, var(--glow-base), white var(--mp-selection-glow-brighten));
+    filter: drop-shadow(0 0 var(--mp-selection-glow-blur) var(--glow));
+  }
   /* A loop drawn residue by residue shows its plain curve only as the halo. */
   .loop.has-data { stroke-opacity: 0; }
   .loop.has-data.selected {
@@ -1086,6 +1102,10 @@ function drawLoop(
     seg: rec.seg,
     order: rec.recorder.order++,
     residues: loopResidues.map((r) => r.resSeq),
+    selectable:
+      path && !faded && loopResidues.length > 0
+        ? { start: loopResidues[0].resSeq, end: loopResidues[loopResidues.length - 1].resSeq }
+        : undefined,
   });
 }
 
@@ -1936,9 +1956,8 @@ function renderChainSvg(
         ? lastSs.endResSeq + 1
         : prevLayout.residues[prevLayout.residues.length - 1]?.resSeq;
       const to = firstSs ? firstSs.startResSeq - 1 : layout.residues[0]?.resSeq;
-      if (connector && from !== undefined && to !== undefined && from <= to) {
-        markLoop(connector, from, to);
-      }
+      const marked = connector && from !== undefined && to !== undefined && from <= to;
+      if (marked) markLoop(connector, from, to);
       recorder.loops.push({
         points: points.map((p) => ({ arc: p.arc, z: p.z })),
         discontinuous: true,
@@ -1955,6 +1974,7 @@ function renderChainSvg(
             .filter((r) => !firstSs || r.resSeq < firstSs.startResSeq)
             .map((r) => r.resSeq),
         ],
+        selectable: marked ? { start: from, end: to } : undefined,
       });
     }
   }
@@ -2167,6 +2187,7 @@ function drawSegment(
           withArrow,
           faded,
           order: rec.recorder.order++,
+          selectable: poly && !faded ? { start: run.startResSeq, end: run.endResSeq } : undefined,
         });
       }
       // Faded neighbouring protomers are context only — don't clutter with labels.
@@ -2370,6 +2391,8 @@ function iconColours(theme: Theme): IconColours {
 /** Theme-dependent parts of the 3-D morph's style: its colours and label typeface. */
 type MorphThemeStyle = Pick<
   MorphStyle,
+  | 'selectionWidthScale'
+  | 'unselectedSaturation'
   | 'helixFill'
   | 'helixStroke'
   | 'strandFill'
@@ -2399,6 +2422,8 @@ function morphColours(theme: Theme): MorphThemeStyle {
     background: theme.background,
     labelFill: theme.label,
     labelFontFamily: theme.fontFamily,
+    selectionWidthScale: theme.selectionWidth / theme.outlineWidth,
+    unselectedSaturation: theme.unselectedSaturation,
   };
 }
 
@@ -3165,6 +3190,7 @@ export class TopologyDisplay extends HTMLElement {
           src.options,
         );
         this._morph = morph;
+        morph.setSelection(this.morphSelection());
         this.bindMorphBar(src.bar, morph);
         return morph;
       })
@@ -3605,12 +3631,23 @@ export class TopologyDisplay extends HTMLElement {
     if (!this._shown) return;
     const sel = this.selection;
     const hit = sel && sel.chainId === this._shown.chain.chainId ? sel : null;
+    let any = false;
     for (const el of this._shown.svg.querySelectorAll<SVGElement>('.ss-element, .loop')) {
       const on =
         hit !== null && Number(el.dataset.start) <= hit.end && Number(el.dataset.end) >= hit.start;
+      any ||= on;
       el.classList.toggle('selected', on);
       if (el.classList.contains('ss-element')) el.setAttribute('aria-pressed', String(on));
     }
+    this._shown.svg.classList.toggle('has-selection', any);
+    this._morph?.setSelection(this.morphSelection());
+  }
+
+  /** The selected residue range on the shown chain, for the 3-D view. */
+  private morphSelection(): { start: number; end: number } | null {
+    const sel = this.selection;
+    if (!sel || !this._shown || sel.chainId !== this._shown.chain.chainId) return null;
+    return { start: sel.start, end: sel.end };
   }
 
   /**

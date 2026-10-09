@@ -76,6 +76,11 @@ export interface Theme {
    * of white mixed into the element's own colour (helix, strand or loop).
    */
   selectionGlowBrighten: number;
+  /**
+   * Saturation (1 = unchanged) of the helices, strands and loops outside the
+   * selection, while there is one.
+   */
+  unselectedSaturation: number;
 
   // Type.
   /** Interface text and residue-number labels. */
@@ -164,6 +169,7 @@ export const LIGHT_THEME: Readonly<Theme> = Object.freeze({
   selectionWidth: 3.5,
   selectionGlowBlur: 5,
   selectionGlowBrighten: 15,
+  unselectedSaturation: 0.75,
 
   fontFamily: 'sans-serif',
   serifFontFamily: 'Georgia, "Times New Roman", serif',

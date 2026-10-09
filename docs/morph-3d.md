@@ -79,8 +79,13 @@ mouse/pen/keyboard only. The framing is refitted when the container changes
 width. With `prefers-reduced-motion: reduce` the 3D button jumps straight to
 the other view instead of animating.
 
-Attribute and data changes keep the view. The `morph-*` attributes update the
-3-D picture in place, so it keeps its progress, orbit and any running
+The selection is shown in 3-D as in 2-D: selected elements and loops glow in
+their own colour and are outlined wider (by `selectionWidth / outlineWidth`).
+Each depth-sorted run of a selected element carries `class="selected"` and
+`data-type`, which the component's styles give the glow.
+
+Attribute and data changes keep the view. The `morph-*` attributes and
+`selection` update the 3-D picture in place, so it keeps its progress, orbit and any running
 animation. 2-D drawing attributes (`debug-loops`, `loop-*`, `show-contacts`, `min-*-length`, residue data and `colour-*`),
 a chain switch and new protein data redraw but restore the scroll position and
 3-D view; new data also keeps the user's chain pick and selection when it has

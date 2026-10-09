@@ -84,4 +84,5 @@ element and give it a dark outline.
 
 Only the displayed chain's elements are interactive: in an assembly barrel the
 faded neighbouring protomers are context, not part of the selection. The 3-D
-view is not interactive; the selection styling returns with the 2-D view.
+view shows the selection with the same glow and wider outlines (changing it
+there keeps the view), but its elements are not clickable.
