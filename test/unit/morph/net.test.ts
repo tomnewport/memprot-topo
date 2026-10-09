@@ -212,6 +212,24 @@ describe('buildFishnet', () => {
     expect(all.some(([x, y]) => Math.hypot(x - 12, y) < 7)).toBe(true);
   });
 
+  it('leaves a ring of flat bulk at the rim', () => {
+    const net = buildFishnet({
+      centre: CENTRE,
+      radius: 40,
+      bulk: BULK,
+      annular: BULK,
+      protein: [CENTRE.x, CENTRE.y],
+      local: { upper: () => 26, lower: () => -26, radius: 6 },
+      margin: 5,
+    });
+    for (const [x, y, z] of nodes(net.upper)) {
+      const d = Math.hypot(x, y);
+      if (d >= 35) expect(z).toBe(20);
+      if (d <= 0.8 * 35) expect(z).toBe(26);
+      if (d > 0.8 * 35 && d < 35) expect(z).toBeGreaterThan(20);
+    }
+  });
+
   it('takes a set grid spacing', () => {
     const net = buildFishnet({
       centre: CENTRE,

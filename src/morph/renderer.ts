@@ -2,7 +2,15 @@ import { ssOutline, type OutlinePoint, type OutlineSection } from '../components
 import { Camera } from './camera.js';
 import { computePose, type Pose, type Rigid } from './curtain.js';
 import type { MorphModel, ModelElement, ModelLoop } from './model.js';
-import { buildFishnet, fishnetSpacing, fitRigid2d, type Fishnet, type HeightAt } from './net.js';
+import {
+  BULK_MARGIN,
+  buildFishnet,
+  discRadius,
+  fishnetSpacing,
+  fitRigid2d,
+  type Fishnet,
+  type HeightAt,
+} from './net.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -781,7 +789,7 @@ export class MorphRenderer {
         dr = Math.max(dr, Math.hypot(pose.w[k * 4] - dcx, pose.w[k * 4 + 1] - dcy));
       }
     }
-    dr = Math.max(dr, 10) + 8;
+    dr = discRadius(dr);
     x0 = Math.min(x0, dcx - dr);
     x1 = Math.max(x1, dcx + dr);
     y0 = Math.min(y0, dcy - dr);
@@ -2636,6 +2644,7 @@ export class MorphRenderer {
       protein,
       local,
       spacing,
+      margin: BULK_MARGIN,
     });
   }
 

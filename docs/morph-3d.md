@@ -143,10 +143,13 @@ finished 3-D view stays vector (and exportable).
   which the view doesn't draw; the drawn protein's own footprint; or past the
   file's edge) the net is filled in as a stretched membrane would be: each
   point there is the mean of its neighbours along the lines, held by the lipid
-  around the gap and the bulk at the rim, so it neither tears nor steps. It
-  eases to the bulk over the outer fifth of the disc to meet the rim, and
-  grows out of the flat planes as the sheets fade in. The tinted sheets stay
-  at the bulk planes. See
+  around the gap and the bulk at the rim, so it neither tears nor steps. The
+  disc reaches 19 Å past the farthest membrane-spanning helix or strand
+  sample (at least 29 Å from its centre): room for the annular leaflet to ease
+  to the bulk (4 + 10 Å), then a flat ring of bulk 5 Å wide at the edge
+  (`BULK_MARGIN` in `src/morph/net.ts`). Inside that ring the net eases to
+  the bulk over the outer fifth. It grows out of the flat planes as the sheets
+  fade in. The tinted sheets stay at the bulk planes. See
   [membrane.md](membrane.md).
 - Consecutive sections of the same element are merged into one path whenever
   nothing drawn in between overlaps them on screen (convex-footprint test).

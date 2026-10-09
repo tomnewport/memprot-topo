@@ -57,8 +57,8 @@ surrounds stay open, and gaps elsewhere, such as other subunits the view
 doesn't draw, are filled in smoothly from the lipid around), and otherwise
 holds the annular position next to the protein, easing to the bulk 4–14 Å
 away. Its spacing is `morph-grid-spacing` (see [morph-3d.md](morph-3d.md)). It
-eases to the bulk at the disc's rim. The translucent leaflet sheets behind it
-stay at the bulk planes.
+eases to the bulk before the disc's rim, which shows at least 5 Å of flat
+bulk. The translucent leaflet sheets behind it stay at the bulk planes.
 
 ## Placing the membrane
 

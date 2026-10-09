@@ -383,7 +383,8 @@ describe('morph membrane', () => {
       lower: () => -15,
     };
     const zs = netHeights({ ...barrel, slab: { ...barrel.slab, surface } });
-    expect(zs.filter((z) => z > 18.9).length).toBeGreaterThan(zs.length / 4);
+    // About half of the disc inside its bulk ring and rim fade.
+    expect(zs.filter((z) => z > 18.9).length).toBeGreaterThan(zs.length / 6);
     expect(zs.filter((z) => z < 15.1).length).toBeGreaterThan(zs.length / 4);
   });
 });

@@ -28,6 +28,8 @@ export interface FishnetInput {
   local?: { upper: HeightAt; lower: HeightAt; radius: number };
   /** Grid spacing (Å). Default {@link fishnetSpacing} of the radius. */
   spacing?: number;
+  /** Width (Å) of the flat bulk ring at the rim. Default 0. */
+  margin?: number;
 }
 
 /**
@@ -47,8 +49,25 @@ const SPACING_PER_RADIUS = 1 / 8;
 const ANNULAR_REACH = 4;
 /** … then eases to the bulk over this distance (Å). */
 const ANNULAR_FADE = 10;
-/** Fraction of the radius beyond which every height eases to the bulk, so the net meets the rim. */
+/**
+ * Fraction of the radius inside the bulk ring beyond which every height eases
+ * to the bulk, so the net meets it.
+ */
 const RIM_FADE = 0.8;
+/**
+ * Flat bulk (Å) the 3-D disc shows at its edge, beyond where the membrane has
+ * relaxed to the bulk.
+ */
+export const BULK_MARGIN = 5;
+
+/**
+ * Radius (Å) of the membrane disc around membrane-spanning samples reaching
+ * `extent` Å from its centre: room for the annular leaflet to ease to the
+ * bulk, then {@link BULK_MARGIN} of bulk.
+ */
+export function discRadius(extent: number): number {
+  return Math.max(extent, 10) + ANNULAR_REACH + ANNULAR_FADE + BULK_MARGIN;
+}
 /**
  * A point with no lipid within this distance (Å), or the averaging radius if
  * smaller, is in a pore when the drawn protein surrounds it.
@@ -129,8 +148,9 @@ export function buildFishnet(input: FishnetInput): Fishnet {
     return false;
   };
 
+  const inner = r - Math.min(r, input.margin ?? 0);
   const toRim = (ox: number, oy: number) =>
-    smoothstep((Math.hypot(ox, oy) / r - RIM_FADE) / (1 - RIM_FADE));
+    inner > 0 ? smoothstep((Math.hypot(ox, oy) / inner - RIM_FADE) / (1 - RIM_FADE)) : 1;
 
   /** Heights without local ones: annular next to the protein, easing to the bulk. */
   const plain = (leaf: 'upper' | 'lower', ox: number, oy: number) => {
