@@ -46,7 +46,8 @@
         gap: 1.5rem;
       }
 
-      section {
+      section,
+      .controls {
         background: #fff;
         border: 1px solid #dee2e6;
         border-radius: 8px;
@@ -63,29 +64,110 @@
         padding-bottom: 0.5rem;
       }
 
-      .controls {
-        margin-bottom: 1.5rem;
+      /*
+       * Parameters live in a narrow sidebar that scrolls on its own and
+       * collapses to a thin strip, so the diagrams keep most of the width.
+       */
+      .layout {
+        display: flex;
+        align-items: flex-start;
+        gap: 1.5rem;
       }
 
-      /* Keep the controls in view while scrolling the diagrams on wide screens. */
-      @media (min-width: 900px) {
-        .controls {
-          position: sticky;
-          top: 0;
-          z-index: 10;
-        }
+      .protein-grid {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .controls {
+        flex: none;
+        position: sticky;
+        top: 1rem;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0.75rem 0.9rem;
+      }
+
+      .controls details[open] {
+        width: 16rem;
       }
 
       .controls summary {
         cursor: pointer;
         font-weight: 600;
         color: #495057;
+        white-space: nowrap;
+      }
+
+      /* Collapsed: a thin vertical tab. */
+      .controls:has(details:not([open])) {
+        padding: 0.75rem 0.4rem;
+      }
+      .controls details:not([open]) summary {
+        writing-mode: vertical-rl;
+        list-style: none;
+      }
+      .controls details:not([open]) summary::-webkit-details-marker {
+        display: none;
+      }
+      .controls details:not([open]) summary::before {
+        content: '\25B8\00A0';
       }
 
       .controls p {
         margin: 0.5rem 0;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         color: #6c757d;
+      }
+
+      .controls .control-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .controls .control {
+        grid-template-columns: auto 1fr;
+        grid-template-areas:
+          'label label'
+          'input default';
+        padding: 0.3rem 0;
+        border-top: 1px solid #e9ecef;
+      }
+
+      .controls .control:has(input[type='text']) {
+        grid-template-areas:
+          'label label'
+          'input input'
+          'default default';
+      }
+
+      .controls .control input[type='text'] {
+        width: 100%;
+      }
+
+      .controls .control .default {
+        text-align: right;
+      }
+
+      @media (max-width: 899px) {
+        .layout {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .controls {
+          position: static;
+          max-height: 60vh;
+        }
+        .controls details[open] {
+          width: auto;
+        }
+        .controls details:not([open]) summary {
+          writing-mode: horizontal-tb;
+        }
+        .controls .control-grid {
+          grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+          column-gap: 1.25rem;
+        }
       }
 
       .control-grid {
@@ -156,9 +238,16 @@
         background: #121316;
         color: #e4e6e8;
       }
-      :root[data-theme='dark'] section {
+      :root[data-theme='dark'] section,
+      :root[data-theme='dark'] .controls {
         background: #1c1d20;
         border-color: #3a3d42;
+      }
+      :root[data-theme='dark'] .controls .control {
+        border-top-color: #3a3d42;
+      }
+      :root[data-theme='dark'] .controls summary {
+        color: #c9cbce;
       }
       :root[data-theme='dark'] section h2 {
         color: #c9cbce;
@@ -177,15 +266,15 @@
         }
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-CacTxcdc.js"></script>
+    <script type="module" crossorigin src="./assets/index-6n-pZni-.js"></script>
   </head>
   <body>
     <header>
       <h1>MemProt2D</h1>
       <p>Membrane protein 2D topology viewer — development demo</p>
     </header>
-    <main>
-      <section class="controls">
+    <main class="layout">
+      <aside class="controls">
         <details open>
           <summary>Parameters</summary>
           <p>
@@ -195,7 +284,7 @@
           </p>
           <div id="controls"></div>
         </details>
-      </section>
+      </aside>
       <div class="protein-grid">
         <section>
           <h2>OmpC Osmoporin (2J1N) — β-barrel, thesis fig 2.10</h2>
