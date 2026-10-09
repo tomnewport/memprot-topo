@@ -193,7 +193,7 @@ describe('<topology-display> theming', () => {
     expect(helix(el).classList.contains('selected')).toBe(true);
     expect(events).toEqual([{ name: 'dark' }]);
     // Every themed attribute follows the theme.
-    const slab = root.querySelector('.svg-scroll svg rect[data-mp-paint]')!;
+    const slab = root.querySelector('.svg-scroll svg path.membrane')!;
     expect(slab.getAttribute('fill')).toBe(DARK_THEME.membrane);
   });
 

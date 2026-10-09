@@ -16,8 +16,29 @@ export interface MorphScene {
   loops: MorphLoop[];
   labels: MorphLabel[];
   ties: MorphTie[];
-  /** Membrane slab as drawn in 2-D, in display Å (x from x0 to x1, z ±half). */
-  slab: { x0: number; x1: number; half: number };
+  /**
+   * Membrane as drawn in 2-D, in display Å: x from x0 to x1, bulk leaflets at
+   * z = upper and lower. `profile`, when given, is the leaflet heights the
+   * 2-D view actually drew along x (bulk at the ends, local in between); the
+   * morph starts from it and flattens it onto the bulk planes.
+   *
+   * In 3-D each leaflet is a fishnet that holds `annular` (default: the bulk)
+   * next to the protein, or follows `surface` when given: the local leaflet
+   * height (Å) under a point of the segments' `positions` frame, averaged
+   * over `radius` Å, or null where there is no lipid within it.
+   */
+  slab: {
+    x0: number;
+    x1: number;
+    upper: number;
+    lower: number;
+    profile?: { x: number[]; upper: number[]; lower: number[] };
+    annular?: { upper: number; lower: number };
+    surface?: {
+      upper: (x: number, y: number, radius: number) => number | null;
+      lower: (x: number, y: number, radius: number) => number | null;
+    };
+  };
   /** How display Å map to SVG user units in the 2-D picture. */
   frame: MorphFrame;
   /** Fixed display gap between consecutive elements (Å). */
@@ -113,6 +134,9 @@ export interface MorphStyle {
   coil: string;
   membraneFill: string;
   membraneEdge: string;
+  /** The surface style's colours where the bilayer is thinner, or thicker, than in the bulk. */
+  membraneThinned: string;
+  membraneThickened: string;
   midplane: string;
   contact: string;
   /** Diagram background: the 3-D view fogs towards it. */

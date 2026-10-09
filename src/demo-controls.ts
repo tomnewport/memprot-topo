@@ -8,6 +8,8 @@
  * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
  */
 import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
+import { DEFAULT_MEMBRANE_STYLE, MEMBRANE_STYLES } from './morph/membrane-style.js';
+import { DEFAULT_BULK, DEFAULT_MEMBRANE_DETAIL, MEMBRANE_DETAILS } from './membrane/model.js';
 import { registerTheme } from './theme/index.js';
 import {
   DEFAULT_TRANSITION_MS,
@@ -208,6 +210,25 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Strand ribbon thickness in the 3-D view (Å).',
   },
   {
+    attribute: 'morph-grid-spacing',
+    kind: 'number',
+    default: 0,
+    min: 0,
+    max: 20,
+    step: 2,
+    scope: 'all',
+    description: 'Membrane grid spacing in the 3-D view (Å, at least 2); 0 sizes it from the disc.',
+  },
+  {
+    attribute: 'morph-membrane-style',
+    kind: 'select',
+    default: DEFAULT_MEMBRANE_STYLE,
+    options: [...MEMBRANE_STYLES],
+    scope: 'all',
+    description:
+      'Membrane in the 3-D view: a square grid, rings and spokes that follow the protein near it, or a surface coloured by height.',
+  },
+  {
     attribute: 'icon-bandwidth',
     kind: 'number',
     default: 0,
@@ -216,6 +237,55 @@ export const DEMO_CONTROLS: DemoControl[] = [
     step: 0.5,
     scope: 'all',
     description: 'Smoothing σ (Å) of the chain-picker violins; 0 is the plain histogram.',
+  },
+  {
+    attribute: 'membrane-upper',
+    kind: 'number',
+    default: DEFAULT_BULK.upper,
+    min: 0,
+    max: 50,
+    step: 0.5,
+    scope: 'all',
+    description: 'Bulk upper-leaflet headgroup surface (Å above the midplane).',
+  },
+  {
+    attribute: 'membrane-lower',
+    kind: 'number',
+    default: DEFAULT_BULK.lower,
+    min: -50,
+    max: 0,
+    step: 0.5,
+    scope: 'all',
+    description: 'Bulk lower-leaflet headgroup surface (Å; negative is below the midplane).',
+  },
+  {
+    attribute: 'membrane-annular-upper',
+    kind: 'number',
+    default: DEFAULT_BULK.upper,
+    min: 0,
+    max: 50,
+    step: 0.5,
+    scope: 'all',
+    description: 'Upper leaflet next to the protein (Å); follows the bulk unless set.',
+  },
+  {
+    attribute: 'membrane-annular-lower',
+    kind: 'number',
+    default: DEFAULT_BULK.lower,
+    min: -50,
+    max: 0,
+    step: 0.5,
+    scope: 'all',
+    description: 'Lower leaflet next to the protein (Å); follows the bulk unless set.',
+  },
+  {
+    attribute: 'membrane-detail',
+    kind: 'select',
+    default: DEFAULT_MEMBRANE_DETAIL,
+    options: [...MEMBRANE_DETAILS],
+    scope: 'all',
+    description:
+      'Membrane drawn: flat at the bulk leaflets, annular next to the protein, or the local surface from a distortions file.',
   },
   {
     attribute: 'theme',

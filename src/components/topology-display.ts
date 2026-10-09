@@ -55,13 +55,38 @@ import type {
 } from '../morph/types.js';
 import type { MorphController, MorphView } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
+import type { Fishnet } from '../morph/net.js';
 import { PROJECTIONS } from '../morph/projections.js';
+import {
+  DEFAULT_MEMBRANE_STYLE,
+  MEMBRANE_STYLES,
+  type MembraneStyle,
+} from '../morph/membrane-style.js';
 import type { SeqElement, SeqResidue, SequenceSource, TracePoint } from '../sequence/types.js';
 import { oneLetter } from '../sequence/amino-acids.js';
 import { SequenceController } from '../sequence/controller.js';
 import { DEFAULT_SEQUENCE_OPTIONS, type SequenceOptions } from '../sequence/renderer.js';
 import type { SeqLane } from '../sequence/types.js';
 import { SEQ } from '../sequence/layout.js';
+import {
+  DEFAULT_BULK,
+  DEFAULT_MEMBRANE_DETAIL,
+  MEMBRANE_CORE_HALF,
+  MEMBRANE_DETAILS,
+  MEMBRANE_REACH_A,
+  membraneAtDetail,
+  membraneProfile,
+  parseDistortions,
+  reachWeight,
+  resolveMembrane,
+  type LeafletPair,
+  type Membrane,
+  type MembraneDetail,
+  type MembraneDistortions,
+  type MembraneProfile,
+  type MembraneSettings,
+  type ProfileAnchor,
+} from '../membrane/index.js';
 import {
   getTheme,
   onThemeRegistered,
@@ -258,6 +283,90 @@ const STYLES = `
     stroke-opacity: 1;
     stroke-width: calc(var(--mp-selection-width) + 2.5px);
   }
+  .fullscreen-button {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font: inherit;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--mp-accent);
+    border-radius: var(--mp-corner-radius);
+    background: var(--mp-background);
+    color: var(--mp-accent);
+    cursor: pointer;
+  }
+  .fullscreen-button:hover { background: color-mix(in srgb, var(--mp-accent) 8%, var(--mp-background)); }
+  .fullscreen-button:focus-visible {
+    outline: 2px solid var(--mp-accent);
+    outline-offset: 1px;
+  }
+  .fullscreen-button svg { width: 0.9rem; height: 0.9rem; }
+  /* Full screen (issue #73): the element covers the screen and the diagram
+     box takes the space the controls above it leave. The box is scaled to
+     fit (see TopologyDisplay.fitFullscreen) and scrolls both ways. */
+  :host([fullscreen]) {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    width: auto;
+    height: auto;
+    max-width: none;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right))
+      max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
+  }
+  :host([fullscreen]) .content,
+  :host([fullscreen]) [role='region'],
+  :host([fullscreen]) .chain-block {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* One row of chains, scrolled sideways, so the picker stays short. */
+  :host([fullscreen]) .chain-picker { flex-wrap: nowrap; overflow-x: auto; flex: none; }
+  :host([fullscreen]) .scroll-frame { flex: 1; min-height: 0; overflow: hidden; }
+  /* Sized (in its own, unscaled px) and scaled up by fitFullscreen. */
+  :host([fullscreen]) .svg-scroll {
+    position: absolute;
+    top: 0;
+    left: 0;
+    box-sizing: border-box;
+    transform-origin: 0 0;
+    overflow: auto;
+    display: flex;
+  }
+  /* Centred while it fits; scrolls from its left/top edge when it doesn't. */
+  :host([fullscreen]) .svg-scroll > svg { flex: none; margin: auto; }
+  /* A short landscape screen (a phone on its side): the title and chain
+     picker move to a column on the left, leaving the height to the diagram. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    :host([fullscreen]) [role='region'] {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: repeat(4, auto) minmax(0, 1fr);
+      align-content: start;
+      column-gap: 0.75rem;
+    }
+    :host([fullscreen]) [role='region'] > * { grid-column: 1; max-width: 6rem; }
+    :host([fullscreen]) [role='region'] > .chain-block {
+      grid-column: 2;
+      grid-row: 1 / -1;
+      max-width: none;
+      min-height: 0;
+    }
+    :host([fullscreen]) .chain-picker {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      overflow: hidden auto;
+      max-height: calc(100dvh - 6rem);
+    }
+    :host([fullscreen]) .chain-block { margin-top: 0; }
+  }
 ${SCROLL_BOX_STYLES}`;
 
 const PLOT = {
@@ -265,8 +374,6 @@ const PLOT = {
   // Top/bottom/right padded enough for residue-number labels that sit just
   // past the membrane-facing tips of helix/strand polygons.
   margin: { top: 36, right: 40, bottom: 36, left: 40 },
-  // Membrane bilayer half-thickness (Å) for visual reference.
-  membraneHalf: 15,
   /** Maximum |z| (Å) shown on the y-axis — auto-expands if data exceeds. */
   zRangeMin: 25,
   /**
@@ -1487,6 +1594,101 @@ interface AssemblyContext {
   focalChainId: string;
 }
 
+/**
+ * Diagram x of every residue of a laid-out segment, or null where it has
+ * none. Helix and strand residues sit on their element. Loops are drawn as
+ * curves across a fixed gap rather than at their samples' x, so a loop
+ * residue is placed along that gap by its position in the loop; coil before
+ * the first or after the last element has nowhere to sit. A segment with no
+ * elements at all is drawn at its samples' x.
+ */
+function residueDisplayX(layout: SegmentLayout): (number | null)[] {
+  const { residues, samples, runs } = layout;
+  const xs: (number | null)[] = residues.map(() => null);
+  if (!runs.some(isSs)) {
+    return residues.map((r) => samples[r.sampleIndex]?.arc ?? null);
+  }
+  for (const run of runs) {
+    if (!isSs(run)) continue;
+    for (let i = run.residueStart; i <= run.residueEnd; i++) {
+      xs[i] = samples[residues[i].sampleIndex]?.arc ?? null;
+    }
+  }
+  let prev = -1;
+  for (let i = 0; i < residues.length; i++) {
+    if (xs[i] === null) continue;
+    if (prev >= 0 && i > prev + 1) {
+      const a = xs[prev]!;
+      const b = xs[i]!;
+      for (let k = prev + 1; k < i; k++) xs[k] = a + ((b - a) * (k - prev)) / (i - prev);
+    }
+    prev = i;
+  }
+  return xs;
+}
+
+/**
+ * Per residue of the diagram: its x, the local leaflet heights under it (with
+ * a distortions file), and how far the protein's hold on the membrane reaches
+ * there ({@link MEMBRANE_REACH_A}). The annular weight comes from the
+ * residue's distance along the membrane plane to the nearest `core` Cα (the
+ * transmembrane segments of every chain); the local weight from its distance
+ * to the bilayer between the local surfaces (0 inside it). Segments without
+ * 3-D positions contribute nothing.
+ */
+function membraneAnchors(
+  layouts: SegmentLayout[],
+  unroll: UnrollResult,
+  membrane: Membrane,
+  core: readonly { x: number; y: number }[],
+): ProfileAnchor[] {
+  const { surfaces, annular } = membrane;
+  const full2 = MEMBRANE_REACH_A.annular.full ** 2;
+  const anchors: ProfileAnchor[] = [];
+  layouts.forEach((layout, s) => {
+    const positions = unroll.segments[s]?.positions;
+    if (!positions || positions.length !== layout.samples.length) return;
+    const xs = residueDisplayX(layout);
+    layout.residues.forEach((r, i) => {
+      const x = xs[i];
+      const p = positions[r.sampleIndex];
+      if (x === null || !p) return;
+      const upper = surfaces ? surfaces.upper.heightAt(p.x, p.y) : null;
+      const lower = surfaces ? surfaces.lower.heightAt(p.x, p.y) : null;
+      let near2 = Infinity;
+      for (const c of core) {
+        near2 = Math.min(near2, (p.x - c.x) ** 2 + (p.y - c.y) ** 2);
+        if (near2 <= full2) break;
+      }
+      const toBilayer = Math.max(0, p.z - (upper ?? annular.upper), (lower ?? annular.lower) - p.z);
+      anchors.push({
+        x,
+        upper,
+        lower,
+        annularWeight: reachWeight(Math.sqrt(near2), MEMBRANE_REACH_A.annular),
+        localWeight: reachWeight(toBilayer, MEMBRANE_REACH_A.local),
+      });
+    });
+  });
+  return anchors;
+}
+
+/**
+ * SVG path data for the membrane between the two leaflet profiles: along the
+ * upper leaflet, back along the lower one, closed. Plot units (Å).
+ */
+function membranePath(profile: MembraneProfile): string {
+  const n = profile.x.length;
+  let d = '';
+  for (let i = 0; i < n; i++) {
+    d += `${i === 0 ? 'M' : 'L'}${profile.x[i].toFixed(2)},${profile.upper[i].toFixed(2)}`;
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    d += `L${profile.x[i].toFixed(2)},${profile.lower[i].toFixed(2)}`;
+  }
+  return d + 'Z';
+}
+
 /** The 2-D view's per-sample sequence position: residue `i` of `residues` sits at `f = i`. */
 function sampleToF(anchors: { sample: number; f: number }[]): (sample: number) => number {
   return (sample) => {
@@ -1523,6 +1725,7 @@ function buildSequenceSource(
   origin: { x: number; y: number },
   frame2d: SequenceSource['frame2d'],
   slab: SequenceSource['slab'],
+  membrane: SequenceSource['membrane'],
   display: ChainDisplayData | undefined,
 ): SequenceSource {
   const residues: SeqResidue[] = chain.calphas.map((c) => ({
@@ -1634,7 +1837,7 @@ function buildSequenceSource(
     dashed,
     elements,
     z,
-    membraneHalf: PLOT.membraneHalf,
+    membrane,
     frame2d,
     origin2d: { x: origin.x, y: origin.y, pxPerA: px },
     slab,
@@ -1651,6 +1854,9 @@ function renderChainSvg(
   opts: LoopRenderOptions,
   analysis: BarrelAnalysis,
   showContacts: boolean,
+  membrane: Membrane,
+  /** xy of every chain's membrane-core Cα: the transmembrane segments. */
+  core: readonly { x: number; y: number }[],
   theme: Theme,
   assembly?: AssemblyContext,
   display?: ChainDisplayData,
@@ -1695,7 +1901,24 @@ function renderChainSvg(
     ? { ...opts, extremePoints: false, tangentMagPx: BARREL.loopTangentPx }
     : opts;
 
-  const zRange = Math.max(PLOT.zRangeMin, Math.abs(unroll.zMin), Math.abs(unroll.zMax));
+  // Membrane behind the diagram: bulk at its ends; under the residues, the
+  // annular leaflets near the transmembrane segments and the local surface
+  // near the bilayer, when a distortions file gives one.
+  const profile = membraneProfile({
+    x0: 0,
+    x1: totalArc,
+    bulk: membrane.bulk,
+    annular: membrane.annular,
+    anchors: membraneAnchors(layouts, unroll, membrane, core),
+    pxPerA: PLOT.arcPxPerA,
+  });
+  const membraneReach = Math.max(...profile.upper.map(Math.abs), ...profile.lower.map(Math.abs));
+  const zRange = Math.max(
+    PLOT.zRangeMin,
+    Math.abs(unroll.zMin),
+    Math.abs(unroll.zMax),
+    membraneReach,
+  );
   const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
   const plotHeight = zRange * 2 * PLOT.zPxPerA;
   const svgWidth = PLOT.margin.left + plotWidth + PLOT.margin.right;
@@ -1730,25 +1953,26 @@ function renderChainSvg(
   );
   svg.appendChild(plot);
 
-  // Membrane slab. Drawn first so the trace appears on top; kept faint and
+  // Membrane. Drawn first so the trace appears on top; kept faint and
   // semi-transparent so the in-membrane portion of the trace remains clearly
   // visible (β-strand sections in particular spend most of their length here).
-  const slab = document.createElementNS(SVG_NS, 'rect');
-  slab.setAttribute('x', '0');
-  slab.setAttribute('y', `${-PLOT.membraneHalf}`);
-  slab.setAttribute('width', `${totalArc.toFixed(2)}`);
-  slab.setAttribute('height', `${PLOT.membraneHalf * 2}`);
+  const slab = document.createElementNS(SVG_NS, 'path');
+  slab.setAttribute('class', 'membrane');
+  slab.setAttribute('d', membranePath(profile));
   paint(slab, { fill: 'membrane', stroke: 'membraneEdge', 'stroke-width': 'membraneEdgeWidth' });
   slab.setAttribute('fill-opacity', '0.55');
   // Stroke gets multiplied by the (non-uniform) scale, so use vector-effect to
   // keep it 1px regardless of zoom.
   slab.setAttribute('vector-effect', 'non-scaling-stroke');
+  slab.setAttribute('stroke-linejoin', 'round');
   plot.appendChild(slab);
 
-  // Zero (z = 0) reference line — membrane midplane.
+  // Zero (z = 0) reference line — bulk membrane midplane.
+  const slabX0 = profile.x[0];
+  const slabX1 = profile.x[profile.x.length - 1];
   const mid = document.createElementNS(SVG_NS, 'line');
-  mid.setAttribute('x1', '0');
-  mid.setAttribute('x2', `${totalArc.toFixed(2)}`);
+  mid.setAttribute('x1', `${slabX0.toFixed(2)}`);
+  mid.setAttribute('x2', `${slabX1.toFixed(2)}`);
   mid.setAttribute('y1', '0');
   mid.setAttribute('y2', '0');
   paint(mid, { stroke: 'midplane', 'stroke-width': 'midplaneWidth' });
@@ -1878,6 +2102,7 @@ function renderChainSvg(
   const morphable = layouts.every(
     (layout, s) => unroll.segments[s]?.positions?.length === layout.samples.length,
   );
+  const leaflets = membrane.surfaces;
   const scene: MorphScene | null = !morphable
     ? null
     : {
@@ -1892,7 +2117,20 @@ function renderChainSvg(
         loops: recorder.loops,
         labels: recorder.labels,
         ties: recorder.ties,
-        slab: { x0: 0, x1: totalArc, half: PLOT.membraneHalf },
+        slab: {
+          x0: slabX0,
+          x1: slabX1,
+          upper: membrane.bulk.upper,
+          lower: membrane.bulk.lower,
+          profile,
+          annular: membrane.annular,
+          surface: leaflets
+            ? {
+                upper: (x, y, radius) => leaflets.upper.heightAt(x, y, radius),
+                lower: (x, y, radius) => leaflets.lower.heightAt(x, y, radius),
+              }
+            : undefined,
+        },
         frame: {
           originX: cx,
           originY: cy,
@@ -1927,7 +2165,9 @@ function renderChainSvg(
       width: expanded ? finalWidth : svgWidth,
       height: expanded ? finalHeight : svgHeight,
     },
-    { x0: 0, x1: totalArc },
+    // The band as drawn, flattened onto the bulk planes.
+    { x0: profile.x[0], x1: profile.x[profile.x.length - 1] },
+    { upper: membrane.bulk.upper, lower: membrane.bulk.lower },
     display,
   );
   const decor2d: Element[] = [labelsGroup];
@@ -2250,6 +2490,8 @@ type MorphThemeStyle = Pick<
   | 'coil'
   | 'membraneFill'
   | 'membraneEdge'
+  | 'membraneThinned'
+  | 'membraneThickened'
   | 'midplane'
   | 'contact'
   | 'background'
@@ -2267,6 +2509,8 @@ function morphColours(theme: Theme): MorphThemeStyle {
     coil: theme.loop,
     membraneFill: theme.membrane,
     membraneEdge: theme.membraneEdge,
+    membraneThinned: theme.membraneThinned,
+    membraneThickened: theme.membraneThickened,
     midplane: theme.midplane,
     contact: theme.contact,
     background: theme.background,
@@ -2279,6 +2523,18 @@ function morphColours(theme: Theme): MorphThemeStyle {
 
 /** Default time (ms) to move one whole dimension (see `transition-time`). */
 export const DEFAULT_TRANSITION_MS = 2500;
+/** A `membrane-detail` change blends over this fraction of `transition-time`. */
+const MEMBRANE_BLEND = 0.25;
+/** A number in SVG path data. */
+const PATH_NUMBER = /-?\d+(?:\.\d+)?/g;
+
+/** The membrane as drawn, for blending to a new `membrane-detail`. */
+interface MembraneSnapshot {
+  /** Path data of the 2-D band. */
+  band: string | null;
+  /** The 3-D membrane, while the 3-D view is shown. */
+  net: Fishnet | null;
+}
 
 function prefersReducedMotion(): boolean {
   return (
@@ -2373,9 +2629,16 @@ export class TopologyDisplay extends HTMLElement {
     'morph-projection',
     'morph-strand-width',
     'morph-strand-thickness',
+    'morph-grid-spacing',
+    'morph-membrane-style',
     'icon-bandwidth',
     'min-helix-length',
     'min-strand-length',
+    'membrane-upper',
+    'membrane-lower',
+    'membrane-annular-upper',
+    'membrane-annular-lower',
+    'membrane-detail',
     'selection',
     'residue-colours',
     'residue-widths',
@@ -2394,6 +2657,16 @@ export class TopologyDisplay extends HTMLElement {
 
   private readonly _instanceId = ++_instanceCounter;
   private _data: ProteinData | null = null;
+  private _distortions: MembraneDistortions | null = null;
+  /** Membrane resolved for the current data, distortions and settings, and as drawn. */
+  private _membraneCache: {
+    data: ProteinData;
+    distortions: MembraneDistortions | null;
+    key: string;
+    resolved: Membrane;
+    detail: MembraneDetail;
+    membrane: Membrane;
+  } | null = null;
   private _residueColours: ResidueColourValues | null = null;
   private _residueWidths: ResidueWidthValues | null = null;
   /** What the displayed chain's 3-D morph is built from, until it is needed. */
@@ -2419,7 +2692,16 @@ export class TopologyDisplay extends HTMLElement {
   private _morphLoad: Promise<MorphController | null> | null = null;
   /** A view a redraw is restoring while the morph code loads. */
   private _pendingView: MorphView | null = null;
+  /** Running blend of the 2-D membrane band after a `membrane-detail` change. */
+  private _band: { raf: number; path: Element; to: string } | null = null;
   private _scrollBox: ScrollBox | null = null;
+  /** Full-screen state: 'native' (Fullscreen API) or 'overlay' (fixed-position fallback). */
+  private _fullscreen: 'native' | 'overlay' | null = null;
+  /** Height the 3-D view fills while full screen (Infinity otherwise). */
+  private _fillHeight = Infinity;
+  private _fsButton: HTMLButtonElement | null = null;
+  /** Undo the full-screen listeners and page changes. */
+  private _fsCleanup: (() => void) | null = null;
   private _selectedChainId: string | null = null;
   /** The chain picker, when the protein has more than one chain. */
   private _picker: HTMLElement | null = null;
@@ -2442,23 +2724,26 @@ export class TopologyDisplay extends HTMLElement {
   private _assemblyCache: {
     data: ProteinData;
     min: SsMinLengths;
+    shift: number;
     analysis: BarrelAnalysis;
   } | null = null;
 
   /** Assembly-barrel analysis for the current proteinData, memoised. */
   private assemblyAnalysis(chains: ChainData[]): BarrelAnalysis {
     const min = this.ssMinLengths;
+    const shift = this.membrane?.shift ?? 0;
     const cached = this._assemblyCache;
     if (
       cached &&
       cached.data === this._data &&
       cached.min.helix === min.helix &&
-      cached.min.strand === min.strand
+      cached.min.strand === min.strand &&
+      cached.shift === shift
     ) {
       return cached.analysis;
     }
     const analysis = analyseAssemblyBarrel(chains);
-    if (this._data) this._assemblyCache = { data: this._data, min, analysis };
+    if (this._data) this._assemblyCache = { data: this._data, min, shift, analysis };
     return analysis;
   }
 
@@ -2469,6 +2754,7 @@ export class TopologyDisplay extends HTMLElement {
     this._styleEl = document.createElement('style');
     this._styleEl.textContent = STYLES;
     this._contentEl = document.createElement('div');
+    this._contentEl.className = 'content';
     shadow.append(this._themeEl, this._styleEl, this._contentEl);
     this._themeName = this.resolveTheme();
     this._theme = getTheme(this._themeName)!;
@@ -2586,6 +2872,92 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
+   * A MemProtMD bilayer-distortions file for the loaded structure: its text,
+   * or the result of {@link parseDistortions}. It sets the bulk leaflet
+   * positions and, when the structure is in the same frame as the file (as
+   * MemProtMD's own structure files are), moves the structure onto the bulk
+   * midplane and, at the default {@link membraneDetail}, draws the local
+   * leaflet surfaces under its residues. Text that can't be parsed is ignored
+   * with a warning. See docs/membrane.md.
+   */
+  get distortions(): MembraneDistortions | null {
+    return this._distortions;
+  }
+
+  set distortions(value: MembraneDistortions | string | null) {
+    let parsed: MembraneDistortions | null = null;
+    if (typeof value === 'string') {
+      try {
+        parsed = parseDistortions(value);
+      } catch (err) {
+        console.warn(`topology-display: ignoring distortions file: ${(err as Error).message}`);
+      }
+    } else {
+      parsed = value;
+    }
+    this._distortions = parsed;
+    this.render({ keepView: true });
+  }
+
+  /**
+   * How much of the membrane the diagram follows (`membrane-detail`): `bulk`,
+   * a flat band at the bulk leaflets; `annular`, bulk, and the annular
+   * leaflets under residues near the transmembrane segments; `local` (the
+   * default), the local surfaces under residues near the bilayer as well, when
+   * a distortions file gives them (see {@link MEMBRANE_REACH_A}).
+   * Unset or unknown values give `local`. The 3-D view follows the same
+   * detail; the chain-picker icons always use the bulk.
+   */
+  get membraneDetail(): MembraneDetail {
+    const value = this.getAttribute('membrane-detail');
+    return MEMBRANE_DETAILS.find((d) => d === value) ?? DEFAULT_MEMBRANE_DETAIL;
+  }
+
+  /** Set the detail; writes the `membrane-detail` attribute (null removes it). */
+  set membraneDetail(value: MembraneDetail | null) {
+    if (value === null) this.removeAttribute('membrane-detail');
+    else this.setAttribute('membrane-detail', value);
+  }
+
+  /**
+   * The membrane the protein is drawn against, at {@link membraneDetail}:
+   * bulk and annular leaflet positions (Å), any local surfaces, and the z
+   * shift applied to the structure. Null until protein data is set.
+   */
+  get membrane(): Membrane | null {
+    const data = this._data;
+    if (!data) return null;
+    const settings = this.membraneSettings;
+    const detail = this.membraneDetail;
+    const key = JSON.stringify(settings);
+    const cached = this._membraneCache;
+    if (
+      cached &&
+      cached.data === data &&
+      cached.distortions === this._distortions &&
+      cached.key === key
+    ) {
+      // Only the detail changed: no need to resolve (or warn) again.
+      if (cached.detail !== detail) {
+        cached.detail = detail;
+        cached.membrane = membraneAtDetail(cached.resolved, detail);
+      }
+      return cached.membrane;
+    }
+    const calphas = (data.chains ?? []).flatMap((c) => (Array.isArray(c.calphas) ? c.calphas : []));
+    const resolved = resolveMembrane(settings, this._distortions, calphas);
+    if (this._distortions && !resolved.surfaces) {
+      console.warn(
+        'topology-display: the structure is not in the distortions file’s frame; ' +
+          'using its bulk leaflet positions only',
+      );
+    }
+    const membrane = membraneAtDetail(resolved, detail);
+    this._membraneCache = { data, distortions: this._distortions, key, resolved, detail, membrane };
+    return membrane;
+  }
+
+  /**
    * The current selection resolved against the loaded protein, or null when
    * there is none, the attribute is invalid, or its chain isn't in the
    * protein. A whole-chain selection resolves to the chain's residue bounds.
@@ -2644,7 +3016,9 @@ export class TopologyDisplay extends HTMLElement {
       name === 'morph-sweep' ||
       name === 'morph-projection' ||
       name === 'morph-strand-width' ||
-      name === 'morph-strand-thickness'
+      name === 'morph-strand-thickness' ||
+      name === 'morph-grid-spacing' ||
+      name === 'morph-membrane-style'
     ) {
       // 3-D only: update the morph in place, keeping its view.
       if (this._morphSource) {
@@ -2658,13 +3032,22 @@ export class TopologyDisplay extends HTMLElement {
       this.redrawPicker();
       return;
     }
+    if (name === 'membrane-detail') {
+      // Redraw, keeping the view, and blend from the old membrane to the new.
+      const detail = (v: string | null) =>
+        MEMBRANE_DETAILS.find((d) => d === v) ?? DEFAULT_MEMBRANE_DETAIL;
+      const from = detail(value) !== detail(old) ? this.membraneSnapshot() : null;
+      this.render({ keepView: true, membraneFrom: from });
+      return;
+    }
     if (
       name === 'debug-loops' ||
       name === 'loop-extreme-points' ||
       name === 'loop-extreme-threshold' ||
       name === 'show-contacts' ||
       name === 'min-helix-length' ||
-      name === 'min-strand-length'
+      name === 'min-strand-length' ||
+      name.startsWith('membrane-')
     ) {
       // The 2-D drawing changes; keep the scroll position and 3-D view.
       this.render({ keepView: true });
@@ -2776,23 +3159,64 @@ export class TopologyDisplay extends HTMLElement {
     return opts;
   }
 
+  /**
+   * Spacing (Å) of the 3-D membrane grid (`morph-grid-spacing`), at least
+   * 2 Å; unset, `auto` or invalid gives 0, which sizes it from the membrane
+   * disc (an eighth of its radius, 4–8 Å).
+   */
+  private get morphGridSpacing(): number {
+    const v = Number.parseFloat(this.getAttribute('morph-grid-spacing') ?? '');
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  }
+
+  /** How the 3-D view draws the leaflets (`morph-membrane-style`); `grid` unless valid. */
+  private get morphMembraneStyle(): MembraneStyle {
+    const v = this.getAttribute('morph-membrane-style');
+    return (MEMBRANE_STYLES as readonly string[]).includes(v ?? '')
+      ? (v as MembraneStyle)
+      : DEFAULT_MEMBRANE_STYLE;
+  }
+
   /** Assemble the 3-D morph options from the component's attributes. */
   private get morphOptions(): Partial<MorphOptions> {
     return {
       sweep: this.morphSweep,
       ...PROJECTIONS[this.morphProjection],
       ...this.morphStrandOptions,
+      gridSpacing: this.morphGridSpacing,
+      membraneStyle: this.morphMembraneStyle,
     };
   }
 
   /**
-   * Membrane the chain-picker icons are drawn against. The centre is the z = 0
-   * datum of the input frame (OPM / MemProtMD place it at the bulk bilayer
-   * midplane); once explicit bulk-lipid positions are supported (#24) they
-   * should feed this.
+   * Explicit leaflet positions, in Å from the bulk midplane: `membrane-upper`
+   * and `membrane-lower` (bulk), `membrane-annular-upper` and
+   * `membrane-annular-lower` (next to the protein). Unset or non-numeric
+   * values fall back to the distortions file, then the defaults.
    */
+  private get membraneSettings(): MembraneSettings {
+    const read = (name: string): number | undefined => {
+      const v = Number.parseFloat(this.getAttribute(name) ?? '');
+      return Number.isFinite(v) ? v : undefined;
+    };
+    const pair = (upper: string, lower: string): Partial<LeafletPair> => {
+      const out: Partial<LeafletPair> = {};
+      const u = read(upper);
+      const l = read(lower);
+      if (u !== undefined) out.upper = u;
+      if (l !== undefined) out.lower = l;
+      return out;
+    };
+    return {
+      bulk: pair('membrane-upper', 'membrane-lower'),
+      annular: pair('membrane-annular-upper', 'membrane-annular-lower'),
+    };
+  }
+
+  /** Membrane the chain-picker icons are drawn against: the bulk bilayer. */
   private get iconMembrane(): IconMembrane {
-    return { centre: 0, thickness: 2 * PLOT.membraneHalf };
+    const { upper, lower } = this.membrane?.bulk ?? DEFAULT_BULK;
+    return { centre: (upper + lower) / 2, thickness: upper - lower };
   }
 
   /**
@@ -2843,6 +3267,151 @@ export class TopologyDisplay extends HTMLElement {
   disconnectedCallback() {
     this._unlisten?.();
     this._unlisten = null;
+    this.leaveFullscreen();
+  }
+
+  /** Whether the element is shown full screen. */
+  get fullscreen(): boolean {
+    return this._fullscreen !== null;
+  }
+
+  /**
+   * Show the element full screen, with the diagram scaled to fit. Uses the
+   * Fullscreen API where the browser allows it (not iPhone Safari), else
+   * covers the window. Escape, or the button, leaves.
+   */
+  async requestFullscreenView(): Promise<void> {
+    if (this._fullscreen || !this.isConnected) return;
+    let mode: 'native' | 'overlay' = 'overlay';
+    if (document.fullscreenEnabled && typeof this.requestFullscreen === 'function') {
+      try {
+        await this.requestFullscreen({ navigationUI: 'hide' });
+        mode = 'native';
+      } catch {
+        // Refused (e.g. not from a user gesture): fall back to the overlay.
+      }
+    }
+    this.enterFullscreen(mode);
+  }
+
+  /** Leave full screen. */
+  async exitFullscreenView(): Promise<void> {
+    const native = this._fullscreen === 'native' && document.fullscreenElement === this;
+    this.leaveFullscreen();
+    if (native) await document.exitFullscreen().catch(() => undefined);
+  }
+
+  /** Enter full screen, or leave it. */
+  toggleFullscreen(): Promise<void> {
+    return this._fullscreen ? this.exitFullscreenView() : this.requestFullscreenView();
+  }
+
+  private enterFullscreen(mode: 'native' | 'overlay'): void {
+    this._fullscreen = mode;
+    this.setAttribute('fullscreen', '');
+    const offs: (() => void)[] = [];
+    const on = <K extends keyof DocumentEventMap>(
+      type: K,
+      fn: (e: DocumentEventMap[K]) => void,
+    ): void => {
+      document.addEventListener(type, fn);
+      offs.push(() => document.removeEventListener(type, fn));
+    };
+    if (mode === 'native') {
+      // The browser's own Escape (or the page leaving full screen).
+      on('fullscreenchange', () => {
+        if (document.fullscreenElement !== this) this.leaveFullscreen();
+      });
+    } else {
+      on('keydown', (e) => {
+        if (e.key === 'Escape') this.leaveFullscreen();
+      });
+      // The page under the overlay shouldn't scroll.
+      const root = document.documentElement;
+      const overflow = root.style.overflow;
+      root.style.overflow = 'hidden';
+      offs.push(() => (root.style.overflow = overflow));
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+      const resize = new ResizeObserver(() => this.fitFullscreen());
+      resize.observe(this);
+      offs.push(() => resize.disconnect());
+    }
+    this._fsCleanup = () => offs.forEach((off) => off());
+    this.fitFullscreen();
+    this.syncFullscreenButton();
+    this.dispatchFullscreenChange();
+  }
+
+  private leaveFullscreen(): void {
+    if (!this._fullscreen) return;
+    this._fullscreen = null;
+    this._fsCleanup?.();
+    this._fsCleanup = null;
+    this.removeAttribute('fullscreen');
+    this.fitFullscreen();
+    this.syncFullscreenButton();
+    this.dispatchFullscreenChange();
+  }
+
+  private dispatchFullscreenChange(): void {
+    this.dispatchEvent(
+      new CustomEvent('fullscreen-change', {
+        detail: { fullscreen: this.fullscreen },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * Scale the diagram box to the screen: the 2-D topology as large as fits
+   * (at most 4×; see below for when it is shrunk), with the 1-D and 3-D
+   * views at the same scale; the 3-D view fills the box's height. Undoes it
+   * all when not full screen.
+   *
+   * The box is laid out at the frame's size divided by the scale and then
+   * scaled up with a transform, so the views, which fit themselves to the
+   * box's width, see the smaller width. (CSS `zoom` would be simpler, but
+   * stray lines were seen across a zoomed 3-D view in Firefox.)
+   */
+  private fitFullscreen(): void {
+    const box = this._scrollBox;
+    const svg = this._shown?.svg;
+    if (!box) return;
+    const style = box.scroll.style;
+    let fill = Infinity;
+    if (this._fullscreen && svg) {
+      const w = Number(svg.getAttribute('width')) || 1;
+      const h = Number(svg.getAttribute('height')) || 1;
+      const fw = box.frame.clientWidth;
+      const fh = box.frame.clientHeight;
+      // Leave the border and a little slack, so rounding adds no scrollbars.
+      const aw = fw - 4;
+      const ah = fh - 4;
+      // As large as fits; never smaller than natural size for the width (it
+      // scrolls sideways instead), but shrunk, to a point, to fit the height.
+      const floor = Math.max(0.6, Math.min(1, ah / h));
+      const scale = Math.min(4, Math.max(floor, Math.min(aw / w, ah / h)));
+      style.width = `${fw / scale}px`;
+      style.height = `${fh / scale}px`;
+      style.transform = scale === 1 ? '' : `scale(${scale})`;
+      fill = box.scroll.clientHeight;
+    } else {
+      style.width = style.height = style.transform = '';
+    }
+    this._fillHeight = fill > 0 ? fill : Infinity;
+    this._morph?.setFillHeight(this._fillHeight);
+    box.update();
+  }
+
+  private syncFullscreenButton(): void {
+    const b = this._fsButton;
+    if (!b) return;
+    const on = this.fullscreen;
+    const label = on ? 'Exit full screen' : 'Full screen';
+    b.title = on ? 'Exit full screen (Esc)' : 'Show full screen';
+    b.replaceChildren(fullscreenIcon(on), label);
   }
 
   /** Follow the system colour scheme, and themes (re-)registered by name. */
@@ -2873,6 +3442,7 @@ export class TopologyDisplay extends HTMLElement {
    * frame is drawn (the morph code is loaded on first use).
    */
   async setMorphProgress(tau: number): Promise<void> {
+    if (tau > 0) this.finishBand();
     (await this.loadMorph())?.setProgress(tau);
   }
 
@@ -2904,6 +3474,7 @@ export class TopologyDisplay extends HTMLElement {
           src.context(),
         );
         this._morph = morph;
+        morph.setFillHeight(this._fillHeight);
         morph.setSelection(this.morphSelection());
         this.bindMorphBar(src.bar, morph);
         return morph;
@@ -2920,7 +3491,11 @@ export class TopologyDisplay extends HTMLElement {
    * Rebuild the shadow DOM. With `keepView`, the redraw keeps the 2-D scroll
    * position and the 3-D view (progress, orbit and any running animation).
    */
-  private render({ keepView = false } = {}) {
+  private render({
+    keepView = false,
+    membraneFrom = null,
+  }: { keepView?: boolean; membraneFrom?: MembraneSnapshot | null } = {}) {
+    this.finishBand();
     const view: MorphView | null = !keepView
       ? null
       : (this._morph?.view ??
@@ -2944,6 +3519,7 @@ export class TopologyDisplay extends HTMLElement {
     this._morphLoad = null;
     this._scrollBox?.dispose();
     this._scrollBox = null;
+    this._fsButton = null;
     this._shown = null;
     this._picker = null;
     this._hovered = null;
@@ -3100,11 +3676,16 @@ export class TopologyDisplay extends HTMLElement {
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
+    const core = chainsWithCoords.flatMap((c) =>
+      c.calphas.filter((ca) => Math.abs(ca.z) < MEMBRANE_CORE_HALF),
+    );
     const { svg, scene, sequence, decor2d } = renderChainSvg(
       selectedChain,
       this.loopOptions,
       analysis,
       this.showContacts,
+      this.membrane!,
+      core,
       this._theme,
       assembly,
       this.chainDisplayData(selectedChain.chainId),
@@ -3112,6 +3693,12 @@ export class TopologyDisplay extends HTMLElement {
     scroll.appendChild(svg);
     box.observe(svg);
     this._shown = { chain: selectedChain, svg };
+    // The 2-D band blends only while the 2-D topology is shown and still.
+    const still2d =
+      !this._dimensionRaf &&
+      (!view || (view.tau <= 0 && !view.animating)) &&
+      (seqView === null || seqView >= 1);
+    if (membraneFrom?.band && still2d) this.blendBand(svg, membraneFrom.band);
     this.bindElements(svg, selectedChain.chainId);
     this.applySelection();
     sequence.lanes = this.sequenceLanes(selectedChain.chainId, sequence.residues);
@@ -3135,6 +3722,7 @@ export class TopologyDisplay extends HTMLElement {
         (c) => c.chainId !== selectedChain.chainId && !drawn.has(c.chainId),
       );
       const loopOptions = this.loopOptions;
+      const membrane = this.membrane!;
       const theme = this._theme;
       this._morphSource = {
         scroll,
@@ -3147,6 +3735,8 @@ export class TopologyDisplay extends HTMLElement {
               loopOptions,
               analyseBarrel(c.calphas, c.segments),
               false,
+              membrane,
+              core,
               theme,
             ).scene;
             // Shared style, so theme changes reach the context chains too.
@@ -3161,8 +3751,9 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+    if (this._fullscreen) this.fitFullscreen();
 
-    if (view) this.restoreView(view);
+    if (view) this.restoreView(view, membraneFrom?.net ?? null);
     if (seqView !== null) {
       if (seqView < 1) seq.setProgress(seqView);
     } else {
@@ -3172,8 +3763,11 @@ export class TopologyDisplay extends HTMLElement {
     }
   }
 
-  /** Put the re-rendered chain back in `view`, loading the morph only if needed. */
-  private restoreView(view: MorphView): void {
+  /**
+   * Put the re-rendered chain back in `view`, loading the morph only if
+   * needed, and blend its 3-D membrane from `net` (the one drawn before).
+   */
+  private restoreView(view: MorphView, net: Fishnet | null = null): void {
     this._scrollBox!.scroll.scrollLeft = view.scroll0;
     if (view.tau <= 0 && !view.animating) return;
     const src = this._morphSource;
@@ -3184,7 +3778,65 @@ export class TopologyDisplay extends HTMLElement {
       if (this._morphSource !== src) return;
       this._pendingView = null;
       m?.restore(view);
+      // Not while the view moves between dimensions: that redraws every frame.
+      if (!this._dimensionRaf) m?.blendMembraneFrom(net, this.membraneBlendTime);
     });
+  }
+
+  /** The membrane as drawn now, to blend from after a `membrane-detail` change. */
+  private membraneSnapshot(): MembraneSnapshot {
+    return {
+      band: this._shown?.svg.querySelector('path.membrane')?.getAttribute('d') ?? null,
+      net: this._morph?.membraneNet ?? null,
+    };
+  }
+
+  /** Time (ms) a `membrane-detail` change takes to blend. */
+  private get membraneBlendTime(): number {
+    return MEMBRANE_BLEND * this.transitionTime;
+  }
+
+  /**
+   * Blend the 2-D membrane band in `svg` from path data `from` to the band
+   * drawn there now. The first frame changes on the next animation frame, so
+   * until then the new band shows.
+   */
+  private blendBand(svg: SVGSVGElement, from: string): void {
+    const path = svg.querySelector('path.membrane');
+    const to = path?.getAttribute('d');
+    const ms = this.membraneBlendTime;
+    if (!path || !to || to === from || ms <= 0 || prefersReducedMotion()) return;
+    // Both are membranePath output over the same x samples: blend the heights.
+    const a = from.match(PATH_NUMBER)?.map(Number);
+    const b = to.match(PATH_NUMBER)?.map(Number);
+    if (!a || !b || a.length !== b.length || a.some((v, i) => i % 2 === 0 && v !== b[i])) return;
+    const start = performance.now();
+    const band = { raf: 0, path, to };
+    const step = (now: number): void => {
+      const f = Math.max(0, Math.min(1, (now - start) / ms));
+      if (f >= 1) {
+        this.finishBand();
+        return;
+      }
+      const t = 0.5 - 0.5 * Math.cos(Math.PI * f);
+      let d = '';
+      for (let i = 0; i < a.length; i += 2) {
+        d += `${i === 0 ? 'M' : 'L'}${a[i]},${(a[i + 1] + t * (b[i + 1] - a[i + 1])).toFixed(2)}`;
+      }
+      path.setAttribute('d', d + 'Z');
+      band.raf = requestAnimationFrame(step);
+    };
+    band.raf = requestAnimationFrame(step);
+    this._band = band;
+  }
+
+  /** End any 2-D band blend, showing the band it was heading for. */
+  private finishBand(): void {
+    const band = this._band;
+    if (!band) return;
+    cancelAnimationFrame(band.raf);
+    band.path.setAttribute('d', band.to);
+    this._band = null;
   }
 
   /** The chain picker, labelled by the "Select chain" heading. */
@@ -3260,9 +3912,16 @@ export class TopologyDisplay extends HTMLElement {
   private chainsWithCoords(): ChainData[] {
     // Don't mutate the caller's proteinData — consumers may share or memoise it.
     const min = this.ssMinLengths;
+    // A structure in a distortions file's simulation-box frame is moved onto
+    // the bulk midplane, so everything downstream sees z = 0 there.
+    const shift = this.membrane?.shift ?? 0;
     return (this._data?.chains ?? [])
       .filter((c) => Array.isArray(c.calphas) && c.calphas.length > 0)
-      .map((c) => ({ ...c, segments: effectiveSsSegments(c.segments, min) }));
+      .map((c) => ({
+        ...c,
+        segments: effectiveSsSegments(c.segments, min),
+        calphas: shift === 0 ? c.calphas : c.calphas.map((ca) => ({ ...ca, z: ca.z + shift })),
+      }));
   }
 
   /** Reflect a user's pick or click into the `selection` attribute. */
@@ -3414,6 +4073,8 @@ export class TopologyDisplay extends HTMLElement {
   private applyPosition(p: number): void {
     const seq = this._seq;
     if (!seq) return;
+    // Leaving the 2-D topology: its picture is the first frame either way.
+    if (p !== 1) this.finishBand();
     if (p < 1) {
       if (this.morphProgress > 0) this._morph?.setProgress(0);
       seq.setProgress(p);
@@ -3556,7 +4217,13 @@ export class TopologyDisplay extends HTMLElement {
     const hint = document.createElement('span');
     hint.className = 'morph-hint';
     hint.textContent = 'Drag to rotate';
-    bar.append(group, hint);
+    const fs = document.createElement('button');
+    fs.type = 'button';
+    fs.className = 'fullscreen-button';
+    fs.addEventListener('click', () => void this.toggleFullscreen());
+    this._fsButton = fs;
+    this.syncFullscreenButton();
+    bar.append(group, hint, fs);
     if (!available) {
       buttons[2].disabled = true;
       buttons[2].title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
@@ -3600,6 +4267,23 @@ export class TopologyDisplay extends HTMLElement {
   private bindMorphBar(bar: HTMLDivElement, morph: MorphController): void {
     morph.onChange = () => this.syncViewBar(bar);
   }
+}
+
+/** Four corners pointing out (enter full screen) or in (leave). */
+function fullscreenIcon(exit: boolean): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute(
+    'd',
+    exit ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5',
+  );
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '2');
+  svg.appendChild(path);
+  return svg;
 }
 
 /**

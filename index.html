@@ -283,6 +283,13 @@
             <button type="button" id="controls-reset">Reset to defaults</button>
           </p>
           <div id="controls"></div>
+          <p class="distortions-control">
+            <label>
+              <input type="checkbox" id="distortions" autocomplete="off" checked />
+              MemProtMD bilayer distortions
+            </label>
+            <span id="distortions-status" role="status"></span>
+          </p>
         </details>
       </aside>
       <div class="protein-grid">
@@ -312,7 +319,8 @@
       <p id="build-info"></p>
       <p>
         Structure data from <a href="https://opm.phar.umich.edu">OPM</a>
-        (Lomize et al.) and
+        (Lomize et al.), bilayer distortions from
+        <a href="https://memprotmd.bioch.ox.ac.uk">MemProtMD</a> (Newport et al.) and
         <a href="https://pdb-redo.eu">PDB-REDO</a> (Vriend et al.; copyright-free). Underlying PDB
         entries: <a href="https://www.wwpdb.org/about/usage-policies">wwPDB CC0</a>.
       </p>

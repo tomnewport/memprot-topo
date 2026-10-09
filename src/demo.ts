@@ -2,6 +2,7 @@ import './index.js';
 import { TopologyDisplay } from './components/topology-display.js';
 import { proteins } from './demo-data.js';
 import { mountDemoControls } from './demo-controls.js';
+import { mountDistortionsToggle, type DistortionsTarget } from './demo-distortions.js';
 import { KYTE_DOOLITTLE, oneLetter } from './sequence/amino-acids.js';
 import type { ProteinData } from './types.js';
 
@@ -24,11 +25,11 @@ function hydropathy(data: ProteinData): Record<string, Record<number, number>> {
 declare const __COMMIT__: string;
 declare const __BUILD_DATE__: string;
 
-function populate(elementId: string, pdbId: string): void {
+function populate(elementId: string, pdbId: string): DistortionsTarget | null {
   const el = document.getElementById(elementId);
-  if (!(el instanceof TopologyDisplay)) return;
+  if (!(el instanceof TopologyDisplay)) return null;
   const data = proteins[pdbId];
-  if (!data) return;
+  if (!data) return null;
   el.proteinData = data;
   el.sequenceTracks = [
     {
@@ -39,20 +40,33 @@ function populate(elementId: string, pdbId: string): void {
       domain: [-3, 3],
     },
   ];
+  return { pdbId, el, data };
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  populate('td-3k19', '3k19');
-  populate('td-2omf', '2omf');
-  populate('td-7ahl', '7ahl');
-  populate('td-2j1n', '2j1n');
-  populate('td-5g53', '5g53');
+  const targets = [
+    populate('td-3k19', '3k19'),
+    populate('td-2omf', '2omf'),
+    populate('td-7ahl', '7ahl'),
+    populate('td-2j1n', '2j1n'),
+    populate('td-5g53', '5g53'),
+  ].filter((t): t is DistortionsTarget => t !== null);
+
+  const toggle = document.getElementById('distortions');
+  const status = document.getElementById('distortions-status');
+  const resetDistortions =
+    toggle instanceof HTMLInputElement && status
+      ? mountDistortionsToggle(toggle, status, targets)
+      : () => {};
 
   const panel = document.getElementById('controls');
   if (panel) {
     const displays = Array.from(document.querySelectorAll<HTMLElement>('topology-display'));
     const reset = mountDemoControls(panel, displays);
-    document.getElementById('controls-reset')?.addEventListener('click', reset);
+    document.getElementById('controls-reset')?.addEventListener('click', () => {
+      reset();
+      resetDistortions();
+    });
   }
 
   // The page follows the diagrams' theme (#26).
