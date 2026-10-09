@@ -453,6 +453,35 @@ describe('membrane styles', () => {
     }
   });
 
+  it('runs polar spokes on to the interface past a flat-sided protein, never doubling back', () => {
+    // A rod on lattice points: its ends are where spokes used to stall.
+    const rod: number[] = [];
+    for (let x = -25; x <= 25; x += 2) rod.push(x, 0);
+    const net = buildFishnet({
+      centre: { x: 0, y: 0 },
+      radius: 45,
+      margin: 5,
+      spacing: 4,
+      style: 'polar',
+      bulk: BULK,
+      annular: BULK,
+      protein: rod,
+    });
+    const spokes = net.upper.filter((l) => Math.abs(Math.hypot(l[0], l[1]) - 45) < 1e-9);
+    for (const l of spokes)
+      for (let i = 3; i + 3 < l.length; i += 3) {
+        const [ax, ay] = [l[i] - l[i - 3], l[i + 1] - l[i - 2]];
+        const [bx, by] = [l[i + 3] - l[i], l[i + 4] - l[i + 1]];
+        expect(ax * bx + ay * by).toBeGreaterThan(0);
+      }
+    // The spokes along the rod's axis reach its ends.
+    for (const sign of [1, -1]) {
+      const l = spokes.find((q) => Math.abs(q[1]) < 1e-9 && Math.sign(q[0]) === sign)!;
+      const end = l.length - 3;
+      expect(Math.abs(l[end]) - 25 - 4).toBeLessThan(1);
+    }
+  });
+
   it('still draws polar spokes round a protein in two pieces far apart', () => {
     const pieces: number[] = [];
     for (const cx of [-22, 22])

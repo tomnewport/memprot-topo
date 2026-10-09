@@ -665,7 +665,7 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
   // gathering on the nearest samples, with the turn between the two rounded
   // off. Where they close up, the finer ones (see spokeOrder) stop.
   const theta = bandAngle(rho, d, W, M, h, inner, iso, isoRings);
-  const down = Float64Array.from(phi);
+  const down = Float64Array.from(phi, (v) => Math.min(v, iso));
   const zone: number[] = [];
   for (let a = 0; a < W * W; a++) if (rho[a] < inner && d[a] > 0 && d[a] < iso) zone.push(a);
   relax(down, zone, latticeNeighbours(zone, W), null, DESCENT_TOLERANCE);
@@ -726,6 +726,38 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
     return false;
   };
   const ringLevels = [...levels, iso + span].sort((a, b) => a - b);
+  /**
+   * Cuts a spoke (`pts`, about to step to (nx, ny)) back to
+   * {@link SPOKE_OVERRUN} past where it last crossed the ring at `level`,
+   * if it did since the circle.
+   */
+  const overrun = (pts: number[], nx: number, ny: number, level: number): void => {
+    const path = [...pts, nx, ny];
+    let i = path.length - 4;
+    while (i >= 2 && !(sample(path[i], path[i + 1]) >= level)) i -= 2;
+    if (i < 2) return;
+    const fa = sample(path[i], path[i + 1]);
+    const fb = sample(path[i + 2], path[i + 3]);
+    const t = fa > fb ? (fa - level) / (fa - fb) : 0;
+    let [cx, cy] = [
+      path[i] + t * (path[i + 2] - path[i]),
+      path[i + 1] + t * (path[i + 3] - path[i + 1]),
+    ];
+    let left = SPOKE_OVERRUN;
+    let j = i + 2;
+    for (; j < path.length; j += 2) {
+      const seg = Math.hypot(path[j] - cx, path[j + 1] - cy);
+      if (seg >= left) {
+        cx += (left * (path[j] - cx)) / seg;
+        cy += (left * (path[j + 1] - cy)) / seg;
+        break;
+      }
+      left -= seg;
+      [cx, cy] = [path[j], path[j + 1]];
+    }
+    pts.length = Math.min(j, pts.length);
+    pts.push(cx, cy);
+  };
   const spokes: number[][] = new Array(nSpokes);
   for (const s of spokeOrder(nSpokes)) {
     const target = (s / nSpokes) * 2 * Math.PI;
@@ -736,7 +768,8 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
     let corner = -1;
     for (let k = 0; k < maxSteps; k++) {
       const f0 = sample(x, y);
-      const band = f0 > iso;
+      // Once inside the last constant-distance ring, a spoke stays on the descent.
+      const band = corner < 0 && f0 > iso;
       if (!band && corner < 0) corner = pts.length / 2 - 1;
       const h0 = heading(x, y, band);
       if (!h0) break;
@@ -765,27 +798,13 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
         ny = y + t * (ny - y);
         last = true;
       }
+      // A spoke on the descent that stops descending has nowhere to go.
+      if (!band && !(descent(nx, ny) < descent(x, y))) break;
       if ((!band || !theta) && crowded(nx, ny)) {
         // Stop here, or just across the ring outside if that is close.
         const fc = sample(nx, ny);
         const up = ringLevels.find((v) => v > fc) ?? Infinity;
-        if (up - fc <= near) {
-          let i = pts.length - 2;
-          while (i > 2 && !(sample(pts[i], pts[i + 1]) >= up)) i -= 2;
-          if (i > 2 && i + 2 < pts.length) {
-            const fa = sample(pts[i], pts[i + 1]);
-            const fb = sample(pts[i + 2], pts[i + 3]);
-            const seg = Math.hypot(pts[i + 2] - pts[i], pts[i + 3] - pts[i + 1]);
-            const t = Math.min(
-              1,
-              (fa > fb ? (fa - up) / (fa - fb) : 0) + (seg > 0 ? SPOKE_OVERRUN / seg : 0),
-            );
-            const cx = pts[i] + t * (pts[i + 2] - pts[i]);
-            const cy = pts[i + 1] + t * (pts[i + 3] - pts[i + 1]);
-            pts.length = i + 2;
-            pts.push(cx, cy);
-          } else pts.length = Math.min(pts.length, i + 2);
-        }
+        if (up - fc <= near) overrun(pts, nx, ny, up);
         break;
       }
       [x, y] = [nx, ny];
