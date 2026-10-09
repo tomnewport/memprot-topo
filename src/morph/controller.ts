@@ -64,6 +64,8 @@ export class MorphController {
     private readonly scene: MorphScene,
     private readonly idPrefix: string,
     options: Partial<MorphOptions> = {},
+    /** The structure's other chains, faded in around this one in 3-D. */
+    private readonly context: readonly MorphScene[] = [],
   ) {
     this.options = { ...DEFAULT_MORPH_OPTIONS, ...options };
     // Re-fit the 3-D framing when the container changes width (window
@@ -247,6 +249,7 @@ export class MorphController {
         buildMorphModel(this.scene, { anchor }),
         this.options,
         this.idPrefix,
+        this.context.map((c) => buildMorphModel(c)),
       );
       this.renderer.setSelected(this.selectedIds);
       this.bindOrbit(this.renderer.svg);

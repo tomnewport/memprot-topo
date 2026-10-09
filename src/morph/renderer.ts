@@ -564,6 +564,18 @@ const ZOOM_STEPS = 10;
 /** Screen margin (px) the zoom track keeps clear. */
 const ZOOM_MARGIN = 12;
 
+/** Model ids of the context chains start at this (times the chain's place + 1). */
+const CONTEXT_ID = 1 << 20;
+/** Progress over which the context chains fade in. */
+const CONTEXT_FADE: [number, number] = [0.5, 0.95];
+
+/** A context chain: shown, rolled up, in its real place around the morphing one. */
+interface ContextChain {
+  model: MorphModel;
+  /** Fixed pose in the finished view's frame (set by precompute). */
+  pose: Pose | null;
+}
+
 /**
  * Renders the morph between the 2-D topology view (τ = 0) and a 3-D
  * Richardson-style diagram (τ = 1) as plain SVG, so the first frame is the
@@ -615,12 +627,30 @@ export class MorphRenderer {
   private readonly ground: RGB;
   /** Ids of the selected elements and loops. */
   private selected: ReadonlySet<number> = new Set();
+  /** The structure's other chains, faded in as the view becomes 3-D. */
+  private readonly context: ContextChain[];
+  /** Opacity of the context chains this frame. */
+  private contextOpacity = 0;
 
   constructor(
     readonly model: MorphModel,
     readonly options: MorphOptions = DEFAULT_MORPH_OPTIONS,
     private readonly idPrefix = 'mp',
+    context: readonly MorphModel[] = [],
   ) {
+    // Context chains are drawn faded, and their ids are kept clear of the
+    // morphing chain's (which selection and depth-sorted runs go by).
+    this.context = context.map((m, j) => {
+      const base = CONTEXT_ID * (j + 1);
+      return {
+        model: {
+          ...m,
+          elements: m.elements.map((e) => ({ ...e, id: e.id + base, faded: true })),
+          loops: m.loops.map((l) => ({ ...l, id: l.id + base, faded: true })),
+        },
+        pose: null,
+      };
+    });
     const st = model.scene.style;
     this.colours = {
       helix: hexRgb(st.helixFill),
@@ -689,6 +719,43 @@ export class MorphRenderer {
         if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < Math.cos(SPLIT_ANGLE))
           this.sharpKinks.add(e.id);
       }
+      this.placeContext();
+    }
+  }
+
+  /**
+   * Pose each context chain, fully rolled up, where it really sits relative
+   * to the morphing chain once that has rolled up (both rolled-up structures
+   * are rigid copies of the real one, so a rigid motion in the membrane plane
+   * fitted over the helix and strand samples lines them up), and find its
+   * helix kinks.
+   */
+  private placeContext(): void {
+    if (this.context.length === 0) return;
+    const focal = computePose(this.model, 1, this.options.sweep, this.rigidAt(1));
+    const fs = fitSamples(this.model);
+    const toView = fitRigid(realXY(this.model, fs), poseXY(focal, fs));
+    for (const c of this.context) {
+      const raw = computePose(c.model, 1, 0);
+      const cs = fitSamples(c.model);
+      const target = realXY(c.model, cs);
+      for (let i = 0; i < target.length; i += 2) {
+        const x = target[i];
+        const y = target[i + 1];
+        target[i] = Math.cos(toView.phi) * x - Math.sin(toView.phi) * y + toView.tx;
+        target[i + 1] = Math.sin(toView.phi) * x + Math.cos(toView.phi) * y + toView.ty;
+      }
+      c.pose = computePose(c.model, 1, 0, fitRigid(poseXY(raw, cs), target));
+      for (const e of c.model.elements) {
+        if (e.type !== 'helix') continue;
+        const k = findKink(c.pose.w, e.g0, e.g1);
+        this.kinks!.set(e.id, k);
+        if (k < 0) continue;
+        const a = fitLine(c.pose.w, e.g0, k).d;
+        const b = fitLine(c.pose.w, k, e.g1).d;
+        if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < Math.cos(SPLIT_ANGLE))
+          this.sharpKinks.add(e.id);
+      }
     }
   }
 
@@ -723,15 +790,30 @@ export class MorphRenderer {
       z0 = Math.min(z0, z);
       z1 = Math.max(z1, z);
     }
+    // The finished view takes in the context chains too.
+    const all: { model: MorphModel; pose: Pose }[] = [{ model, pose }];
+    for (const c of this.context) if (c.pose) all.push({ model: c.model, pose: c.pose });
+    for (const { model: m, pose: p } of all.slice(1)) {
+      for (let k = 0; k < m.n; k++) {
+        x0 = Math.min(x0, p.w[k * 4]);
+        x1 = Math.max(x1, p.w[k * 4]);
+        y0 = Math.min(y0, p.w[k * 4 + 1]);
+        y1 = Math.max(y1, p.w[k * 4 + 1]);
+        z0 = Math.min(z0, p.w[k * 4 + 2]);
+        z1 = Math.max(z1, p.w[k * 4 + 2]);
+      }
+    }
     // The membrane disc is centred on (and sized to) the transmembrane
     // helices and strands; loops are allowed to stray outside it.
-    for (const el of model.elements) {
-      for (let k = el.g0; k <= el.g1; k++) {
-        if (Math.abs(pose.w[k * 4 + 2]) > half + 2) continue;
-        tx0 = Math.min(tx0, pose.w[k * 4]);
-        tx1 = Math.max(tx1, pose.w[k * 4]);
-        ty0 = Math.min(ty0, pose.w[k * 4 + 1]);
-        ty1 = Math.max(ty1, pose.w[k * 4 + 1]);
+    for (const { model: m, pose: p } of all) {
+      for (const el of m.elements) {
+        for (let k = el.g0; k <= el.g1; k++) {
+          if (Math.abs(p.w[k * 4 + 2]) > half + 2) continue;
+          tx0 = Math.min(tx0, p.w[k * 4]);
+          tx1 = Math.max(tx1, p.w[k * 4]);
+          ty0 = Math.min(ty0, p.w[k * 4 + 1]);
+          ty1 = Math.max(ty1, p.w[k * 4 + 1]);
+        }
       }
     }
     if (!Number.isFinite(x0)) {
@@ -747,10 +829,12 @@ export class MorphRenderer {
     const dcx = (tx0 + tx1) / 2;
     const dcy = (ty0 + ty1) / 2;
     let dr = 0;
-    for (const el of model.elements) {
-      for (let k = el.g0; k <= el.g1; k++) {
-        if (Math.abs(pose.w[k * 4 + 2]) > half + 2) continue;
-        dr = Math.max(dr, Math.hypot(pose.w[k * 4] - dcx, pose.w[k * 4 + 1] - dcy));
+    for (const { model: m, pose: p } of all) {
+      for (const el of m.elements) {
+        for (let k = el.g0; k <= el.g1; k++) {
+          if (Math.abs(p.w[k * 4 + 2]) > half + 2) continue;
+          dr = Math.max(dr, Math.hypot(p.w[k * 4] - dcx, p.w[k * 4 + 1] - dcy));
+        }
       }
     }
     dr = Math.max(dr, 10) + 8;
@@ -768,8 +852,8 @@ export class MorphRenderer {
     const width1 = Math.max(200, clientWidth);
     const margin = 28;
     const pts: [number, number, number][] = [];
-    for (let k = 0; k < model.n; k += 4)
-      pts.push([pose.w[k * 4], pose.w[k * 4 + 1], pose.w[k * 4 + 2]]);
+    for (const { model: m, pose: p } of all)
+      for (let k = 0; k < m.n; k += 4) pts.push([p.w[k * 4], p.w[k * 4 + 1], p.w[k * 4 + 2]]);
     for (let a = 0; a < 24; a++) {
       const c = Math.cos((a / 24) * 2 * Math.PI);
       const s = Math.sin((a / 24) * 2 * Math.PI);
@@ -1018,6 +1102,7 @@ export class MorphRenderer {
     // 0.1 px once it is 3-D (shorter path strings, faster frames).
     this.coordScale = sigma > 0.05 ? 10 : 100;
     this.fadeOpacity = lerp(st.fadedOpacity, 1, smooth(0.02, 0.3, tau));
+    this.contextOpacity = smooth(CONTEXT_FADE[0], CONTEXT_FADE[1], tau);
     const eW = smooth(0.0, 0.55, tau);
     const eLoop = smooth(0.0, 0.7, tau);
     const eDisc = smooth(0.35, 0.95, tau);
@@ -1038,6 +1123,16 @@ export class MorphRenderer {
       cam.project(pose.w[k * 4], pose.w[k * 4 + 1], pose.w[k * 4 + 2], proj, k * 4);
       if (proj[k * 4 + 2] < dMin) dMin = proj[k * 4 + 2];
       if (proj[k * 4 + 2] > dMax) dMax = proj[k * 4 + 2];
+    }
+    // The context chains share the depth range always, so the fog doesn't
+    // jump when they appear.
+    for (const c of this.context) {
+      if (!c.pose) continue;
+      for (let k = 0; k < c.model.n; k++) {
+        cam.project(c.pose.w[k * 4], c.pose.w[k * 4 + 1], c.pose.w[k * 4 + 2], this.tmp);
+        if (this.tmp[2] < dMin) dMin = this.tmp[2];
+        if (this.tmp[2] > dMax) dMax = this.tmp[2];
+      }
     }
     const fogAt = (d: number): number =>
       dMax - dMin > 1e-6 ? FOG * sigma * clamp01((d - dMin) / (dMax - dMin)) : 0;
@@ -1084,6 +1179,25 @@ export class MorphRenderer {
       else this.strandPrims(ctx, el);
     }
     for (const loop of model.loops) this.loopPrims(ctx, loop);
+    if (this.contextOpacity > 0.001) {
+      // Already rolled up: drawn at their full 3-D size and shape.
+      for (const c of this.context) {
+        if (!c.pose) continue;
+        const cc: FrameCtx = {
+          ...ctx,
+          model: c.model,
+          pose: c.pose,
+          eW: 1,
+          eLoop: 1,
+          endShift: new Map(),
+        };
+        for (const el of c.model.elements) {
+          if (el.type === 'helix') this.helixPrims(cc, el);
+          else this.strandPrims(cc, el);
+        }
+        for (const loop of c.model.loops) this.loopPrims(cc, loop);
+      }
+    }
     if (tieAlpha > 0.001) this.tiePrims(ctx, tieAlpha * 0.5);
     if (planesOn) this.rimPrims(ctx, discX, discY, discR, half, eDisc);
 
@@ -2580,7 +2694,10 @@ export class MorphRenderer {
       }
       if (ri === undefined) {
         ri = runs.length;
-        runs.push(new Run(p.id, p.faded, !p.faded || this.fadeOpacity >= 0.999, this.coordScale));
+        const opaque =
+          !p.faded ||
+          (this.fadeOpacity >= 0.999 && (p.id < CONTEXT_ID || this.contextOpacity >= 0.999));
+        runs.push(new Run(p.id, p.faded, opaque, this.coordScale));
         open.set(p.id, ri);
       }
       p.run = ri;
@@ -2621,7 +2738,8 @@ export class MorphRenderer {
         this.slots.push(slot);
       }
       slot.g.set('display', null);
-      slot.g.set('opacity', run.faded && fadeA < 0.999 ? fadeA.toFixed(3) : null);
+      const runA = run.faded ? fadeA * (run.id >= CONTEXT_ID ? this.contextOpacity : 1) : 1;
+      slot.g.set('opacity', runA < 0.999 ? runA.toFixed(3) : null);
       const sel = this.selected.has(run.id);
       // Everything else is desaturated while there is a selection (as in 2-D,
       // the faded neighbouring chains are left alone).
@@ -2936,6 +3054,67 @@ export function fitLine(w: Float64Array, a: number, b: number): { c: number[]; d
  * Sample index at which helix g0..g1 bends by more than KINK_ANGLE (the split
  * with the sharpest angle between the two halves' axes), or -1 if straight.
  */
+/**
+ * Samples a rolled-up chain is lined up by: its helices and strands (loops are
+ * smoothed, so they don't sit exactly on their real path), or every sample of
+ * a chain without any.
+ */
+function fitSamples(model: MorphModel): number[] {
+  const out: number[] = [];
+  for (const e of model.elements) for (let g = e.g0; g <= e.g1; g++) out.push(g);
+  return out.length >= 3 ? out : Array.from({ length: model.n }, (_, g) => g);
+}
+
+/** Real xy of the given samples, flat (x, y) pairs. */
+function realXY(model: MorphModel, samples: number[]): number[] {
+  const out: number[] = [];
+  let s = 0;
+  for (const g of samples) {
+    while (s + 1 < model.segStart.length && model.segStart[s + 1] <= g) s++;
+    while (s > 0 && model.segStart[s] > g) s--;
+    const p = model.scene.segments[s].positions[g - model.segStart[s]];
+    out.push(p?.x ?? 0, p?.y ?? 0);
+  }
+  return out;
+}
+
+/** Posed xy of the given samples, flat (x, y) pairs. */
+function poseXY(pose: Pose, samples: number[]): number[] {
+  const out: number[] = [];
+  for (const g of samples) out.push(pose.w[g * 4], pose.w[g * 4 + 1]);
+  return out;
+}
+
+/** Rotation about z and shift that best map `src` onto `dst` (least squares). */
+function fitRigid(src: number[], dst: number[]): Rigid {
+  const m = src.length / 2;
+  if (m === 0) return { phi: 0, tx: 0, ty: 0 };
+  let qx = 0,
+    qy = 0,
+    px = 0,
+    py = 0;
+  for (let j = 0; j < m; j++) {
+    qx += src[j * 2] / m;
+    qy += src[j * 2 + 1] / m;
+    px += dst[j * 2] / m;
+    py += dst[j * 2 + 1] / m;
+  }
+  let dot = 0;
+  let crs = 0;
+  for (let j = 0; j < m; j++) {
+    const ax = src[j * 2] - qx;
+    const ay = src[j * 2 + 1] - qy;
+    const bx = dst[j * 2] - px;
+    const by = dst[j * 2 + 1] - py;
+    dot += ax * bx + ay * by;
+    crs += ax * by - ay * bx;
+  }
+  const phi = Math.atan2(crs, dot);
+  const c = Math.cos(phi);
+  const s = Math.sin(phi);
+  return { phi, tx: px - (c * qx - s * qy), ty: py - (s * qx + c * qy) };
+}
+
 export function findKink(w: Float64Array, g0: number, g1: number): number {
   const s = new Float64Array(g1 - g0 + 1);
   for (let g = g0 + 1; g <= g1; g++) {

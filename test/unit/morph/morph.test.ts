@@ -242,6 +242,51 @@ describe('morph pose (arc-length unroll)', () => {
     expect(h.flips).toBe(0);
   });
 
+  it('fades the other chains in, rolled up in their real place, as the view goes 3-D', () => {
+    // A second copy of the chain beside it, turned a little.
+    const other: ChainData = {
+      ...chain,
+      chainId: 'B',
+      calphas: chain.calphas.map((c) => ({ ...c, x: 30 + 0.9 * c.y, y: 12 - 0.9 * c.x })),
+    };
+    const oUnroll = unrollChain(other.calphas, { ssSegments: other.segments });
+    const oScene = sceneFor('polyline', oUnroll, other.segments);
+    const r = new MorphRenderer(model, undefined, 'mp', [buildMorphModel(oScene)]);
+    r.configure(900, 0);
+    // Both chains' rolled-up helices are one rigid copy of the real structure.
+    const placed = r as unknown as {
+      context: { model: typeof model; pose: { w: Float64Array } }[];
+      rigidAt(t: number): Parameters<typeof computePose>[3];
+    };
+    const focal = computePose(model, 1, r.options.sweep, placed.rigidAt(1));
+    const got: number[][] = [];
+    const want: number[][] = [];
+    for (const [m, w, sc] of [
+      [model, focal.w, scene],
+      [placed.context[0].model, placed.context[0].pose.w, oScene],
+    ] as const) {
+      for (const el of m.elements) {
+        for (let g = el.g0; g <= el.g1; g++) {
+          got.push([w[g * 4], w[g * 4 + 1], w[g * 4 + 2]]);
+          const p = sc.segments[0].positions[g];
+          want.push([p.x, p.y, p.z]);
+        }
+      }
+    }
+    expect(rigidError(got, want)).toBeLessThan(1e-3);
+    // Not drawn early in the roll, drawn by the end.
+    const alone = new MorphRenderer(model);
+    alone.configure(900, 0);
+    const drawn = (x: MorphRenderer, tau: number): number => {
+      x.render(tau);
+      return [...x.svg.querySelectorAll('path')].filter(
+        (p) => p.getAttribute('display') !== 'none' && (p.getAttribute('d') ?? '') !== '',
+      ).length;
+    };
+    expect(drawn(r, 0.2)).toBe(drawn(alone, 0.2));
+    expect(drawn(r, 1)).toBeGreaterThan(drawn(alone, 1));
+  });
+
   it('leaves the not-yet-rolled end flat and in place during an end-anchored sweep', () => {
     const endModel = buildMorphModel(scene, { anchor: 'end' });
     const pose = computePose(endModel, 0.4, 0.35);
