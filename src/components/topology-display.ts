@@ -2674,6 +2674,8 @@ export class TopologyDisplay extends HTMLElement {
     scroll: HTMLElement;
     svg: SVGSVGElement;
     scene: MorphScene;
+    /** The structure's other chains, shown around it in 3-D (built on first use). */
+    context: () => MorphScene[];
     options: Partial<MorphOptions>;
     bar: HTMLDivElement;
   } | null = null;
@@ -3469,6 +3471,7 @@ export class TopologyDisplay extends HTMLElement {
           src.scene,
           `mp${this._instanceId}`,
           src.options,
+          src.context(),
         );
         this._morph = morph;
         morph.setFillHeight(this._fillHeight);
@@ -3711,10 +3714,34 @@ export class TopologyDisplay extends HTMLElement {
     const bar = this.renderMorphBar(scene !== null);
     this.bindSequenceBar(bar, seq);
     if (scene) {
+      // Every other chain, except the protomers an assembly barrel already draws.
+      const drawn = new Set(
+        assembly?.analysis.ringOrder.map((i) => assembly!.analysis.strands[i].chainId),
+      );
+      const others = chainsWithCoords.filter(
+        (c) => c.chainId !== selectedChain.chainId && !drawn.has(c.chainId),
+      );
+      const loopOptions = this.loopOptions;
+      const membrane = this.membrane!;
+      const theme = this._theme;
       this._morphSource = {
         scroll,
         svg,
         scene,
+        context: () =>
+          others.flatMap((c) => {
+            const s = renderChainSvg(
+              c,
+              loopOptions,
+              analyseBarrel(c.calphas, c.segments),
+              false,
+              membrane,
+              core,
+              theme,
+            ).scene;
+            // Shared style, so theme changes reach the context chains too.
+            return s ? [{ ...s, style: scene.style }] : [];
+          }),
         options: this.morphOptions,
         bar,
       };
