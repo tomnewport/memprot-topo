@@ -835,7 +835,8 @@ export class MorphRenderer {
       zoomTrack: new Array<number>(ZOOM_STEPS + 1).fill(1),
     };
     this.framing.zoomTrack = this.fitZoomTrack();
-    this.net = this.buildNet(pose, dcx, dcy, dr);
+    // The pose and disc don't depend on the width, so a refit keeps the net.
+    this.net ??= this.buildNet(pose, dcx, dcy, dr);
   }
 
   /**

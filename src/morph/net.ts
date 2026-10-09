@@ -59,6 +59,8 @@ const PORE_RADIUS = 6;
  * in every one of this many equal sectors around it.
  */
 const ENCLOSING_SECTORS = 12;
+/** Shortest distance (Å) between points along a shaped line. */
+const MIN_STEP = 2;
 /** Over-relaxation, tolerance (Å) and iteration limit of the gap fill. */
 const FILL_OMEGA = 1.8;
 const FILL_TOLERANCE = 1e-3;
@@ -99,8 +101,21 @@ export function buildFishnet(input: FishnetInput): Fishnet {
     return Math.sqrt(best);
   };
 
+  // Samples can only surround a point inside their convex hull.
+  const hull = convexHull(protein, np);
+  const inHull = (x: number, y: number): boolean => {
+    if (hull.length < 6) return false;
+    for (let i = 0; i < hull.length; i += 2) {
+      const [ax, ay] = [hull[i], hull[i + 1]];
+      const j = (i + 2) % hull.length;
+      if ((hull[j] - ax) * (y - ay) - (hull[j + 1] - ay) * (x - ax) <= 0) return false;
+    }
+    return true;
+  };
+
   /** Whether the membrane-spanning samples surround (x, y) on every side. */
   const enclosed = (x: number, y: number): boolean => {
+    if (!inHull(x, y)) return false;
     const all = (1 << ENCLOSING_SECTORS) - 1;
     let seen = 0;
     for (let i = 0; i < np; i++) {
@@ -125,8 +140,11 @@ export function buildFishnet(input: FishnetInput): Fishnet {
   };
 
   const flat = !local && annular.upper === bulk.upper && annular.lower === bulk.lower;
-  // A flat net only needs splitting for depth order; a shaped one follows its heights.
-  const step = flat ? spacing : spacing / 2;
+  // A flat net only needs splitting for depth order; a shaped one follows its
+  // heights, with a point between crossings unless that would put points
+  // under MIN_STEP apart.
+  const per = flat || spacing < 2 * MIN_STEP ? 1 : 2;
+  const step = spacing / per;
   const K = Math.floor((r - 1e-6) / spacing);
   // Each line as (ox, oy) pairs: both ends on the rim, the rest on a lattice
   // of `step`, so crossing lines share their points.
@@ -203,7 +221,7 @@ export function buildFishnet(input: FishnetInput): Fishnet {
     for (let a = 0; a < n; a++) {
       const i = Math.round(ox[a] / step);
       const j = Math.round(oy[a] / step);
-      // Lines run along y at even i and along x at even j.
+      // Lines run along y where i, and along x where j, is a multiple of `per`.
       const steps = [
         [0, -1, i],
         [0, 1, i],
@@ -211,7 +229,7 @@ export function buildFishnet(input: FishnetInput): Fishnet {
         [1, 0, j],
       ];
       steps.forEach(([di, dj, on], q) => {
-        if (on % 2 !== 0) return;
+        if (on % per !== 0) return;
         const b = nodeAt[(i + di + M) * W + j + dj + M];
         nbr[a * 4 + q] = b === NONE ? RIM : b;
       });
@@ -231,12 +249,14 @@ export function buildFishnet(input: FishnetInput): Fishnet {
       for (let a = 0; a < n; a++) {
         const x = centre.x + ox[a];
         const y = centre.y + oy[a];
-        const near = at(x, y, poreRadius);
-        if (near === null && isEnclosed(a)) {
+        const h = at(x, y, surfaces.radius);
+        const noLipid =
+          h === null ||
+          (poreRadius < surfaces.radius && inHull(x, y) && at(x, y, poreRadius) === null);
+        if (noLipid && isEnclosed(a)) {
           state[a] = PORE;
           continue;
         }
-        const h = poreRadius === surfaces.radius ? near : at(x, y, surfaces.radius);
         if (h === null) {
           state[a] = GAP;
           value[a] = NaN;
@@ -289,6 +309,30 @@ export function buildFishnet(input: FishnetInput): Fishnet {
       };
     };
   }
+}
+
+/**
+ * Convex hull of the first `n` (x, y) pairs, anticlockwise, as flat pairs
+ * (Andrew's monotone chain).
+ */
+function convexHull(xy: ArrayLike<number>, n: number): number[] {
+  const order = Array.from({ length: n }, (_, i) => i).sort(
+    (a, b) => xy[a * 2] - xy[b * 2] || xy[a * 2 + 1] - xy[b * 2 + 1],
+  );
+  const cross = (o: number, a: number, b: number) =>
+    (xy[a * 2] - xy[o * 2]) * (xy[b * 2 + 1] - xy[o * 2 + 1]) -
+    (xy[a * 2 + 1] - xy[o * 2 + 1]) * (xy[b * 2] - xy[o * 2]);
+  const chain = (ids: number[]) => {
+    const out: number[] = [];
+    for (const p of ids) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  const ids = [...chain(order), ...chain([...order].reverse())];
+  return ids.flatMap((i) => [xy[i * 2], xy[i * 2 + 1]]);
 }
 
 /**
