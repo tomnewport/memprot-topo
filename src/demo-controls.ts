@@ -8,6 +8,7 @@
  * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
  */
 import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
+import { DEFAULT_MEMBRANE_STYLE, MEMBRANE_STYLES } from './morph/membrane-style.js';
 import { DEFAULT_BULK, DEFAULT_MEMBRANE_DETAIL, MEMBRANE_DETAILS } from './membrane/model.js';
 import { registerTheme } from './theme/index.js';
 import {
@@ -217,6 +218,15 @@ export const DEMO_CONTROLS: DemoControl[] = [
     step: 2,
     scope: 'all',
     description: 'Membrane grid spacing in the 3-D view (Å, at least 2); 0 sizes it from the disc.',
+  },
+  {
+    attribute: 'morph-membrane-style',
+    kind: 'select',
+    default: DEFAULT_MEMBRANE_STYLE,
+    options: [...MEMBRANE_STYLES],
+    scope: 'all',
+    description:
+      'Membrane in the 3-D view: a square grid, rings and spokes that follow the protein near it, or a surface coloured by height.',
   },
   {
     attribute: 'icon-bandwidth',

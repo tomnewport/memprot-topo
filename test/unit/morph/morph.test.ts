@@ -28,6 +28,8 @@ const STYLE: MorphScene['style'] = {
   coil: '#666',
   membraneFill: '#eaeaea',
   membraneEdge: '#bdbdbd',
+  membraneRaised: '#d6604d',
+  membraneLowered: '#4393c3',
   midplane: '#666',
   contact: '#c98a3b',
   background: '#ffffff',
@@ -738,6 +740,107 @@ describe('<topology-display> 3-D morph', () => {
     ).toHaveLength(2);
     el.setAttribute('morph-grid-spacing', 'auto');
     expect(spacing()).toBe(auto);
+  });
+
+  it('draws the membrane as polar lines or a coloured surface from morph-membrane-style, in place', async () => {
+    type Net = { style: string; mesh: unknown; upper: unknown[] };
+    type WithNet = { _morph: { renderer: { net: Net } } };
+    const el = mount(hairpinChain());
+    const root = el.shadowRoot!;
+    // Annular leaflets that differ from the bulk, so the surface has colours.
+    el.setAttribute('membrane-annular-upper', '15');
+    await el.setMorphProgress(1);
+    const net = () => (el as unknown as WithNet)._morph.renderer.net;
+    const finite = () => {
+      const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
+      expect(ds.join('')).not.toMatch(/NaN|Infinity/);
+    };
+    expect(net().style).toBe('grid');
+    el.setAttribute('morph-membrane-style', 'polar');
+    expect(net().style).toBe('polar');
+    expect(net().upper.length).toBeGreaterThan(0);
+    expect(el.morphProgress).toBe(1);
+    finite();
+    el.setAttribute('morph-membrane-style', 'surface');
+    expect(net().style).toBe('surface');
+    expect(net().mesh).not.toBeNull();
+    finite();
+    // Colour bands, coloured by height, behind the protein: the flat bulk
+    // and the raised annular leaflet.
+    const fills = [...root.querySelectorAll('.svg-scroll svg > g:first-of-type path')]
+      .filter(
+        (p) => p.getAttribute('display') !== 'none' && p.getAttribute('fill')?.startsWith('rgb'),
+      )
+      .map((p) => p.getAttribute('fill'));
+    expect(new Set(fills).size).toBeGreaterThan(2);
+    el.setAttribute('morph-membrane-style', 'wobbly');
+    expect(net().style).toBe('grid');
+  });
+
+  it('blends the membrane to a new membrane-detail, in 2-D and in 3-D', async () => {
+    const frames: FrameRequestCallback[] = [];
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      frames[id - 1] = () => {};
+    });
+    /** Run the frames asked for so far, at time `t`. */
+    const tick = (t: number) => {
+      now = t;
+      for (const cb of frames.splice(0)) cb(t);
+    };
+    try {
+      const el = mount(hairpinChain());
+      const root = el.shadowRoot!;
+      el.setAttribute('membrane-annular-upper', '15');
+      el.setAttribute('membrane-detail', 'annular');
+      tick(1000);
+      const band = () => root.querySelector('path.membrane')!.getAttribute('d')!;
+      const tops = () =>
+        band()
+          .match(/-?\d+(?:\.\d+)?/g)!
+          .map(Number)
+          .filter((_, i) => i % 2);
+      const annular = tops();
+      el.setAttribute('membrane-detail', 'bulk');
+      // The new band shows at once; the blend starts on the next frame.
+      const bulk = tops();
+      expect(bulk).not.toEqual(annular);
+      tick(1000 + 0.5 * 625);
+      const mid = tops();
+      mid.forEach((z, i) => expect(z).toBeCloseTo((annular[i] + bulk[i]) / 2, 1));
+      tick(1000 + 625);
+      expect(tops()).toEqual(bulk);
+      expect(frames).toHaveLength(0);
+
+      // 3-D: the net's heights blend too.
+      type Net = { upper: Float64Array[] };
+      type WithNet = { _morph: { renderer: { drawnNet: Net; net: Net } } };
+      await el.setMorphProgress(1);
+      const zs = (net: Net) => net.upper.flatMap((l) => [...l]);
+      const drawn = () => zs((el as unknown as WithNet)._morph.renderer.drawnNet);
+      const flat = drawn();
+      now = 5000;
+      el.setAttribute('membrane-detail', 'annular');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(el.morphProgress).toBe(1);
+      const target = zs((el as unknown as WithNet)._morph.renderer.net);
+      expect(target).not.toEqual(flat);
+      tick(5000);
+      drawn().forEach((z, i) => expect(z).toBeCloseTo(flat[i], 9));
+      tick(5000 + 625);
+      drawn().forEach((z, i) => expect(z).toBeCloseTo(target[i], 9));
+
+      // No blend with transition-time 0.
+      el.setAttribute('transition-time', '0');
+      el.setAttribute('membrane-detail', 'bulk');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(frames).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
   });
 
   it('changes 3-D settings in place, keeping the 3-D view', async () => {

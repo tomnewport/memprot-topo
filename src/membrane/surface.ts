@@ -15,7 +15,7 @@ export class LeafletSurface {
   readonly x: Float64Array;
   readonly y: Float64Array;
   readonly z: Float64Array;
-  private readonly cells = new Map<string, number[]>();
+  private readonly cells = new Map<number, number[]>();
 
   constructor(points: { x: number; y: number; z: number }[]) {
     const n = points.length;
@@ -41,8 +41,9 @@ export class LeafletSurface {
     return this.x.length;
   }
 
-  private static key(i: number, j: number): string {
-    return `${i},${j}`;
+  /** Cell key; cells are within ±2¹⁵ of the origin (±65 μm). */
+  private static key(i: number, j: number): number {
+    return (i + 32768) * 65536 + (j + 32768);
   }
 
   /**

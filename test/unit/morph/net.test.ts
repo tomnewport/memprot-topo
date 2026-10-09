@@ -1,14 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { buildFishnet, fishnetSpacing, fitRigid2d } from '../../../src/morph/net.js';
+import {
+  blendFishnet,
+  buildFishnet,
+  fishnetSpacing,
+  fitRigid2d,
+  sameNetShape,
+  type FishnetInput,
+  type MembraneStyle,
+} from '../../../src/morph/net.js';
 
 const BULK = { upper: 20, lower: -20 };
 const CENTRE = { x: 10, y: -5 };
 
-/** Every (ox, oy, z) node of a leaflet's net. */
+/** Every drawn (ox, oy, z) node of a leaflet's net (open ones, z NaN, left out). */
 function nodes(lines: Float64Array[]): [number, number, number][] {
   const out: [number, number, number][] = [];
-  for (const l of lines) for (let i = 0; i < l.length; i += 3) out.push([l[i], l[i + 1], l[i + 2]]);
+  for (const l of lines)
+    for (let i = 0; i < l.length; i += 3)
+      if (!Number.isNaN(l[i + 2])) out.push([l[i], l[i + 1], l[i + 2]]);
   return out;
+}
+
+/** Number of open (NaN) points in a leaflet's net. */
+function open(lines: Float64Array[]): number {
+  let n = 0;
+  for (const l of lines) for (let i = 2; i < l.length; i += 3) if (Number.isNaN(l[i])) n++;
+  return n;
 }
 
 describe('buildFishnet', () => {
@@ -75,14 +92,16 @@ describe('buildFishnet', () => {
     const up = nodes(net.upper);
     for (const [ox, oy, z] of up) {
       const rho = Math.hypot(ox, oy) / 40;
-      if (rho <= 0.8) expect(z).toBeCloseTo(20 + bump(CENTRE.x + ox, CENTRE.y + oy), 9);
+      // Interpolated from a 2 Å lattice (less closely next to the pore).
+      if (rho <= 0.8 && Math.hypot(ox - 15, oy) > 7)
+        expect(z).toBeCloseTo(20 + bump(CENTRE.x + ox, CENTRE.y + oy), 1);
       if (rho > 0.999) expect(z).toBe(20);
       // No node inside the pore.
       expect(Math.hypot(ox - 15, oy)).toBeGreaterThanOrEqual(5);
     }
     expect(up.find(([x, y]) => x === 0 && y === 0)![2]).toBeCloseTo(26, 9);
-    // The lines through the pore are broken in two.
-    expect(net.upper.length).toBeGreaterThan(2 * 15);
+    // The lines through the pore are open there.
+    expect(open(net.upper)).toBeGreaterThan(0);
   });
 
   it('carries on across a gap in the lipid that the drawn protein doesn’t surround', () => {
@@ -108,8 +127,9 @@ describe('buildFishnet', () => {
     };
     const net = buildFishnet(input);
     const up = nodes(net.upper);
-    // Unbroken: one polyline per grid line, as with no gap.
+    // Unbroken: one polyline per grid line, as with no gap, and none open.
     expect(net.upper).toHaveLength(2 * 15);
+    expect(open(net.upper)).toBe(0);
     // Across the gap the heights come from the lipid around it.
     const mid = up.find(([x, y]) => x === -15 && y === 0)!;
     expect(mid[2]).toBeCloseTo(20 + 0.1 * -15, 3);
@@ -165,6 +185,7 @@ describe('buildFishnet', () => {
       local: { upper: () => null, lower: () => null, radius: 6 },
     });
     expect(net.upper).toHaveLength(2 * 15);
+    expect(open(net.upper)).toBe(0);
     expect(nodes(net.upper).every(([, , z]) => Math.abs(z - 20) < 1e-3)).toBe(true);
     expect(nodes(net.lower).every(([, , z]) => Math.abs(z + 20) < 1e-3)).toBe(true);
   });
@@ -185,7 +206,7 @@ describe('buildFishnet', () => {
     });
     const inner = nodes(net.upper).filter(([x, y]) => Math.hypot(x, y) <= 32);
     expect(inner.some(([x, y]) => Math.hypot(x + 15, y) < 8)).toBe(true);
-    for (const [, , z] of inner) expect(z).toBeCloseTo(23, 3);
+    for (const [, , z] of inner) expect(z).toBeCloseTo(23, 2);
   });
 
   it('keeps a pore open however wide the averaging', () => {
@@ -225,7 +246,8 @@ describe('buildFishnet', () => {
     for (const [x, y, z] of nodes(net.upper)) {
       const d = Math.hypot(x, y);
       if (d >= 35) expect(z).toBe(20);
-      if (d <= 0.8 * 35) expect(z).toBe(26);
+      // A lattice step inside the fade.
+      if (d <= 0.8 * 35 - 2) expect(z).toBeCloseTo(26, 9);
       if (d > 0.8 * 35 && d < 35) expect(z).toBeGreaterThan(20);
     }
   });
@@ -242,6 +264,145 @@ describe('buildFishnet', () => {
     expect(net.spacing).toBe(2.5);
     // 2 × (2·⌊(40 − ε)/2.5⌋ + 1) lines.
     expect(net.upper).toHaveLength(2 * (2 * 15 + 1));
+  });
+});
+
+describe('membrane styles', () => {
+  const bump = (x: number, y: number) =>
+    6 * Math.exp(-((x - CENTRE.x) ** 2 + (y - CENTRE.y) ** 2) / 200);
+  const pore = (x: number, y: number) => Math.hypot(x - CENTRE.x - 15, y - CENTRE.y) < 5;
+  // A barrel of radius 8 around the pore, 15 Å from the disc centre.
+  const barrel = Array.from({ length: 64 }, (_, i) => [
+    CENTRE.x + 15 + 8 * Math.cos((i * Math.PI) / 32),
+    CENTRE.y + 8 * Math.sin((i * Math.PI) / 32),
+  ]).flat();
+  const input = (style: MembraneStyle, local = true): FishnetInput => ({
+    centre: CENTRE,
+    radius: 40,
+    margin: 5,
+    spacing: 4,
+    style,
+    bulk: BULK,
+    annular: BULK,
+    protein: barrel,
+    local: local
+      ? {
+          upper: (x, y) => (pore(x, y) ? null : 20 + bump(x, y)),
+          lower: (x, y) => (pore(x, y) ? null : -20 - bump(x, y)),
+          radius: 6,
+        }
+      : undefined,
+  });
+  /** Distance (Å) from a point about the disc centre to the nearest barrel sample. */
+  const fromProtein = (ox: number, oy: number) => {
+    let d = Infinity;
+    for (let i = 0; i < barrel.length; i += 2)
+      d = Math.min(d, Math.hypot(CENTRE.x + ox - barrel[i], CENTRE.y + oy - barrel[i + 1]));
+    return d;
+  };
+  const closed = (l: Float64Array) => l[0] === l[l.length - 3] && l[1] === l[l.length - 2];
+
+  it('draws polar rings that keep their distance from the protein near it and are circles further out', () => {
+    const net = buildFishnet(input('polar'));
+    expect(net.style).toBe('polar');
+    expect(net.mesh).toBeNull();
+    const up = nodes(net.upper);
+    // Nothing inside the protein-lipid interface, 4 Å out from the samples.
+    for (const [ox, oy] of up) expect(fromProtein(ox, oy)).toBeGreaterThan(3.9);
+    // Rings at the interface and 4 Å further out follow the protein's outline.
+    const rings = net.upper.filter(closed);
+    const along = (l: Float64Array) => {
+      const d: number[] = [];
+      for (let i = 0; i < l.length; i += 3) d.push(fromProtein(l[i], l[i + 1]));
+      return [Math.min(...d), Math.max(...d)];
+    };
+    for (const k of [4, 8]) {
+      expect(rings.some((l) => along(l).every((d) => Math.abs(d - k) < 0.1))).toBe(true);
+    }
+    // The last ring is the circle where the bulk starts (5 Å in from the rim).
+    expect(
+      net.upper.some((l) => {
+        for (let i = 0; i < l.length; i += 3)
+          if (Math.abs(Math.hypot(l[i], l[i + 1]) - 35) > 1e-6) return false;
+        return true;
+      }),
+    ).toBe(true);
+    // Spokes run in from the rim.
+    const spokes = net.upper.filter((l) => !closed(l));
+    // Each starts on the rim, at the bulk.
+    const atRim = spokes.filter((l) => Math.abs(Math.hypot(l[0], l[1]) - 40) < 1e-6);
+    expect(atRim.length).toBeGreaterThan(20);
+    for (const l of atRim) expect(l[2]).toBe(20);
+    // Heights follow the local surface.
+    for (const [ox, oy, z] of up) {
+      if (Math.hypot(ox, oy) <= 30 && Math.hypot(ox - 15, oy) > 13)
+        expect(Math.abs(z - 20 - bump(CENTRE.x + ox, CENTRE.y + oy))).toBeLessThan(0.3);
+    }
+  });
+
+  it('builds a surface mesh with the leaflet heights, open over the pore', () => {
+    const net = buildFishnet(input('surface'));
+    expect(net.style).toBe('surface');
+    expect(net.upper).toHaveLength(0);
+    const mesh = net.mesh!;
+    const nv = mesh.xy.length / 2;
+    expect(nv).toBeGreaterThan(1000);
+    expect(mesh.upper).toHaveLength(nv);
+    expect(Math.max(...mesh.quads)).toBeLessThan(nv);
+    let inPore = 0;
+    for (let v = 0; v < nv; v++) {
+      const [ox, oy] = [mesh.xy[v * 2], mesh.xy[v * 2 + 1]];
+      expect(Math.hypot(ox, oy)).toBeLessThanOrEqual(40 + 1e-9);
+      expect(mesh.upper[v]).toBe(net.heightAt('upper', ox, oy));
+      expect(mesh.lower[v]).toBe(net.heightAt('lower', ox, oy));
+      if (Math.hypot(ox - 15, oy) < 3) {
+        inPore++;
+        expect(mesh.upper[v]).toBeNaN();
+      }
+      if (Math.hypot(ox, oy) > 40 - 1e-9) expect(mesh.upper[v]).toBe(20);
+    }
+    expect(inPore).toBeGreaterThan(0);
+  });
+
+  it('tells nets that share their points, so they can be blended', () => {
+    for (const style of ['grid', 'polar', 'surface'] as const) {
+      expect(sameNetShape(buildFishnet(input(style, false)), buildFishnet(input(style)))).toBe(
+        true,
+      );
+    }
+    const grid = buildFishnet(input('grid'));
+    expect(sameNetShape(grid, buildFishnet(input('polar')))).toBe(false);
+    expect(sameNetShape(grid, buildFishnet({ ...input('grid'), spacing: 5 }))).toBe(false);
+  });
+
+  it('blends the heights of two nets, opening a pore halfway', () => {
+    for (const style of ['grid', 'surface'] as const) {
+      const flat = buildFishnet(input(style, false));
+      const local = buildFishnet(input(style));
+      const zs = (n: typeof flat) => (n.mesh ? [n.mesh.upper] : n.upper).flatMap((l) => [...l]);
+      const [a, b] = [zs(flat), zs(local)];
+      const at = (t: number) => zs(blendFishnet(flat, local, t));
+      const [t0, t4, t5, t6, t1] = [0, 0.4, 0.5, 0.6, 1].map(at);
+      let pores = 0;
+      for (let i = 0; i < a.length; i++) {
+        if (Number.isNaN(b[i])) {
+          pores++;
+          // Open for the half nearer the net where it is open.
+          expect(t4[i]).toBe(a[i]);
+          expect(t6[i]).toBeNaN();
+          continue;
+        }
+        expect(t0[i]).toBe(a[i]);
+        expect(t1[i]).toBeCloseTo(b[i], 12);
+        expect(t5[i]).toBeCloseTo((a[i] + b[i]) / 2, 12);
+      }
+      expect(pores).toBeGreaterThan(0);
+      const mid = blendFishnet(flat, local, 0.5);
+      expect(mid.heightAt('upper', 0, 0)).toBeCloseTo(
+        (flat.heightAt('upper', 0, 0) + local.heightAt('upper', 0, 0)) / 2,
+        12,
+      );
+    }
   });
 });
 

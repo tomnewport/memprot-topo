@@ -4,12 +4,18 @@ import { computePose, type Pose, type Rigid } from './curtain.js';
 import type { MorphModel, ModelElement, ModelLoop } from './model.js';
 import {
   BULK_MARGIN,
+  DEFAULT_MEMBRANE_STYLE,
+  blendFishnet,
   buildFishnet,
   discRadius,
   fishnetSpacing,
   fitRigid2d,
+  sameNetShape,
   type Fishnet,
   type HeightAt,
+  type Leaf,
+  type MembraneStyle,
+  type SurfaceMesh,
 } from './net.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -45,6 +51,8 @@ export interface MorphOptions {
    * the membrane disc ({@link fishnetSpacing}).
    */
   gridSpacing: number;
+  /** How the leaflets are drawn: grid or polar lines, or a coloured surface. */
+  membraneStyle: MembraneStyle;
 }
 
 export { PROJECTIONS } from './projections.js';
@@ -61,6 +69,7 @@ export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
   fov: 0,
   sweep: 0.35,
   gridSpacing: 0,
+  membraneStyle: DEFAULT_MEMBRANE_STYLE,
 };
 
 /** User orbit applied on top of the scripted camera (radians). */
@@ -609,6 +618,8 @@ export class MorphRenderer {
     mid: Pooled<SVGPathElement>;
     /** Leaflet surfaces, far one first. */
     discs: [Pooled<SVGPathElement>, Pooled<SVGPathElement>];
+    /** The surface style's leaflets, far one first: one path per colour band. */
+    surface: [Pooled<SVGPathElement>[], Pooled<SVGPathElement>[]];
   };
   private readonly runsG: SVGGElement;
   private readonly labelsG: SVGGElement;
@@ -621,6 +632,8 @@ export class MorphRenderer {
   private framing: Framing | null = null;
   /** The leaflets' fishnets at τ = 1, about the final disc centre. */
   private net: Fishnet | null = null;
+  /** A membrane being blended into {@link net}, and how far along (0–1). */
+  private blend: { from: Fishnet; t: number; drawn: Fishnet | null } | null = null;
   /**
    * Opacity of faded (neighbouring-chain) elements this frame. They start at
    * the 2-D figure's translucency and become opaque — with colours lightened
@@ -676,10 +689,18 @@ export class MorphRenderer {
     const disc0 = document.createElementNS(SVG_NS, 'path');
     const disc1 = document.createElementNS(SVG_NS, 'path');
     backG.append(rim, mid, disc0, disc1);
+    const bands = () =>
+      Array.from({ length: options.membraneStyle === 'surface' ? SURFACE_BANDS : 0 }, () => {
+        const path = new Pooled(document.createElementNS(SVG_NS, 'path'));
+        path.set('display', 'none');
+        backG.append(path.el);
+        return path;
+      });
     this.back = {
       rim: new Pooled(rim),
       mid: new Pooled(mid),
       discs: [new Pooled(disc0), new Pooled(disc1)],
+      surface: [bands(), bands()],
     };
     this.runsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG = document.createElementNS(SVG_NS, 'g');
@@ -692,6 +713,32 @@ export class MorphRenderer {
    * with wider strokes and carry `class="selected"` and `data-type`, for the
    * page's glow. Takes effect from the next frame.
    */
+  /**
+   * The membrane as drawn (blended, while a blend runs), or null before the
+   * renderer is first configured.
+   */
+  get drawnNet(): Fishnet | null {
+    const b = this.blend;
+    if (!b || !this.net || b.t >= 1) return this.net;
+    return (b.drawn ??= blendFishnet(b.from, this.net, b.t));
+  }
+
+  /**
+   * Blend the membrane from `from` (another renderer's {@link drawnNet} of the
+   * same chain) to this one's: false, and no blend, if their points differ.
+   * The blend starts at the end (t = 1); null ends it.
+   */
+  blendNetFrom(from: Fishnet | null): boolean {
+    this.blend =
+      from && this.net && sameNetShape(from, this.net) ? { from, t: 1, drawn: null } : null;
+    return this.blend !== null;
+  }
+
+  /** How far (0–1) the membrane blend is along, from the next frame. */
+  setNetBlend(t: number): void {
+    if (this.blend) this.blend = { ...this.blend, t, drawn: null };
+  }
+
   setSelected(ids: Iterable<number>): void {
     this.selected = new Set(ids);
   }
@@ -1088,6 +1135,10 @@ export class MorphRenderer {
     const discY = lerp(0, F.disc1.y, eCam);
     const discR = lerp((model.slabX1 - model.slabX0) / 2, F.disc1.r, eCam);
     const planesOn = eDisc > 0.001 && Math.abs(cam.p.el) > 1e-3;
+    const mesh = this.drawnNet?.mesh;
+    const surface = mesh
+      ? this.surfaceShading(this.drawnNet!.heightAt, mesh, discR / F.disc1.r)
+      : null;
     const veil = new Veil(
       cam,
       discX,
@@ -1097,12 +1148,13 @@ export class MorphRenderer {
       lower,
       planesOn ? eDisc : 0,
       hexRgb(st.membraneFill),
+      surface,
     );
     // The 2-D membrane's local rises and drops flatten onto the bulk planes
     // early on, before the leaflet sheets appear.
     const keepProfile = 1 - smooth(0, 0.3, tau);
     this.drawBackRim(cam, discX, discY, discR, upper, lower, sigma, keepProfile);
-    this.drawDiscs(cam, discX, discY, discR, upper, lower, planesOn ? eDisc : 0);
+    this.drawDiscs(cam, discX, discY, discR, upper, lower, planesOn ? eDisc : 0, surface);
 
     const prims: Prim[] = [];
     const ctx: FrameCtx = {
@@ -2505,7 +2557,8 @@ export class MorphRenderer {
   /**
    * Fills of the two leaflet sheets, far one first, behind the protein. The
    * upper sheet reads as translucent; the lower one is kept faint so the
-   * cytoplasmic side stays legible.
+   * cytoplasmic side stays legible. In the surface style each leaflet is its
+   * mesh instead, at its own heights and coloured by them.
    */
   private drawDiscs(
     cam: Camera,
@@ -2515,17 +2568,48 @@ export class MorphRenderer {
     upper: number,
     lower: number,
     eDisc: number,
+    surface: SurfaceShading | null,
   ): void {
     const st = this.model.scene.style;
     const [far, near] = this.back.discs;
-    if (eDisc <= 0) {
+    const hideBands = () => {
+      for (const bands of this.back.surface) for (const b of bands) b.set('display', 'none');
+    };
+    if (eDisc <= 0 || surface) {
       far.set('display', 'none');
       near.set('display', 'none');
-      return;
     }
+    if (eDisc <= 0 || !surface) hideBands();
+    if (eDisc <= 0) return;
     // Seen from above, the lower leaflet is the far one.
     const eyeZ = Number.isFinite(cam.dist) ? cam.eye[2] : cam.p.el;
     const fromAbove = eyeZ > 0;
+    if (surface) {
+      for (const leaf of ['upper', 'lower'] as const) {
+        const bands = this.back.surface[(leaf === 'upper') === fromAbove ? 1 : 0];
+        const d = this.surfacePaths(
+          cam,
+          cxw,
+          cyw,
+          leaf,
+          leaf === 'upper' ? upper : lower,
+          eDisc,
+          surface,
+        );
+        d.forEach((path, i) => {
+          const band = bands[i];
+          if (!path) {
+            band.set('display', 'none');
+            return;
+          }
+          band.set('display', null);
+          band.set('d', path);
+          band.set('fill', rgbStr(surface.colours[i]));
+          band.set('fill-opacity', (SURFACE_ALPHA[leaf] * eDisc).toFixed(3));
+        });
+      }
+      return;
+    }
     for (const which of ['top', 'bottom'] as const) {
       const zp = which === 'top' ? upper : lower;
       let d = '';
@@ -2540,6 +2624,99 @@ export class MorphRenderer {
       path.set('fill', st.membraneFill);
       path.set('fill-opacity', (SHEET_ALPHA[which === 'top' ? 0 : 1] * eDisc).toFixed(3));
     }
+  }
+
+  /**
+   * One leaflet's mesh as a path per colour band, growing out of the bulk
+   * plane with `grow`. Each quad is split into two triangles and each
+   * triangle cut where the height crosses a band edge (heights vary linearly
+   * across it), so the bands meet along smooth contours. Every piece is wound
+   * the same way on screen, so pieces that meet or overlap within a band fill
+   * once, with no seams.
+   */
+  private surfacePaths(
+    cam: Camera,
+    cxw: number,
+    cyw: number,
+    leaf: Leaf,
+    bulk: number,
+    grow: number,
+    surface: SurfaceShading,
+  ): string[] {
+    const { k, mesh } = surface;
+    const zs = mesh[leaf];
+    const nv = zs.length;
+    const p = new Float64Array(nv * 2);
+    for (let v = 0; v < nv; v++) {
+      if (Number.isNaN(zs[v])) continue;
+      cam.project(
+        cxw + k * mesh.xy[v * 2],
+        cyw + k * mesh.xy[v * 2 + 1],
+        bulk + grow * (zs[v] - bulk),
+        this.tmp,
+      );
+      p[v * 2] = this.tmp[0];
+      p[v * 2 + 1] = this.tmp[1];
+    }
+    const out: string[] = new Array<string>(SURFACE_BANDS).fill('');
+    const emit = (band: number, poly: number[]) => {
+      const m = poly.length / 3;
+      if (m < 3) return;
+      let area = 0;
+      for (let i = 0; i < m; i++) {
+        const j = (i + 1) % m;
+        area += poly[i * 3] * poly[j * 3 + 1] - poly[j * 3] * poly[i * 3 + 1];
+      }
+      let d = '';
+      for (let q = 0; q < m; q++) {
+        const i = area >= 0 ? q : m - 1 - q;
+        d += (q === 0 ? 'M' : 'L') + poly[i * 3].toFixed(1) + ',' + poly[i * 3 + 1].toFixed(1);
+      }
+      out[band] += d + 'Z';
+    };
+    const triangle = (a: number, b: number, c: number) => {
+      const poly = [a, b, c].flatMap((v) => [p[v * 2], p[v * 2 + 1], zs[v] - bulk]);
+      const lo = surfaceBand(Math.min(poly[2], poly[5], poly[8]));
+      const hi = surfaceBand(Math.max(poly[2], poly[5], poly[8]));
+      for (let band = lo; band <= hi; band++) {
+        let piece = poly;
+        if (band > lo) piece = clipHeight(piece, SURFACE_EDGES[band - 1], 1);
+        if (band < hi) piece = clipHeight(piece, SURFACE_EDGES[band], -1);
+        emit(band, piece);
+      }
+    };
+    const q = mesh.quads;
+    for (let i = 0; i < q.length; i += 4) {
+      const [a, b, c, e] = [q[i], q[i + 1], q[i + 2], q[i + 3]];
+      // Split along the diagonal that keeps the most of a quad with one
+      // corner in a pore.
+      if (Number.isNaN(zs[a] + zs[c])) {
+        if (!Number.isNaN(zs[a] + zs[b] + zs[e])) triangle(a, b, e);
+        if (!Number.isNaN(zs[b] + zs[c] + zs[e])) triangle(b, c, e);
+      } else {
+        if (!Number.isNaN(zs[b])) triangle(a, b, c);
+        if (!Number.isNaN(zs[e])) triangle(a, c, e);
+      }
+    }
+    return out;
+  }
+
+  /** The surface style's colours and heights, for the sheets and the veil. */
+  private surfaceShading(
+    heightAt: Fishnet['heightAt'],
+    mesh: SurfaceMesh,
+    k: number,
+  ): SurfaceShading {
+    const st = this.model.scene.style;
+    const fill = hexRgb(st.membraneFill);
+    const raised = hexRgb(st.membraneRaised);
+    const lowered = hexRgb(st.membraneLowered);
+    const half = (SURFACE_BANDS - 1) / 2;
+    const colours = Array.from({ length: SURFACE_BANDS }, (_, i) => {
+      const t = (i - half) / half;
+      return t >= 0 ? mixRgb(fill, raised, t) : mixRgb(fill, lowered, -t);
+    });
+    return { heightAt, mesh, k, colours };
   }
 
   /** Rims of the leaflet sheets, depth-sorted with the protein. */
@@ -2645,6 +2822,7 @@ export class MorphRenderer {
       local,
       spacing,
       margin: BULK_MARGIN,
+      style: this.options.membraneStyle,
     });
   }
 
@@ -2662,7 +2840,7 @@ export class MorphRenderer {
     lower: number,
     alpha: number,
   ): void {
-    const net = this.net;
+    const net = this.drawnNet;
     if (!net) return;
     const { cam, prims, fogAt } = ctx;
     const st = this.model.scene.style;
@@ -2685,6 +2863,8 @@ export class MorphRenderer {
           p[i * 3 + 2] = this.tmp[2];
         }
         for (let i = 0; i < m - 1; i++) {
+          // Open over pores.
+          if (Number.isNaN(line[i * 3 + 2] + line[i * 3 + 5])) continue;
           const pts = [p[i * 3], p[i * 3 + 1], p[i * 3 + 3], p[i * 3 + 4]];
           const depth = (p[i * 3 + 2] + p[i * 3 + 5]) / 2;
           const c = fogged(edge, fogAt(depth), ground);
@@ -3163,6 +3343,57 @@ export function findKink(w: Float64Array, g0: number, g1: number): number {
 
 /** Opacity of the upper and lower leaflet sheets. */
 const SHEET_ALPHA: [number, number] = [0.22, 0.1];
+/** The surface style: opacity of each leaflet … */
+const SURFACE_ALPHA = { upper: 0.4, lower: 0.3 };
+/** … colour bands (odd, the middle one at the bulk height) … */
+const SURFACE_BANDS = 13;
+/** … and the rise or drop (Å) at which the colour is strongest. */
+const SURFACE_RANGE = 6;
+
+/** Colour band of a rise (Å, positive up) of the surface above its bulk plane. */
+function surfaceBand(dz: number): number {
+  const half = (SURFACE_BANDS - 1) / 2;
+  return Math.max(0, Math.min(SURFACE_BANDS - 1, Math.round((dz / SURFACE_RANGE) * half) + half));
+}
+
+/** Rise between each colour band and the next. */
+const SURFACE_EDGES = Array.from(
+  { length: SURFACE_BANDS - 1 },
+  (_, i) => ((i + 0.5 - (SURFACE_BANDS - 1) / 2) * SURFACE_RANGE) / ((SURFACE_BANDS - 1) / 2),
+);
+
+/**
+ * The part of a convex polygon (flat x, y, h triples, h varying linearly
+ * across it) where h is above `level` (`side` 1) or below it (`side` -1).
+ */
+function clipHeight(poly: number[], level: number, side: 1 | -1): number[] {
+  const out: number[] = [];
+  const m = poly.length / 3;
+  for (let i = 0; i < m; i++) {
+    const j = (i + 1) % m;
+    const a = side * (poly[i * 3 + 2] - level);
+    const b = side * (poly[j * 3 + 2] - level);
+    if (a >= 0) out.push(poly[i * 3], poly[i * 3 + 1], poly[i * 3 + 2]);
+    if (a >= 0 !== b >= 0) {
+      const t = a / (a - b);
+      for (let c = 0; c < 3; c++)
+        out.push(poly[i * 3 + c] + t * (poly[j * 3 + c] - poly[i * 3 + c]));
+    }
+  }
+  return out;
+}
+
+/** The surface style's heights and colours, shared by the sheets and the veil. */
+interface SurfaceShading {
+  /** Final height of a leaflet about the final disc centre (NaN in a pore). */
+  heightAt: (leaf: Leaf, ox: number, oy: number) => number;
+  /** The leaflets' mesh, about the final disc centre. */
+  mesh: SurfaceMesh;
+  /** Scale from the final disc to the current one. */
+  k: number;
+  /** Colour of each band. */
+  colours: RGB[];
+}
 
 /**
  * The two leaflet surfaces as translucent sheets. Painting a sheet over the
@@ -3171,7 +3402,9 @@ const SHEET_ALPHA: [number, number] = [0.22, 0.1];
  * fills are drawn behind the protein, and any piece seen through a sheet takes
  * the sheet's tint in its own colour; pieces are cut exactly where that
  * changes, so the boundary is where the line of sight meets the sheet's edge
- * or the piece passes through the plane.
+ * or the piece passes through the plane. In the surface style the sheets
+ * follow the leaflets' heights and the tint is the colour where the line of
+ * sight crosses them.
  */
 class Veil {
   private readonly alpha: [number, number];
@@ -3186,11 +3419,18 @@ class Veil {
     /** Sheet fade-in (0 = no sheets). */
     readonly on: number,
     private readonly fill: RGB,
+    private readonly surface: SurfaceShading | null = null,
   ) {
-    this.alpha = [SHEET_ALPHA[0] * on, SHEET_ALPHA[1] * on];
+    this.alpha = surface
+      ? [SURFACE_ALPHA.upper * on, SURFACE_ALPHA.lower * on]
+      : [SHEET_ALPHA[0] * on, SHEET_ALPHA[1] * on];
   }
 
-  /** Sheets between world point (x, y, z) and the eye: bit 1 upper, bit 2 lower. */
+  /**
+   * Sheets between world point (x, y, z) and the eye: bit 1 upper, bit 2
+   * lower; in the surface style, the colour band crossed in each leaflet
+   * (1 + band for the upper, times SURFACE_BANDS + 1 for the lower).
+   */
   level(x: number, y: number, z: number): number {
     if (this.on <= 0) return 0;
     const cam = this.cam;
@@ -3210,13 +3450,34 @@ class Veil {
       dz = -cam.v[2];
     }
     if (Math.abs(dz) < 1e-12) return 0;
+    const surface = this.surface;
     let lv = 0;
     for (let k = 0; k < 2; k++) {
-      const s = ((k === 0 ? this.upper : this.lower) - z) / dz;
+      const plane = k === 0 ? this.upper : this.lower;
+      let s = (plane - z) / dz;
+      let band = 0;
+      if (surface) {
+        // Where the ray meets the leaflet's (grown) heights: a few fixed-point steps from the plane.
+        const leaf = k === 0 ? 'upper' : 'lower';
+        let h = plane;
+        for (let it = 0; it < 3 && s > 0; it++) {
+          const hx = (x + s * dx - this.cx) / surface.k;
+          const hy = (y + s * dy - this.cy) / surface.k;
+          const final = surface.heightAt(leaf, hx, hy);
+          if (Number.isNaN(final)) {
+            s = -1;
+            break;
+          }
+          h = plane + this.on * (final - plane);
+          band = surfaceBand(final - plane);
+          s = (h - z) / dz;
+        }
+      }
       if (s <= 0 || s >= reach) continue;
       const qx = x + s * dx - this.cx;
       const qy = y + s * dy - this.cy;
-      if (qx * qx + qy * qy <= this.r * this.r) lv |= 1 << k;
+      if (qx * qx + qy * qy > this.r * this.r) continue;
+      lv += surface ? (1 + band) * (k === 0 ? 1 : SURFACE_BANDS + 1) : 1 << k;
     }
     return lv;
   }
@@ -3224,6 +3485,16 @@ class Veil {
   /** Colour `c` as seen through sheets `lv`. */
   apply(c: RGB, lv: number): RGB {
     if (lv === 0) return c;
+    const surface = this.surface;
+    if (surface) {
+      // The lower leaflet is further from the eye: tint by it first.
+      const up = lv % (SURFACE_BANDS + 1);
+      const low = Math.floor(lv / (SURFACE_BANDS + 1));
+      let out = c;
+      if (low) out = mixRgb(out, surface.colours[low - 1], this.alpha[1]);
+      if (up) out = mixRgb(out, surface.colours[up - 1], this.alpha[0]);
+      return out;
+    }
     let keep = 1;
     if (lv & 1) keep *= 1 - this.alpha[0];
     if (lv & 2) keep *= 1 - this.alpha[1];

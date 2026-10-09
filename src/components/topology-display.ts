@@ -55,7 +55,13 @@ import type {
 } from '../morph/types.js';
 import type { MorphController, MorphView } from '../morph/controller.js';
 import type { MorphOptions } from '../morph/renderer.js';
+import type { Fishnet } from '../morph/net.js';
 import { PROJECTIONS } from '../morph/projections.js';
+import {
+  DEFAULT_MEMBRANE_STYLE,
+  MEMBRANE_STYLES,
+  type MembraneStyle,
+} from '../morph/membrane-style.js';
 import type { SeqElement, SeqResidue, SequenceSource, TracePoint } from '../sequence/types.js';
 import { oneLetter } from '../sequence/amino-acids.js';
 import { SequenceController } from '../sequence/controller.js';
@@ -2400,6 +2406,8 @@ type MorphThemeStyle = Pick<
   | 'coil'
   | 'membraneFill'
   | 'membraneEdge'
+  | 'membraneRaised'
+  | 'membraneLowered'
   | 'midplane'
   | 'contact'
   | 'background'
@@ -2417,6 +2425,8 @@ function morphColours(theme: Theme): MorphThemeStyle {
     coil: theme.loop,
     membraneFill: theme.membrane,
     membraneEdge: theme.membraneEdge,
+    membraneRaised: theme.membraneRaised,
+    membraneLowered: theme.membraneLowered,
     midplane: theme.midplane,
     contact: theme.contact,
     background: theme.background,
@@ -2429,6 +2439,18 @@ function morphColours(theme: Theme): MorphThemeStyle {
 
 /** Default time (ms) to move one whole dimension (see `transition-time`). */
 export const DEFAULT_TRANSITION_MS = 2500;
+/** A `membrane-detail` change blends over this fraction of `transition-time`. */
+const MEMBRANE_BLEND = 0.25;
+/** A number in SVG path data. */
+const PATH_NUMBER = /-?\d+(?:\.\d+)?/g;
+
+/** The membrane as drawn, for blending to a new `membrane-detail`. */
+interface MembraneSnapshot {
+  /** Path data of the 2-D band. */
+  band: string | null;
+  /** The 3-D membrane, while the 3-D view is shown. */
+  net: Fishnet | null;
+}
 
 function prefersReducedMotion(): boolean {
   return (
@@ -2524,6 +2546,7 @@ export class TopologyDisplay extends HTMLElement {
     'morph-strand-width',
     'morph-strand-thickness',
     'morph-grid-spacing',
+    'morph-membrane-style',
     'icon-bandwidth',
     'min-helix-length',
     'min-strand-length',
@@ -2583,6 +2606,8 @@ export class TopologyDisplay extends HTMLElement {
   private _morphLoad: Promise<MorphController | null> | null = null;
   /** A view a redraw is restoring while the morph code loads. */
   private _pendingView: MorphView | null = null;
+  /** Running blend of the 2-D membrane band after a `membrane-detail` change. */
+  private _bandRaf = 0;
   private _scrollBox: ScrollBox | null = null;
   private _selectedChainId: string | null = null;
   /** The chain picker, when the protein has more than one chain. */
@@ -2898,7 +2923,8 @@ export class TopologyDisplay extends HTMLElement {
       name === 'morph-projection' ||
       name === 'morph-strand-width' ||
       name === 'morph-strand-thickness' ||
-      name === 'morph-grid-spacing'
+      name === 'morph-grid-spacing' ||
+      name === 'morph-membrane-style'
     ) {
       // 3-D only: update the morph in place, keeping its view.
       if (this._morphSource) {
@@ -2910,6 +2936,12 @@ export class TopologyDisplay extends HTMLElement {
     if (name === 'icon-bandwidth') {
       // Only the chain-picker icons change.
       this.redrawPicker();
+      return;
+    }
+    if (name === 'membrane-detail') {
+      // Redraw, keeping the view, and blend from the old membrane to the new.
+      const from = value !== old ? this.membraneSnapshot() : null;
+      this.render({ keepView: true, membraneFrom: from });
       return;
     }
     if (
@@ -3041,6 +3073,14 @@ export class TopologyDisplay extends HTMLElement {
     return Number.isFinite(v) && v > 0 ? v : 0;
   }
 
+  /** How the 3-D view draws the leaflets (`morph-membrane-style`); `grid` unless valid. */
+  private get morphMembraneStyle(): MembraneStyle {
+    const v = this.getAttribute('morph-membrane-style');
+    return (MEMBRANE_STYLES as readonly string[]).includes(v ?? '')
+      ? (v as MembraneStyle)
+      : DEFAULT_MEMBRANE_STYLE;
+  }
+
   /** Assemble the 3-D morph options from the component's attributes. */
   private get morphOptions(): Partial<MorphOptions> {
     return {
@@ -3048,6 +3088,7 @@ export class TopologyDisplay extends HTMLElement {
       ...PROJECTIONS[this.morphProjection],
       ...this.morphStrandOptions,
       gridSpacing: this.morphGridSpacing,
+      membraneStyle: this.morphMembraneStyle,
     };
   }
 
@@ -3206,7 +3247,12 @@ export class TopologyDisplay extends HTMLElement {
    * Rebuild the shadow DOM. With `keepView`, the redraw keeps the 2-D scroll
    * position and the 3-D view (progress, orbit and any running animation).
    */
-  private render({ keepView = false } = {}) {
+  private render({
+    keepView = false,
+    membraneFrom = null,
+  }: { keepView?: boolean; membraneFrom?: MembraneSnapshot | null } = {}) {
+    if (this._bandRaf) cancelAnimationFrame(this._bandRaf);
+    this._bandRaf = 0;
     const view: MorphView | null = !keepView
       ? null
       : (this._morph?.view ??
@@ -3403,6 +3449,7 @@ export class TopologyDisplay extends HTMLElement {
     scroll.appendChild(svg);
     box.observe(svg);
     this._shown = { chain: selectedChain, svg };
+    if (membraneFrom?.band) this.blendBand(svg, membraneFrom.band);
     this.bindElements(svg, selectedChain.chainId);
     this.applySelection();
     sequence.lanes = this.sequenceLanes(selectedChain.chainId, sequence.residues);
@@ -3432,7 +3479,7 @@ export class TopologyDisplay extends HTMLElement {
 
     this._contentEl.appendChild(region);
 
-    if (view) this.restoreView(view);
+    if (view) this.restoreView(view, membraneFrom?.net ?? null);
     if (seqView !== null) {
       if (seqView < 1) seq.setProgress(seqView);
     } else {
@@ -3442,8 +3489,11 @@ export class TopologyDisplay extends HTMLElement {
     }
   }
 
-  /** Put the re-rendered chain back in `view`, loading the morph only if needed. */
-  private restoreView(view: MorphView): void {
+  /**
+   * Put the re-rendered chain back in `view`, loading the morph only if
+   * needed, and blend its 3-D membrane from `net` (the one drawn before).
+   */
+  private restoreView(view: MorphView, net: Fishnet | null = null): void {
     this._scrollBox!.scroll.scrollLeft = view.scroll0;
     if (view.tau <= 0 && !view.animating) return;
     const src = this._morphSource;
@@ -3454,7 +3504,49 @@ export class TopologyDisplay extends HTMLElement {
       if (this._morphSource !== src) return;
       this._pendingView = null;
       m?.restore(view);
+      m?.blendMembraneFrom(net, this.membraneBlendTime);
     });
+  }
+
+  /** The membrane as drawn now, to blend from after a `membrane-detail` change. */
+  private membraneSnapshot(): MembraneSnapshot {
+    return {
+      band: this._shown?.svg.querySelector('path.membrane')?.getAttribute('d') ?? null,
+      net: this._morph?.membraneNet ?? null,
+    };
+  }
+
+  /** Time (ms) a `membrane-detail` change takes to blend. */
+  private get membraneBlendTime(): number {
+    return MEMBRANE_BLEND * this.transitionTime;
+  }
+
+  /**
+   * Blend the 2-D membrane band in `svg` from path data `from` to the band
+   * drawn there now. The first frame changes on the next animation frame, so
+   * until then the new band shows.
+   */
+  private blendBand(svg: SVGSVGElement, from: string): void {
+    const path = svg.querySelector('path.membrane');
+    const to = path?.getAttribute('d');
+    const ms = this.membraneBlendTime;
+    if (!path || !to || to === from || ms <= 0 || prefersReducedMotion()) return;
+    // Both are membranePath output over the same x samples: blend the heights.
+    const a = from.match(PATH_NUMBER)?.map(Number);
+    const b = to.match(PATH_NUMBER)?.map(Number);
+    if (!a || !b || a.length !== b.length || a.some((v, i) => i % 2 === 0 && v !== b[i])) return;
+    const start = performance.now();
+    const step = (now: number): void => {
+      const f = Math.max(0, Math.min(1, (now - start) / ms));
+      const t = 0.5 - 0.5 * Math.cos(Math.PI * f);
+      let d = '';
+      for (let i = 0; i < a.length; i += 2) {
+        d += `${i === 0 ? 'M' : 'L'}${a[i]},${(a[i + 1] + t * (b[i + 1] - a[i + 1])).toFixed(2)}`;
+      }
+      path.setAttribute('d', f >= 1 ? to : d + 'Z');
+      this._bandRaf = f < 1 ? requestAnimationFrame(step) : 0;
+    };
+    this._bandRaf = requestAnimationFrame(step);
   }
 
   /** The chain picker, labelled by the "Select chain" heading. */

@@ -41,6 +41,13 @@ The 3-D view follows the same choice, and `element.membrane` reports the
 membrane as drawn. A structure lined up with a distortions file stays lined
 up whatever the detail. `<topology-loader>` passes the attribute on.
 
+Changing the detail blends the membrane from the old heights to the new over a
+quarter of `transition-time` (625 ms by default), in 2-D and in 3-D. It
+switches at once with `transition-time="0"`, with reduced motion, while the
+2-D ↔ 3-D transition is running, or when the two 3-D membranes don't share
+their points. `element.membrane` and the drawing's final state change at
+once; only the frames in between are blended.
+
 The px widths are in diagram units (SVG px at the drawing's own scale), so
 they keep their on-screen size if the Å-to-px scale changes. Every switch is a
 smoothstep, and the local heights are averaged along x with a Gaussian
@@ -59,6 +66,9 @@ holds the annular position next to the protein, easing to the bulk 4–14 Å
 away. Its spacing is `morph-grid-spacing` (see [morph-3d.md](morph-3d.md)). It
 eases to the bulk before the disc's rim, which shows at least 5 Å of flat
 bulk. The translucent leaflet sheets behind it stay at the bulk planes.
+`morph-membrane-style` draws the same heights as polar rings and spokes, or
+as a translucent surface coloured by how far each leaflet has risen above or
+dropped below its bulk plane (see [morph-3d.md](morph-3d.md)).
 
 ## Placing the membrane
 
