@@ -258,6 +258,85 @@ const STYLES = `
     stroke-opacity: 1;
     stroke-width: calc(var(--mp-selection-width) + 2.5px);
   }
+  .fullscreen-button {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font: inherit;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--mp-accent);
+    border-radius: var(--mp-corner-radius);
+    background: var(--mp-background);
+    color: var(--mp-accent);
+    cursor: pointer;
+  }
+  .fullscreen-button:hover { background: color-mix(in srgb, var(--mp-accent) 8%, var(--mp-background)); }
+  .fullscreen-button:focus-visible {
+    outline: 2px solid var(--mp-accent);
+    outline-offset: 1px;
+  }
+  .fullscreen-button svg { width: 0.9rem; height: 0.9rem; }
+  /* Full screen (issue #73): the element covers the screen and the diagram
+     box takes the space the controls above it leave. The box is zoomed to
+     fit (see TopologyDisplay.fitFullscreen) and scrolls both ways. */
+  :host([fullscreen]) {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    width: auto;
+    height: auto;
+    max-width: none;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right))
+      max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
+  }
+  :host([fullscreen]) .content,
+  :host([fullscreen]) [role='region'],
+  :host([fullscreen]) .chain-block {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* One row of chains, scrolled sideways, so the picker stays short. */
+  :host([fullscreen]) .chain-picker { flex-wrap: nowrap; overflow-x: auto; flex: none; }
+  :host([fullscreen]) .scroll-frame { flex: 1; min-height: 0; }
+  :host([fullscreen]) .svg-scroll {
+    height: 100%;
+    overflow: auto;
+    display: flex;
+  }
+  /* Centred while it fits; scrolls from its left/top edge when it doesn't. */
+  :host([fullscreen]) .svg-scroll > svg { flex: none; margin: auto; }
+  /* A short landscape screen (a phone on its side): the title and chain
+     picker move to a column on the left, leaving the height to the diagram. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    :host([fullscreen]) [role='region'] {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-rows: repeat(4, auto) minmax(0, 1fr);
+      align-content: start;
+      column-gap: 0.75rem;
+    }
+    :host([fullscreen]) [role='region'] > * { grid-column: 1; max-width: 6rem; }
+    :host([fullscreen]) [role='region'] > .chain-block {
+      grid-column: 2;
+      grid-row: 1 / -1;
+      max-width: none;
+      min-height: 0;
+    }
+    :host([fullscreen]) .chain-picker {
+      flex-direction: column;
+      flex-wrap: nowrap;
+      overflow: hidden auto;
+      max-height: calc(100dvh - 6rem);
+    }
+    :host([fullscreen]) .chain-block { margin-top: 0; }
+  }
 ${SCROLL_BOX_STYLES}`;
 
 const PLOT = {
@@ -2418,6 +2497,13 @@ export class TopologyDisplay extends HTMLElement {
   /** A view a redraw is restoring while the morph code loads. */
   private _pendingView: MorphView | null = null;
   private _scrollBox: ScrollBox | null = null;
+  /** Full-screen state: 'native' (Fullscreen API) or 'overlay' (fixed-position fallback). */
+  private _fullscreen: 'native' | 'overlay' | null = null;
+  /** Height the 3-D view fills while full screen (Infinity otherwise). */
+  private _fillHeight = Infinity;
+  private _fsButton: HTMLButtonElement | null = null;
+  /** Undo the full-screen listeners and page changes. */
+  private _fsCleanup: (() => void) | null = null;
   private _selectedChainId: string | null = null;
   /** The chain picker, when the protein has more than one chain. */
   private _picker: HTMLElement | null = null;
@@ -2467,6 +2553,7 @@ export class TopologyDisplay extends HTMLElement {
     this._styleEl = document.createElement('style');
     this._styleEl.textContent = STYLES;
     this._contentEl = document.createElement('div');
+    this._contentEl.className = 'content';
     shadow.append(this._themeEl, this._styleEl, this._contentEl);
     this._themeName = this.resolveTheme();
     this._theme = getTheme(this._themeName)!;
@@ -2841,6 +2928,142 @@ export class TopologyDisplay extends HTMLElement {
   disconnectedCallback() {
     this._unlisten?.();
     this._unlisten = null;
+    this.leaveFullscreen();
+  }
+
+  /** Whether the element is shown full screen. */
+  get fullscreen(): boolean {
+    return this._fullscreen !== null;
+  }
+
+  /**
+   * Show the element full screen, with the diagram zoomed to fit. Uses the
+   * Fullscreen API where the browser allows it (not iPhone Safari), else
+   * covers the window. Escape, or the button, leaves.
+   */
+  async requestFullscreenView(): Promise<void> {
+    if (this._fullscreen || !this.isConnected) return;
+    let mode: 'native' | 'overlay' = 'overlay';
+    if (document.fullscreenEnabled && typeof this.requestFullscreen === 'function') {
+      try {
+        await this.requestFullscreen({ navigationUI: 'hide' });
+        mode = 'native';
+      } catch {
+        // Refused (e.g. not from a user gesture): fall back to the overlay.
+      }
+    }
+    this.enterFullscreen(mode);
+  }
+
+  /** Leave full screen. */
+  async exitFullscreenView(): Promise<void> {
+    const native = this._fullscreen === 'native' && document.fullscreenElement === this;
+    this.leaveFullscreen();
+    if (native) await document.exitFullscreen().catch(() => undefined);
+  }
+
+  /** Enter full screen, or leave it. */
+  toggleFullscreen(): Promise<void> {
+    return this._fullscreen ? this.exitFullscreenView() : this.requestFullscreenView();
+  }
+
+  private enterFullscreen(mode: 'native' | 'overlay'): void {
+    this._fullscreen = mode;
+    this.setAttribute('fullscreen', '');
+    const offs: (() => void)[] = [];
+    const on = <K extends keyof DocumentEventMap>(
+      type: K,
+      fn: (e: DocumentEventMap[K]) => void,
+    ): void => {
+      document.addEventListener(type, fn);
+      offs.push(() => document.removeEventListener(type, fn));
+    };
+    if (mode === 'native') {
+      // The browser's own Escape (or the page leaving full screen).
+      on('fullscreenchange', () => {
+        if (document.fullscreenElement !== this) this.leaveFullscreen();
+      });
+    } else {
+      on('keydown', (e) => {
+        if (e.key === 'Escape') this.leaveFullscreen();
+      });
+      // The page under the overlay shouldn't scroll.
+      const root = document.documentElement;
+      const overflow = root.style.overflow;
+      root.style.overflow = 'hidden';
+      offs.push(() => (root.style.overflow = overflow));
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+      const resize = new ResizeObserver(() => this.fitFullscreen());
+      resize.observe(this);
+      offs.push(() => resize.disconnect());
+    }
+    this._fsCleanup = () => offs.forEach((off) => off());
+    this.fitFullscreen();
+    this.syncFullscreenButton();
+    this.dispatchFullscreenChange();
+  }
+
+  private leaveFullscreen(): void {
+    if (!this._fullscreen) return;
+    this._fullscreen = null;
+    this._fsCleanup?.();
+    this._fsCleanup = null;
+    this.removeAttribute('fullscreen');
+    this.fitFullscreen();
+    this.syncFullscreenButton();
+    this.dispatchFullscreenChange();
+  }
+
+  private dispatchFullscreenChange(): void {
+    this.dispatchEvent(
+      new CustomEvent('fullscreen-change', {
+        detail: { fullscreen: this.fullscreen },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /**
+   * Zoom the diagram box to the screen: the 2-D topology as large as fits
+   * (at most 4×; see below for when it is shrunk), with the 1-D and 3-D
+   * views at the same zoom; the 3-D view fills the box's height. Undoes it
+   * all when not full screen.
+   */
+  private fitFullscreen(): void {
+    const box = this._scrollBox;
+    const svg = this._shown?.svg;
+    if (!box) return;
+    let zoom = 1;
+    let fill = Infinity;
+    if (this._fullscreen && svg) {
+      const w = Number(svg.getAttribute('width')) || 1;
+      const h = Number(svg.getAttribute('height')) || 1;
+      // Leave the border and a little slack, so rounding adds no scrollbars.
+      const fw = box.frame.clientWidth - 4;
+      const fh = box.frame.clientHeight - 4;
+      // As large as fits; never smaller than natural size for the width (it
+      // scrolls sideways instead), but shrunk, to a point, to fit the height.
+      const floor = Math.max(0.6, Math.min(1, fh / h));
+      zoom = Math.min(4, Math.max(floor, Math.min(fw / w, fh / h)));
+      box.scroll.style.zoom = String(zoom);
+      fill = box.scroll.clientHeight;
+    } else {
+      box.scroll.style.zoom = '';
+    }
+    this._fillHeight = fill > 0 ? fill : Infinity;
+    this._morph?.setFillHeight(this._fillHeight);
+    box.update();
+  }
+
+  private syncFullscreenButton(): void {
+    const b = this._fsButton;
+    if (!b) return;
+    const on = this.fullscreen;
+    const label = on ? 'Exit full screen' : 'Full screen';
+    b.title = on ? 'Exit full screen (Esc)' : 'Show full screen';
+    b.replaceChildren(fullscreenIcon(on), label);
   }
 
   /** Follow the system colour scheme, and themes (re-)registered by name. */
@@ -2901,6 +3124,7 @@ export class TopologyDisplay extends HTMLElement {
           src.options,
         );
         this._morph = morph;
+        morph.setFillHeight(this._fillHeight);
         morph.setSelection(this.morphSelection());
         this.bindMorphBar(src.bar, morph);
         return morph;
@@ -2941,6 +3165,7 @@ export class TopologyDisplay extends HTMLElement {
     this._morphLoad = null;
     this._scrollBox?.dispose();
     this._scrollBox = null;
+    this._fsButton = null;
     this._shown = null;
     this._picker = null;
     this._hovered = null;
@@ -3137,6 +3362,7 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
+    if (this._fullscreen) this.fitFullscreen();
 
     if (view) this.restoreView(view);
     if (seqView !== null) {
@@ -3532,7 +3758,13 @@ export class TopologyDisplay extends HTMLElement {
     const hint = document.createElement('span');
     hint.className = 'morph-hint';
     hint.textContent = 'Drag to rotate';
-    bar.append(group, hint);
+    const fs = document.createElement('button');
+    fs.type = 'button';
+    fs.className = 'fullscreen-button';
+    fs.addEventListener('click', () => void this.toggleFullscreen());
+    this._fsButton = fs;
+    this.syncFullscreenButton();
+    bar.append(group, hint, fs);
     if (!available) {
       buttons[2].disabled = true;
       buttons[2].title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
@@ -3576,6 +3808,23 @@ export class TopologyDisplay extends HTMLElement {
   private bindMorphBar(bar: HTMLDivElement, morph: MorphController): void {
     morph.onChange = () => this.syncViewBar(bar);
   }
+}
+
+/** Four corners pointing out (enter full screen) or in (leave). */
+function fullscreenIcon(exit: boolean): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute(
+    'd',
+    exit ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5',
+  );
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '2');
+  svg.appendChild(path);
+  return svg;
 }
 
 /**
