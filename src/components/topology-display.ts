@@ -57,10 +57,13 @@ import { PROJECTIONS } from '../morph/projections.js';
 import {
   DEFAULT_BULK,
   DEFAULT_MEMBRANE_DETAIL,
+  MEMBRANE_CORE_HALF,
   MEMBRANE_DETAILS,
+  MEMBRANE_REACH_A,
   membraneAtDetail,
   membraneProfile,
   parseDistortions,
+  reachWeight,
   resolveMembrane,
   type LeafletPair,
   type Membrane,
@@ -1482,15 +1485,22 @@ function residueDisplayX(layout: SegmentLayout): (number | null)[] {
 }
 
 /**
- * Local leaflet heights under every drawn residue, at its diagram x, read
- * off the distortions surfaces at the residue's xy. Segments without 3-D
- * positions contribute nothing.
+ * Per residue of the diagram: its x, the local leaflet heights under it (with
+ * a distortions file), and how far the protein's hold on the membrane reaches
+ * there ({@link MEMBRANE_REACH_A}). The annular weight comes from the
+ * residue's distance along the membrane plane to the nearest `core` Cα (the
+ * transmembrane segments of every chain); the local weight from its distance
+ * to the bilayer between the local surfaces (0 inside it). Segments without
+ * 3-D positions contribute nothing.
  */
 function membraneAnchors(
   layouts: SegmentLayout[],
   unroll: UnrollResult,
-  surfaces: NonNullable<Membrane['surfaces']>,
+  membrane: Membrane,
+  core: readonly { x: number; y: number }[],
 ): ProfileAnchor[] {
+  const { surfaces, annular } = membrane;
+  const full2 = MEMBRANE_REACH_A.annular.full ** 2;
   const anchors: ProfileAnchor[] = [];
   layouts.forEach((layout, s) => {
     const positions = unroll.segments[s]?.positions;
@@ -1500,10 +1510,20 @@ function membraneAnchors(
       const x = xs[i];
       const p = positions[r.sampleIndex];
       if (x === null || !p) return;
+      const upper = surfaces ? surfaces.upper.heightAt(p.x, p.y) : null;
+      const lower = surfaces ? surfaces.lower.heightAt(p.x, p.y) : null;
+      let near2 = Infinity;
+      for (const c of core) {
+        near2 = Math.min(near2, (p.x - c.x) ** 2 + (p.y - c.y) ** 2);
+        if (near2 <= full2) break;
+      }
+      const toBilayer = Math.max(0, p.z - (upper ?? annular.upper), (lower ?? annular.lower) - p.z);
       anchors.push({
         x,
-        upper: surfaces.upper.heightAt(p.x, p.y),
-        lower: surfaces.lower.heightAt(p.x, p.y),
+        upper,
+        lower,
+        annularWeight: reachWeight(Math.sqrt(near2), MEMBRANE_REACH_A.annular),
+        localWeight: reachWeight(toBilayer, MEMBRANE_REACH_A.local),
       });
     });
   });
@@ -1532,6 +1552,8 @@ function renderChainSvg(
   analysis: BarrelAnalysis,
   showContacts: boolean,
   membrane: Membrane,
+  /** xy of every chain's membrane-core Cα: the transmembrane segments. */
+  core: readonly { x: number; y: number }[],
   theme: Theme,
   assembly?: AssemblyContext,
   display?: ChainDisplayData,
@@ -1571,14 +1593,15 @@ function renderChainSvg(
     ? { ...opts, extremePoints: false, tangentMagPx: BARREL.loopTangentPx }
     : opts;
 
-  // Membrane behind the diagram: bulk at its ends, then annular, then the
-  // local surface under the residues when a distortions file gives one.
+  // Membrane behind the diagram: bulk at its ends; under the residues, the
+  // annular leaflets near the transmembrane segments and the local surface
+  // near the bilayer, when a distortions file gives one.
   const profile = membraneProfile({
     x0: 0,
     x1: totalArc,
     bulk: membrane.bulk,
     annular: membrane.annular,
-    anchors: membrane.surfaces ? membraneAnchors(layouts, unroll, membrane.surfaces) : undefined,
+    anchors: membraneAnchors(layouts, unroll, membrane, core),
     pxPerA: PLOT.arcPxPerA,
   });
   const membraneReach = Math.max(...profile.upper.map(Math.abs), ...profile.lower.map(Math.abs));
@@ -2480,9 +2503,10 @@ export class TopologyDisplay extends HTMLElement {
 
   /**
    * How much of the membrane the diagram follows (`membrane-detail`): `bulk`,
-   * a flat band at the bulk leaflets; `annular`, bulk at the ends and the
-   * annular leaflets along the protein; `local` (the default), the local
-   * surfaces under the residues as well, when a distortions file gives them.
+   * a flat band at the bulk leaflets; `annular`, bulk, and the annular
+   * leaflets under residues near the transmembrane segments; `local` (the
+   * default), the local surfaces under residues near the bilayer as well, when
+   * a distortions file gives them (see {@link MEMBRANE_REACH_A}).
    * Unset or unknown values give `local`. The 3-D view follows the same
    * detail; the chain-picker icons always use the bulk.
    */
@@ -3055,12 +3079,16 @@ export class TopologyDisplay extends HTMLElement {
     // the membrane slab and the trace stay aligned (the slab used to be drawn
     // out to `unroll.totalArcLength` but the plot width was sized from the raw
     // chord sum, which is strictly shorter, so the slab over-extended).
+    const core = chainsWithCoords.flatMap((c) =>
+      c.calphas.filter((ca) => Math.abs(ca.z) < MEMBRANE_CORE_HALF),
+    );
     const { svg, scene } = renderChainSvg(
       selectedChain,
       this.loopOptions,
       analysis,
       this.showContacts,
       this.membrane!,
+      core,
       this._theme,
       assembly,
       this.chainDisplayData(selectedChain.chainId),

@@ -2,30 +2,46 @@
 
 `<topology-display>` draws the membrane behind the diagram as a band between
 the upper and lower leaflet headgroup surfaces, with a dashed line at the bulk
-midplane (z = 0). The band runs past the protein at each end and, from the
-outside in, shows:
+midplane (z = 0). Under each part of the protein the band shows the membrane
+that part holds; the membrane away from the protein relaxes to the annular
+positions and then to the bulk:
 
-1. **Bulk**: the far-field leaflet positions, for 10 px at each end.
-2. **Annular**: a smooth switch to the leaflet positions next to the protein,
-   over the next 10 px.
-3. **Local**: a smooth switch, over a further 10 px, to the leaflet heights
-   under each residue, when a MemProtMD distortions file gives them. Without
-   one the band stays at the annular positions along the protein.
+1. **Local**: the leaflet heights under each residue, when a MemProtMD
+   distortions file gives them, where the residues are within 10 Å of the
+   bilayer (0 inside it), fading to annular 10–30 Å from it.
+2. **Annular**: the leaflet positions next to the protein, where the residues
+   are within 10 Å of the transmembrane segments along the membrane plane
+   (in-plane distance to any Cα with |z| < 12 Å, in any chain), fading to
+   bulk 10–30 Å from them.
+3. **Bulk**: the far-field leaflet positions everywhere else.
+
+So a soluble domain that rises clear of the bilayer drops the local heights,
+and one that reaches out over the membrane away from the transmembrane
+segments drops to bulk. Each fade is a smoothstep. At each x the band takes the
+protein's closest approach (the strongest hold among residues within
+σ = 12 px, or the nearest residues where none is, as across a chain break),
+smoothed along x with the same Gaussian, so it follows the residues nearest
+the membrane rather than an average over a loop. The local heights drawn are
+those under the residues near the bilayer, weighted by how near.
+
+The band also runs past the protein at each end: bulk for 10 px, a smooth
+switch to the annular part over the next 10 px, then to the local heights over
+a further 10 px.
 
 `membrane-detail` (or the `membraneDetail` property) chooses how far down that
 list the diagram goes:
 
-| `membrane-detail` | Drawn                                                          |
-| ----------------- | -------------------------------------------------------------- |
-| `bulk`            | One flat band at the bulk leaflets (annular settings ignored). |
-| `annular`         | Bulk at the ends, the annular leaflets along the protein.      |
-| `local` (default) | All three, when a distortions file gives local heights.        |
+| `membrane-detail` | Drawn                                                           |
+| ----------------- | --------------------------------------------------------------- |
+| `bulk`            | One flat band at the bulk leaflets (annular settings ignored).  |
+| `annular`         | Bulk, and the annular leaflets near the transmembrane segments. |
+| `local` (default) | All three, when a distortions file gives local heights.         |
 
 The 3-D view follows the same choice, and `element.membrane` reports the
 membrane as drawn. A structure lined up with a distortions file stays lined
 up whatever the detail. `<topology-loader>` passes the attribute on.
 
-The 10 px widths are in diagram units (SVG px at the drawing's own scale), so
+The px widths are in diagram units (SVG px at the drawing's own scale), so
 they keep their on-screen size if the Å-to-px scale changes. Every switch is a
 smoothstep, and the local heights are averaged along x with a Gaussian
 (σ = 12 px), so rises and drops are smooth.

@@ -139,6 +139,167 @@ describe('TopologyDisplay membrane', () => {
     expect(slab.surface!.upper(95, 60, 6)).toBeCloseTo(19, 1);
   });
 
+  /**
+   * `protein` with `tail` Cα appended to its chain; each `helices` entry
+   * [first, last] marks tail indices as a helix (the rest are loops).
+   */
+  function withTail(
+    protein: ProteinData,
+    tail: { x: number; y: number; z: number }[],
+    helices: [number, number][],
+  ) {
+    const chain = protein.chains[0];
+    const last = chain.calphas[chain.calphas.length - 1].resSeq;
+    chain.calphas = [
+      ...chain.calphas,
+      ...tail.map((p, k) => ({ resSeq: last + 1 + k, iCode: '', ...p })),
+    ];
+    chain.residueCount = chain.calphas.length;
+    chain.segments = [
+      ...chain.segments,
+      ...helices.map(([a, b]) => ({
+        start: last + 1 + a,
+        end: last + 1 + b,
+        type: 'helix' as const,
+      })),
+    ];
+    return protein;
+  }
+
+  /** A straight run of `n` Cα 3.8 Å apart from `from` along the unit vector `dir`. */
+  const run = (
+    n: number,
+    from: { x: number; y: number; z: number },
+    dir: { x: number; y: number; z: number },
+  ) =>
+    Array.from({ length: n }, (_, k) => ({
+      x: from.x + 3.8 * k * dir.x,
+      y: from.y + 3.8 * k * dir.y,
+      z: from.z + 3.8 * k * dir.z,
+    }));
+
+  /** Points of an edge over the last `from`–`to` Å of the protein (before the overhang). */
+  function nearEnd(edge: { x: number; z: number }[], from: number, to: number) {
+    const end = edge[edge.length - 1].x - MEMBRANE_OVERHANG_PX / 2.5;
+    return edge.filter((p) => p.x > end - from && p.x < end - to);
+  }
+
+  it('annular next to the transmembrane segments, back to bulk 10–30 Å away along the plane', () => {
+    const el = mount();
+    el.setAttribute('membrane-annular-upper', '14');
+    el.setAttribute('membrane-annular-lower', '-15');
+    // Under the membrane, a loop out to a helix lying 37–67 Å from the TM helices.
+    const loop = run(8, { x: 67, y: 60, z: -28 }, { x: 1, y: 0, z: 0 });
+    const far = run(9, { x: 97.4, y: 60, z: -28 }, { x: 1, y: 0, z: 0 });
+    el.proteinData = withTail(hairpinProtein(0), [...loop, ...far], [[8, 16]]);
+    const pts = band(el);
+    const upper = pts.slice(0, pts.length / 2);
+    const lower = pts.slice(pts.length / 2).reverse();
+    // Annular under the TM helices …
+    for (const p of upper.filter((q) => q.x >= 0 && q.x <= 4)) expect(p.z).toBeCloseTo(14, 1);
+    // … bulk under the far helix.
+    expect(nearEnd(upper, 10, 2).length).toBeGreaterThan(0);
+    for (const p of nearEnd(upper, 10, 2)) expect(p.z).toBeCloseTo(20, 1);
+    for (const p of nearEnd(lower, 10, 2)) expect(p.z).toBeCloseTo(-20, 1);
+
+    // A helix curving round the TM helices 19–22 Å away (annular weight
+    // 0.45–0.6) holds the band about halfway between annular and bulk.
+    const arc = Array.from({ length: 12 }, (_, k) => {
+      const t = (k * 3.8) / 24;
+      return { x: 60 + 24 * Math.cos(t), y: 60 + 24 * Math.sin(t), z: -28 };
+    });
+    el.proteinData = withTail(
+      hairpinProtein(0),
+      [...run(5, { x: 67, y: 60, z: -28 }, { x: 1, y: 0, z: 0 }), ...arc],
+      [[5, 16]],
+    );
+    const half = nearEnd(upperEdge(el), 8, 0);
+    expect(half.length).toBeGreaterThan(0);
+    for (const p of half) {
+      expect(p.z).toBeGreaterThan(16);
+      expect(p.z).toBeLessThan(18);
+    }
+  });
+
+  it('annular across a chain break between transmembrane helices', () => {
+    const el = mount();
+    el.setAttribute('membrane-annular-upper', '14');
+    el.setAttribute('membrane-annular-lower', '-15');
+    // The hairpin without its loop: the chain breaks between the helices.
+    const protein = hairpinProtein(0);
+    const chain = protein.chains[0];
+    const n = chain.calphas.length;
+    chain.calphas = chain.calphas.filter((_, i) => i < (n - 3) / 2 || i >= (n + 3) / 2);
+    el.proteinData = protein;
+    const end = upperEdge(el).at(-1)!.x - MEMBRANE_OVERHANG_PX / 2.5;
+    const along = upperEdge(el).filter((p) => p.x >= 0 && p.x <= end);
+    expect(along.length).toBeGreaterThan(0);
+    for (const p of along) expect(p.z).toBeCloseTo(14, 1);
+  });
+
+  it('annular under another chain lying beside the transmembrane segments', () => {
+    const el = mount();
+    el.setAttribute('membrane-annular-upper', '14');
+    el.setAttribute('membrane-annular-lower', '-15');
+    // Chain B: a soluble helix under the membrane, 3–8 Å from chain A's TM helices.
+    const protein = hairpinProtein(0);
+    const b = run(6, { x: 68, y: 50.5, z: -26 }, { x: 0, y: 1, z: 0 }).map((p, k) => ({
+      resSeq: k + 1,
+      iCode: '',
+      ...p,
+    }));
+    protein.chains.push({
+      chainId: 'B',
+      residueCount: b.length,
+      segments: [{ start: 1, end: b.length, type: 'helix' }],
+      calphas: b,
+    });
+    el.proteinData = protein;
+    el.setAttribute('selection', 'B');
+    const end = upperEdge(el).at(-1)!.x - MEMBRANE_OVERHANG_PX / 2.5;
+    const along = upperEdge(el).filter((p) => p.x >= 0 && p.x <= end);
+    expect(along.length).toBeGreaterThan(0);
+    for (const p of along) expect(p.z).toBeCloseTo(14, 1);
+  });
+
+  it('the local surface only where the protein is near the bilayer, annular 10–30 Å from it', () => {
+    const el = mount();
+    // Each leaflet 8 Å thicker beyond x = 67, beside the TM helices.
+    el.distortions = syntheticDistortions({
+      midplane: 50,
+      half: 19,
+      centre: { x: 60, y: 60 },
+      radius: 40,
+      bump: (x) => (x > 67 ? 8 : 0),
+    });
+    el.setAttribute('membrane-annular-lower', '-15');
+    // Two helices lying along y beside the TM helices, under the thickened
+    // membrane: one 8 Å below its lower leaflet (−27), so 20 Å below the
+    // annular one; the other 43 Å below it.
+    const down = Array.from({ length: 9 }, (_, k) => ({ x: 70, y: 68, z: 11.2 - 3.8 * k }));
+    const tail = [
+      { x: 66, y: 57, z: 23 },
+      { x: 68, y: 54, z: 19 },
+      ...run(5, { x: 70, y: 52, z: 15 }, { x: 0, y: 1, z: 0 }),
+      ...down,
+      ...run(5, { x: 70, y: 64.2, z: -20 }, { x: 0, y: -1, z: 0 }),
+    ];
+    el.proteinData = withTail(hairpinProtein(50), tail, [
+      [2, 6],
+      [16, 20],
+    ]);
+    const m = el.membrane!;
+    expect(m.surfaces).not.toBeNull();
+    expect(m.annular.lower).toBe(-15);
+    const pts = band(el);
+    const lower = pts.slice(pts.length / 2).reverse();
+    // The near helix pulls the band down onto the thickened leaflet …
+    expect(Math.min(...lower.map((p) => p.z))).toBeLessThan(-26);
+    // … the far one leaves it at the annular leaflet.
+    expect(nearEnd(lower, 7, 1).length).toBeGreaterThan(0);
+    for (const p of nearEnd(lower, 7, 1)) expect(p.z).toBeCloseTo(-15, 0);
+  });
+
   it('membrane-detail: bulk, annular or local, keeping the shift', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const el = mount();

@@ -10,11 +10,12 @@ import type { LeafletPair } from './types.js';
 export const DEFAULT_BULK: Readonly<LeafletPair> = { upper: 20, lower: -20 };
 
 /**
- * |z| (Å) from the bulk midplane within which a Cα counts as membrane core
- * when lining a structure up with a distortions file. Matches the
+ * |z| (Å) from the bulk midplane within which a Cα counts as membrane core:
+ * when lining a structure up with a distortions file, and as part of the
+ * transmembrane segments the annular leaflets follow. Matches the
  * transmembrane test's default threshold.
  */
-const CORE_HALF = 12;
+export const MEMBRANE_CORE_HALF = 12;
 
 /** Fewest core Cα for a candidate alignment to be judged at all. */
 const MIN_CORE = 6;
@@ -31,9 +32,11 @@ export interface Point3 {
 /**
  * How much of the membrane the diagram follows (`membrane-detail`):
  * - `bulk`: a flat band at the bulk leaflets;
- * - `annular`: bulk at the ends, the annular leaflets along the protein;
- * - `local`: as `annular`, then the local surfaces under the residues when a
- *   distortions file gives them. The default.
+ * - `annular`: bulk, and the annular leaflets under residues near the
+ *   transmembrane segments;
+ * - `local`: as `annular`, then the local surfaces under residues near the
+ *   bilayer when a distortions file gives them. The default.
+ * How near is `MEMBRANE_REACH_A` in profile.ts.
  */
 export type MembraneDetail = 'bulk' | 'annular' | 'local';
 
@@ -86,7 +89,7 @@ export function alignToDistortions(calphas: Point3[], d: MembraneDistortions): n
     let sx = 0;
     let sy = 0;
     for (const c of calphas) {
-      if (Math.abs(c.z + shift) >= CORE_HALF) continue;
+      if (Math.abs(c.z + shift) >= MEMBRANE_CORE_HALF) continue;
       n++;
       sx += c.x;
       sy += c.y;

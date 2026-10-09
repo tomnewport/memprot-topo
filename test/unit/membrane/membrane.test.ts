@@ -4,10 +4,12 @@ import {
   LeafletSurface,
   MEMBRANE_EDGE_PX,
   MEMBRANE_OVERHANG_PX,
+  MEMBRANE_REACH_A,
   alignToDistortions,
   membraneAtDetail,
   membraneProfile,
   parseDistortions,
+  reachWeight,
   resolveMembrane,
 } from '../../../src/membrane/index.js';
 import { syntheticDistortions, helixCalphas } from '../fixtures/distortions.js';
@@ -246,6 +248,10 @@ describe('membraneProfile', () => {
       if (Math.abs(p.x[i] - x) < Math.abs(p.x[best] - x)) best = i;
     return { upper: p.upper[best], lower: p.lower[best] };
   };
+  const near = (got: { upper: number; lower: number }, want: { upper: number; lower: number }) => {
+    expect(got.upper).toBeCloseTo(want.upper, 6);
+    expect(got.lower).toBeCloseTo(want.lower, 6);
+  };
 
   it('runs bulk → annular → steady annular, overhanging the protein at each end', () => {
     const p = membraneProfile({ x0: 0, x1: 100, bulk, annular, pxPerA });
@@ -291,6 +297,87 @@ describe('membraneProfile', () => {
     const upperOnly = anchors.map((a) => ({ ...a, lower: null }));
     const q = membraneProfile({ x0: 0, x1: 100, bulk, annular, anchors: upperOnly, pxPerA });
     expect(at(q, 50).lower).toBeCloseTo(-16, 9);
+  });
+
+  it('reachWeight: full to 10 Å, none from 30 Å, smooth between', () => {
+    expect(MEMBRANE_REACH_A).toEqual({
+      local: { full: 10, none: 30 },
+      annular: { full: 10, none: 30 },
+    });
+    const r = MEMBRANE_REACH_A.local;
+    expect([0, 5, 10].map((d) => reachWeight(d, r))).toEqual([1, 1, 1]);
+    expect(reachWeight(20, r)).toBeCloseTo(0.5, 9);
+    expect(reachWeight(15, r)).toBeGreaterThan(reachWeight(25, r));
+    expect([30, 45, Infinity, NaN].map((d) => reachWeight(d, r))).toEqual([0, 0, 0, 0]);
+  });
+
+  it('blends bulk → annular → local by the weights where the protein is', () => {
+    // Under x < 50 the protein holds the membrane fully; beyond, a soluble part
+    // far from both the bilayer and the TM segments.
+    const anchors = [];
+    for (let x = 0; x <= 100; x += 1) {
+      const held = x < 50 ? 1 : 0;
+      anchors.push({ x, upper: 10, lower: -10, annularWeight: held, localWeight: held });
+    }
+    const p = membraneProfile({ x0: 0, x1: 100, bulk, annular, anchors, pxPerA });
+    near(at(p, 20), { upper: 10, lower: -10 });
+    near(at(p, 80), bulk);
+    // Local weight 0 but annular 1: the annular leaflets.
+    const annularOnly = anchors.map((a) => ({ ...a, annularWeight: 1, localWeight: 0 }));
+    const q = membraneProfile({ x0: 0, x1: 100, bulk, annular, anchors: annularOnly, pxPerA });
+    near(at(q, 50), annular);
+    // The closest approach counts: one held residue among far ones mostly
+    // holds the band (an average over the σ window would leave it near bulk),
+    // which relaxes to bulk 20 Å away.
+    const one = anchors.map((a) => ({ ...a, annularWeight: a.x === 80 ? 1 : 0, localWeight: 0 }));
+    const r = membraneProfile({ x0: 0, x1: 100, bulk, annular, anchors: one, pxPerA });
+    expect(at(r, 80).upper).toBeLessThan(16.5);
+    expect(at(r, 100).upper).toBeGreaterThan(19.9);
+    // Where the hold ends, the band leaves local for bulk (10 Å) smoothly:
+    // 2 px samples differ by < 1 Å, where unsmoothed weights would jump the
+    // whole 10 Å.
+    for (let i = 1; i < p.x.length; i++) {
+      if (p.x[i] < 30 || p.x[i] > 70) continue;
+      expect(Math.abs(p.upper[i] - p.upper[i - 1])).toBeLessThan(1);
+      expect(Math.abs(p.lower[i] - p.lower[i - 1])).toBeLessThan(1);
+    }
+  });
+
+  it('carries the nearest residues’ hold across chain breaks and to the chain ends', () => {
+    // Residues drawn at 12–40 and 60–88 only: chain-end coil and a break
+    // between have no x. All are right beside the TM segments.
+    const anchors = [];
+    for (let x = 12; x <= 88; x += 1) {
+      if (x > 40 && x < 60) continue;
+      anchors.push({ x, upper: null, lower: null, annularWeight: 1, localWeight: 0 });
+    }
+    const p = membraneProfile({ x0: 0, x1: 100, bulk, annular, anchors, pxPerA });
+    for (const x of [0, 50, 100]) near(at(p, x), annular);
+  });
+
+  it('takes the local heights only from residues near the bilayer', () => {
+    // All beside the TM segments; the surface under x < 50 is at 10 and the
+    // residues there touch it; beyond, the surface is at 30 but the residues
+    // are far above it.
+    const anchors = [];
+    for (let x = 0; x <= 100; x += 1) {
+      const touching = x < 50;
+      anchors.push({
+        x,
+        upper: touching ? 10 : 30,
+        lower: -10,
+        annularWeight: 1,
+        localWeight: touching ? 1 : 0,
+      });
+    }
+    const p = membraneProfile({ x0: 0, x1: 100, bulk, annular, anchors, pxPerA });
+    // Fading from the near residues' surface back to annular, never towards 30.
+    for (let i = 0; i < p.x.length; i++) {
+      if (p.x[i] < 0 || p.x[i] > 100) continue;
+      expect(p.upper[i]).toBeGreaterThan(10 - 1e-9);
+      expect(p.upper[i]).toBeLessThan(14 + 1e-9);
+    }
+    near(at(p, 90), annular);
   });
 
   it('sizes its edge zones in diagram units, so they keep their size when the scale changes', () => {

@@ -142,8 +142,9 @@ const label = (ids: string[]): string => {
 
 /**
  * Wire a checkbox that loads each target's distortions file and moves its
- * structure into the simulation's frame, or puts both back. Returns a reset
- * that unchecks it.
+ * structure into the simulation's frame, or puts both back. Loads straight
+ * away if the box starts checked. Returns a reset that puts the box back to
+ * its default (its `checked` attribute).
  */
 export function mountDistortionsToggle(
   input: HTMLInputElement,
@@ -204,10 +205,12 @@ export function mountDistortionsToggle(
     if (input.checked) void on();
     else off();
   });
+  if (input.checked) void on();
 
   return () => {
-    if (!input.checked) return;
-    input.checked = false;
-    off();
+    if (input.checked === input.defaultChecked) return;
+    input.checked = input.defaultChecked;
+    if (input.checked) void on();
+    else off();
   };
 }

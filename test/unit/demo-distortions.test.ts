@@ -113,9 +113,10 @@ describe('demo distortions', () => {
     ).toBeNull();
   });
 
-  function setup(ids: string[], load: (url: string) => Promise<string>) {
+  function setup(ids: string[], load: (url: string) => Promise<string>, checked = false) {
     const input = document.createElement('input');
     input.type = 'checkbox';
+    input.defaultChecked = checked;
     const status = document.createElement('span');
     const targets: DistortionsTarget[] = ids.map((pdbId) => {
       const el = new TopologyDisplay();
@@ -183,5 +184,23 @@ describe('demo distortions', () => {
     await toggle(true);
     expect(load).toHaveBeenCalledTimes(2);
     expect(status.textContent).toBe('Shown for 7AHL, in MemProtMD’s frame.');
+  });
+
+  it('loads straight away when the box starts checked, and reset goes back to that', async () => {
+    const load = vi.fn(async () => AHL_DEMO_DISTORTIONS);
+    const { input, status, targets, reset, toggle } = setup(['7ahl'], load, true);
+    const [ahl] = targets;
+    await vi.waitFor(() =>
+      expect(status.textContent).toBe('Shown for 7AHL, in MemProtMD’s frame.'),
+    );
+    expect(ahl.el.distortions).not.toBeNull();
+    expect(ahl.el.membrane!.shift).toBeCloseTo(-38.08, 1);
+
+    await toggle(false);
+    expect(ahl.el.proteinData).toBe(ahl.data);
+    reset();
+    expect(input.checked).toBe(true);
+    await vi.waitFor(() => expect(ahl.el.distortions).not.toBeNull());
+    expect(load).toHaveBeenCalledTimes(1);
   });
 });
