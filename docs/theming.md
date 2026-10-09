@@ -58,27 +58,28 @@ the registry.
 
 ## Tokens
 
-| Token                                                             | Used for                                                          |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `background`                                                      | Diagram background; the 3-D view fogs towards it                  |
-| `surface`                                                         | Chain-picker panel                                                |
-| `text`, `textMuted`                                               | Body and secondary text                                           |
-| `border`                                                          | Diagram box and panel borders                                     |
-| `accent`, `accentText`                                            | 3D button, focus rings, the picked chain                          |
-| `helix`, `helixEdge`, `strand`, `strandEdge`                      | SS element fill and outline (2-D, 3-D and the picker icons)       |
-| `loop`                                                            | Loops                                                             |
-| `membrane`, `membraneEdge`, `midplane`                            | Membrane slab, its edges and the z = 0 line                       |
-| `contact`                                                         | β-sheet contact ties                                              |
-| `label`                                                           | Residue numbers and the colour legend                             |
-| `hover`, `selection`                                              | Outline of the hovered and selected elements                      |
-| `iconBackground`, `iconCoil`, `iconOutline`, `iconGrid`           | Chain-picker icons                                                |
-| `iconMembraneDark`, `iconMembraneLight`                           | Membrane band in the icons                                        |
-| `dataCategories`, `dataScale`                                     | Default per-residue palettes ([residue-data.md](residue-data.md)) |
-| `outlineWidth`, `loopWidth`, `membraneEdgeWidth`, `midplaneWidth` | Line widths (px)                                                  |
-| `contactWidth`, `hoverWidth`, `selectionWidth`                    | Line widths (px); selected loops are drawn 0.5 px wider           |
-| `fontFamily`, `serifFontFamily`, `monoFontFamily`                 | Interface and labels; chain names; the chain summary line         |
-| `cornerRadius`                                                    | Panels, buttons, diagram box and icon frames (px)                 |
-| `lineJoin`                                                        | Corners of SS outlines and loop bends: `round`, `bevel`, `miter`  |
+| Token                                                             | Used for                                                                                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `background`                                                      | Diagram background; the 3-D view fogs towards it                                                                   |
+| `surface`                                                         | Chain-picker panel                                                                                                 |
+| `text`, `textMuted`                                               | Body and secondary text                                                                                            |
+| `border`                                                          | Diagram box and panel borders                                                                                      |
+| `accent`, `accentText`                                            | 3D button, focus rings, the picked chain                                                                           |
+| `helix`, `helixEdge`, `strand`, `strandEdge`                      | SS element fill and outline (2-D, 3-D and the picker icons)                                                        |
+| `loop`                                                            | Loops                                                                                                              |
+| `membrane`, `membraneEdge`, `midplane`                            | Membrane slab, its edges and the z = 0 line                                                                        |
+| `contact`                                                         | β-sheet contact ties                                                                                               |
+| `label`                                                           | Residue numbers and the colour legend                                                                              |
+| `hover`                                                           | Outline of the hovered element                                                                                     |
+| `selectionGlowBlur`, `selectionGlowBrighten`                      | Glow round selected elements and loops, in the element's own colour: blur (px, 0 for none) and % of white mixed in |
+| `iconBackground`, `iconCoil`, `iconOutline`, `iconGrid`           | Chain-picker icons                                                                                                 |
+| `iconMembraneDark`, `iconMembraneLight`                           | Membrane band in the icons                                                                                         |
+| `dataCategories`, `dataScale`                                     | Default per-residue palettes ([residue-data.md](residue-data.md))                                                  |
+| `outlineWidth`, `loopWidth`, `membraneEdgeWidth`, `midplaneWidth` | Line widths (px)                                                                                                   |
+| `contactWidth`, `hoverWidth`, `selectionWidth`                    | Line widths (px); selected loops are drawn 0.5 px wider                                                            |
+| `fontFamily`, `serifFontFamily`, `monoFontFamily`                 | Interface and labels; chain names; the chain summary line                                                          |
+| `cornerRadius`                                                    | Panels, buttons, diagram box and icon frames (px)                                                                  |
+| `lineJoin`                                                        | Corners of SS outlines and loop bends: `round`, `bevel`, `miter`                                                   |
 
 Colours the 3-D view shades (`helix`, `helixEdge`, `strand`, `strandEdge`,
 `loop`, `membraneEdge`, `contact`, `background`) must be `#rgb`, `#rrggbb` or

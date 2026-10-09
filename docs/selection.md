@@ -30,7 +30,9 @@ Setting it:
 
 - **shows the named chain**, as if it had been picked in the chain picker;
 - **styles every helix, strand and loop with a residue in the range** as
-  selected (orange outline). Elements are selected whole: `A:50-52` on a helix
+  selected (a wider outline and a glow in the element's own colour, brightened;
+  see the `selection*` tokens in
+  [theming.md](theming.md)). Elements are selected whole: `A:50-52` on a helix
   spanning 45–60 marks that helix.
 
 Edge cases:

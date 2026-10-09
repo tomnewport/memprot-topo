@@ -43,8 +43,6 @@ export interface Theme {
   label: string;
   /** Outline of the SS element under the pointer or keyboard focus. */
   hover: string;
-  /** Outline of selected elements and loops. */
-  selection: string;
 
   // Chain-picker icons (helix, strand and text come from above).
   iconBackground: string;
@@ -71,6 +69,13 @@ export interface Theme {
   hoverWidth: number;
   /** Outline of a selected element (selected loops are drawn 0.5 px wider). */
   selectionWidth: number;
+  /** Blur radius (px) of the selection glow; 0 turns it off. */
+  selectionGlowBlur: number;
+  /**
+   * How much brighter than the element the selection glow is: the percentage
+   * of white mixed into the element's own colour (helix, strand or loop).
+   */
+  selectionGlowBrighten: number;
 
   // Type.
   /** Interface text and residue-number labels. */
@@ -139,7 +144,6 @@ export const LIGHT_THEME: Readonly<Theme> = Object.freeze({
   contact: '#c98a3b',
   label: '#333333',
   hover: '#111111',
-  selection: '#e6550d',
 
   iconBackground: '#ffffff',
   iconCoil: '#f7f7f7',
@@ -157,7 +161,9 @@ export const LIGHT_THEME: Readonly<Theme> = Object.freeze({
   midplaneWidth: 1,
   contactWidth: 1,
   hoverWidth: 2.5,
-  selectionWidth: 2.5,
+  selectionWidth: 3.5,
+  selectionGlowBlur: 5,
+  selectionGlowBrighten: 15,
 
   fontFamily: 'sans-serif',
   serifFontFamily: 'Georgia, "Times New Roman", serif',
@@ -188,7 +194,9 @@ export const DARK_THEME: Readonly<Theme> = Object.freeze({
   contact: '#dba760',
   label: '#d2d4d6',
   hover: '#ffffff',
-  selection: '#fd8d3c',
+
+  // Brighter glow reads better on a dark ground.
+  selectionGlowBrighten: 35,
 
   iconBackground: '#1c1d20',
   iconCoil: '#3a3d42',
@@ -254,8 +262,12 @@ const PX_TOKENS = new Set<keyof Theme>([
   'contactWidth',
   'hoverWidth',
   'selectionWidth',
+  'selectionGlowBlur',
   'cornerRadius',
 ]);
+
+/** Tokens whose CSS value is a percentage. */
+const PCT_TOKENS = new Set<keyof Theme>(['selectionGlowBrighten']);
 
 /** The value of a token as an SVG attribute or CSS value. */
 export function themeValue(theme: Theme, token: keyof Theme): string {
@@ -268,7 +280,8 @@ export function themeValue(theme: Theme, token: keyof Theme): string {
 export function themeCss(theme: Theme): string {
   const decls = (Object.keys(theme) as (keyof Theme)[]).map((token) => {
     const value = themeValue(theme, token);
-    return `${themeVar(token)}: ${PX_TOKENS.has(token) ? `${value}px` : value};`;
+    const unit = PX_TOKENS.has(token) ? 'px' : PCT_TOKENS.has(token) ? '%' : '';
+    return `${themeVar(token)}: ${value}${unit};`;
   });
   return `:host {\n  ${decls.join('\n  ')}\n}`;
 }

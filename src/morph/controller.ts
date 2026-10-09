@@ -97,13 +97,17 @@ export class MorphController {
     this.show(tau);
   }
 
-  /** Animate to 3-D (1) or back to 2-D (0); jumps there if reduced motion is preferred. */
-  animateTo(goal: 0 | 1): void {
+  /**
+   * Animate to 3-D (1) or back to 2-D (0), then call `done`; jumps there if
+   * reduced motion is preferred.
+   */
+  animateTo(goal: 0 | 1, done?: () => void): void {
     this.cancel();
     this.goal = goal;
     const from = this.tau;
     if (from === goal || prefersReducedMotion()) {
       this.show(goal);
+      done?.();
       return;
     }
     // Run the eased curve from wherever we are, at a speed proportional to
@@ -119,8 +123,12 @@ export class MorphController {
       const f = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
       const x = x0 + (x1 - x0) * f;
       this.show(f >= 1 ? goal : easeInOut(x));
-      if (f < 1) this.raf = requestAnimationFrame(step);
-      else this.raf = 0;
+      if (f < 1) {
+        this.raf = requestAnimationFrame(step);
+      } else {
+        this.raf = 0;
+        done?.();
+      }
     };
     this.raf = requestAnimationFrame(step);
   }

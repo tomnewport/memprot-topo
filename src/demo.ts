@@ -3,6 +3,24 @@ import { TopologyDisplay } from './components/topology-display.js';
 import { proteins } from './demo-data.js';
 import { mountDemoControls } from './demo-controls.js';
 import { mountDistortionsToggle, type DistortionsTarget } from './demo-distortions.js';
+import { KYTE_DOOLITTLE, oneLetter } from './sequence/amino-acids.js';
+import type { ProteinData } from './types.js';
+
+/** Kyte–Doolittle hydropathy, averaged over a 9-residue window: a sample sequence-view lane. */
+function hydropathy(data: ProteinData): Record<string, Record<number, number>> {
+  const out: Record<string, Record<number, number>> = {};
+  for (const chain of data.chains) {
+    const codes = chain.calphas.map((c) => oneLetter(c.resName));
+    const values: Record<number, number> = {};
+    chain.calphas.forEach((c, i) => {
+      const window = codes.slice(Math.max(0, i - 4), i + 5).map((a) => KYTE_DOOLITTLE[a]);
+      const known = window.filter((v): v is number => v !== undefined);
+      if (known.length > 0) values[c.resSeq] = known.reduce((a, b) => a + b, 0) / known.length;
+    });
+    out[chain.chainId] = values;
+  }
+  return out;
+}
 
 declare const __COMMIT__: string;
 declare const __BUILD_DATE__: string;
@@ -13,6 +31,15 @@ function populate(elementId: string, pdbId: string): DistortionsTarget | null {
   const data = proteins[pdbId];
   if (!data) return null;
   el.proteinData = data;
+  el.sequenceTracks = [
+    {
+      label: 'Hydropathy',
+      values: hydropathy(data),
+      // Hydrophilic blue → hydrophobic orange (Kyte–Doolittle, ±4.5).
+      scale: ['#2166ac', '#f7f7f7', '#d6604d'],
+      domain: [-3, 3],
+    },
+  ];
   return { pdbId, el, data };
 }
 

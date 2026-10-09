@@ -586,12 +586,46 @@ describe('<topology-display> 3-D morph', () => {
     return el;
   }
 
-  it('offers a 3D toggle and scrubber next to the 2-D view', () => {
+  it('offers a 1D / 2D / 3D switch next to the 2-D view', () => {
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
+    const labels = [...root.querySelectorAll('.view-button')].map((b) => b.textContent);
+    expect(labels).toEqual(['1D', '2D', '3D']);
     expect(root.querySelector('.morph-toggle')?.textContent).toBe('3D');
-    expect(root.querySelector('.morph-scrub')).not.toBeNull();
+    expect(root.querySelector('input[type=range]')).toBeNull();
     expect(el.morphProgress).toBe(0);
+    expect(el.dimension).toBe(2);
+  });
+
+  it('goes to a fractional dimension at once with transition-time 0', async () => {
+    const el = mount(hairpinChain());
+    const root = el.shadowRoot!;
+    const svg2d = root.querySelector('.svg-scroll svg');
+    const seen: number[] = [];
+    el.addEventListener('dimension-change', (e) =>
+      seen.push((e as CustomEvent<{ dimension: number }>).detail.dimension),
+    );
+    el.setAttribute('transition-time', '0');
+    el.dimension = 1.3;
+    expect(el.dimension).toBeCloseTo(1.3);
+    expect(root.querySelector('.svg-scroll svg')?.classList.contains('sequence-view')).toBe(true);
+    expect(seen.at(-1)).toBeCloseTo(1.3);
+    el.dimension = 1;
+    expect(el.dimension).toBe(1);
+    expect(root.querySelector('.view-button[aria-pressed=true]')?.textContent).toBe('1D');
+    el.dimension = 2;
+    expect(root.querySelector('.svg-scroll svg')).toBe(svg2d);
+    // The morph code loads on first use.
+    el.dimension = 2.5;
+    await vi.waitFor(() => expect(el.dimension).toBeCloseTo(2.5));
+  });
+
+  it('starts at the dimension the page set', () => {
+    const el = new TopologyDisplay();
+    el.setAttribute('dimension', '1');
+    document.body.appendChild(el);
+    el.proteinData = { pdbId: 'tst1', chains: [hairpinChain()] };
+    expect(el.dimension).toBe(1);
   });
 
   it('swaps in the morph SVG away from t = 0 and restores the 2-D SVG at t = 0', async () => {
@@ -683,7 +717,7 @@ describe('<topology-display> 3-D morph', () => {
     expect(el.morphProgress).toBeCloseTo(0.6);
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg?.classList.contains('morph-svg')).toBe(true);
-    expect(el.shadowRoot!.querySelector('.morph-scrub')).toHaveProperty('value', '600');
+    expect(el.dimension).toBeCloseTo(2.6);
   });
 
   it('keeps the 3-D view when the selection moves to another chain', async () => {
