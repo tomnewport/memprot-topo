@@ -383,6 +383,103 @@ describe('membrane styles', () => {
     expect(rings).toBeGreaterThan(0);
   });
 
+  it('spreads the polar spokes evenly round the protein, at the circle and near the protein', () => {
+    // An L of two walls: the spokes used to crowd into its inside corner and
+    // leave the outside bare.
+    const wall: number[] = [];
+    for (let x = -20; x <= 20; x += 2) for (const y of [-14, -10]) wall.push(x, y);
+    for (let y = -14; y <= 16; y += 2) for (const x of [-20, -16]) wall.push(x, y);
+    const centre = { x: 0, y: 1 };
+    const net = buildFishnet({
+      centre,
+      radius: 45,
+      margin: 5,
+      spacing: 4,
+      style: 'polar',
+      bulk: BULK,
+      annular: BULK,
+      protein: wall,
+    });
+    const dist = (ox: number, oy: number) => {
+      let d = Infinity;
+      for (let i = 0; i < wall.length; i += 2)
+        d = Math.min(d, Math.hypot(centre.x + ox - wall[i], centre.y + oy - wall[i + 1]));
+      return d;
+    };
+    // Spokes start on the rim at even angles, a multiple of eight of them.
+    const spokes = net.upper.filter((l) => Math.abs(Math.hypot(l[0], l[1]) - 45) < 1e-9);
+    const n = spokes.length;
+    expect(n % 8).toBe(0);
+    const angles = spokes
+      .map((l) => Math.atan2(l[1], l[0]))
+      .map((a) => (a < 0 ? a + 2 * Math.PI : a))
+      .sort((a, b) => a - b);
+    angles.forEach((a, k) => expect(a).toBeCloseTo((2 * Math.PI * k) / n, 9));
+    // None goes inside the interface.
+    for (const [ox, oy] of nodes(spokes)) expect(dist(ox, oy)).toBeGreaterThan(4);
+    // Every spoke crosses the last constant-distance ring (12 Å out), evenly
+    // spaced along it.
+    const ring = net.upper.find((l) => {
+      if (!closed(l)) return false;
+      for (let i = 0; i < l.length; i += 3)
+        if (Math.abs(dist(l[i], l[i + 1]) - 11.7) > 0.5) return false;
+      return true;
+    })!;
+    expect(ring).toBeDefined();
+    const along = [0];
+    for (let i = 3; i < ring.length; i += 3)
+      along.push(along.at(-1)! + Math.hypot(ring[i] - ring[i - 3], ring[i + 1] - ring[i - 2]));
+    const crossings: number[] = [];
+    for (const l of spokes)
+      for (let j = 0; j + 5 < l.length; j += 3)
+        for (let i = 0; i + 5 < ring.length; i += 3) {
+          const [ax, ay, bx, by] = [ring[i], ring[i + 1], ring[i + 3], ring[i + 4]];
+          const [cx, cy, dx, dy] = [l[j], l[j + 1], l[j + 3], l[j + 4]];
+          const den = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+          if (Math.abs(den) < 1e-12) continue;
+          const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / den;
+          const u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / den;
+          if (t >= 0 && t < 1 && u >= 0 && u < 1)
+            crossings.push(along[i / 3] + t * (along[i / 3 + 1] - along[i / 3]));
+        }
+    expect(crossings).toHaveLength(n);
+    crossings.sort((a, b) => a - b);
+    const length = along.at(-1)!;
+    const gaps = crossings.map((c, i) => (crossings[i + 1] ?? crossings[0] + length) - c);
+    const mean = length / n;
+    for (const g of gaps) {
+      expect(g).toBeGreaterThan(0.6 * mean);
+      expect(g).toBeLessThan(1.4 * mean);
+    }
+  });
+
+  it('still draws polar spokes round a protein in two pieces far apart', () => {
+    const pieces: number[] = [];
+    for (const cx of [-22, 22])
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * 2 * Math.PI;
+        pieces.push(cx + 5 * Math.cos(a), 5 * Math.sin(a));
+      }
+    const net = buildFishnet({
+      centre: { x: 0, y: 0 },
+      radius: 50,
+      margin: 5,
+      spacing: 4,
+      style: 'polar',
+      bulk: BULK,
+      annular: BULK,
+      protein: pieces,
+    });
+    const spokes = net.upper.filter((l) => Math.abs(Math.hypot(l[0], l[1]) - 50) < 1e-9);
+    expect(spokes.length).toBeGreaterThan(40);
+    for (const [ox, oy] of nodes(spokes)) {
+      let d = Infinity;
+      for (let i = 0; i < pieces.length; i += 2)
+        d = Math.min(d, Math.hypot(ox - pieces[i], oy - pieces[i + 1]));
+      expect(d).toBeGreaterThan(4);
+    }
+  });
+
   it('builds a surface mesh with the leaflet heights, open over the pore', () => {
     const net = buildFishnet(input('surface'));
     expect(net.style).toBe('surface');

@@ -120,10 +120,25 @@ out to about 10 Å (the largest whole number of spacings up to 10 Å, at least
 one). From there to the circle where the bulk starts (5 Å in from the rim), the
 rings follow a harmonic blend (Laplace's equation, solved on a 1 Å lattice)
 from the outline to the circle, so their shape eases from one to the other.
-The spokes are about `morph-grid-spacing` apart round that circle. Each runs
-straight in from the rim and then down the blend's gradient towards the
-protein. It stops at the interface, at a pore, or where it comes within half
-a spacing of another spoke. Pores the protein encloses (not reachable from
+The spokes are evenly spaced round that circle, a multiple of eight of them
+about `morph-grid-spacing` apart. Each runs straight in from the rim to the
+circle. Across the blend it follows a level line of an angle that is harmonic
+there: the polar angle on the circle and, round the last constant-distance
+ring, close to proportional to the distance along that ring. So spokes are
+evenly spread round both and in between, leaning where the protein is
+lopsided. Where the protein comes close to the circle, the ring's angle is
+held nearer the polar angle, so spokes don't run sideways through the gap.
+Inside the last constant-distance ring each spoke runs down a field that is
+harmonic between that ring and the interface, which spreads spokes over the
+interface rather than gathering them on the nearest atoms, and the turn
+between the two parts is rounded off. A spoke stops 0.3 Å short of the
+interface, at a pore, or where it comes within half a spacing of a spoke
+drawn before it. Spokes are drawn coarsest first (the eight at multiples of
+45°, then those halving the widest gaps), so the ones that stop are the
+in-between ones, and a spoke stopping near a ring runs just across it. If
+the protein is in pieces far apart, or the last constant-distance ring does
+not go once round the centre, no single angle suits and the spokes run down
+the blend's gradient instead. Pores the protein encloses (not reachable from
 outside without crossing the interface) get no lines.
 
 The surface is a 2 Å mesh over the disc, drawn behind the protein like the

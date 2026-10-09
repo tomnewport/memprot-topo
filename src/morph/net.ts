@@ -121,6 +121,20 @@ const INTERFACE_PAD = 4;
 const ISO_REACH = 10;
 /** … and the polar field is solved on a lattice this fine (Å). */
 const POLAR_STEP = 1;
+/**
+ * Spokes cross the band out from the last constant-distance ring evenly
+ * spread round that ring, leaning where that is not their polar angle; this
+ * weighs their lean (in radians, as it would be across the band) against
+ * uneven spacing round the ring (as a fraction).
+ */
+const SPOKE_LEAN = 1;
+/** A spoke stopping at a ring runs this far (Å) across it … */
+const SPOKE_OVERRUN = 0.6;
+/** … and one reaching the interface stops this short of it. */
+const SPOKE_SHORT = 0.3;
+/** Tolerance (radians) of the spokes' angle field, and (Å) of their descent to the interface. */
+const ANGLE_TOLERANCE = 1e-4;
+const DESCENT_TOLERANCE = 1e-2;
 
 /** Node states in a leaflet with local heights. */
 const KNOWN = 0;
@@ -456,9 +470,11 @@ function heightField(input: FishnetInput, shape: ProteinShape, inner: number): R
       if (Number.isNaN(value[a])) value[a] = plain(leaf, ...node(a));
     }
     // Neighbours past the disc hold the bulk; pores are left out.
-    relax(value, gaps, (a, visit) => {
-      for (const s of steps) if (state[a + s] !== PORE) visit(a + s);
-    });
+    relax(
+      value,
+      gaps,
+      latticeNeighbours(gaps, W, (b) => state[b] !== PORE),
+    );
     for (let a = 0; a < W * W; a++) {
       if (!inside[a]) continue;
       if (state[a] === PORE) value[a] = NaN;
@@ -471,32 +487,49 @@ function heightField(input: FishnetInput, shape: ProteinShape, inner: number): R
 
 /**
  * Gauss–Seidel with over-relaxation: each of `free` becomes the mean of its
- * neighbours (as listed by `neighbours`) until nothing moves.
+ * neighbours (`nb`, four per free node, −1 for none), each less its `off`set
+ * if given, until nothing moves by `tolerance`.
  */
 function relax(
   value: Float64Array,
   free: number[],
-  neighbours: (a: number, visit: (b: number) => void) => void,
+  nb: Int32Array,
+  off: Float64Array | null = null,
+  tolerance = FILL_TOLERANCE,
 ): void {
-  let sum = 0;
-  let count = 0;
-  const visit = (b: number) => {
-    sum += value[b];
-    count++;
-  };
   for (let it = 0; it < FILL_MAX_ITERATIONS && free.length; it++) {
     let change = 0;
-    for (const a of free) {
-      sum = 0;
-      count = 0;
-      neighbours(a, visit);
+    for (let f = 0; f < free.length; f++) {
+      let sum = 0;
+      let count = 0;
+      for (let q = f * 4; q < f * 4 + 4; q++) {
+        const b = nb[q];
+        if (b < 0) continue;
+        sum += off ? value[b] - off[q] : value[b];
+        count++;
+      }
       if (!count) continue;
+      const a = free[f];
       const d = FILL_OMEGA * (sum / count - value[a]);
       value[a] += d;
-      change = Math.max(change, Math.abs(d));
+      if (d > change) change = d;
+      else if (-d > change) change = -d;
     }
-    if (change < FILL_TOLERANCE) break;
+    if (change < tolerance) break;
   }
+}
+
+/**
+ * The four lattice neighbours (row width `W`) of each of `nodes`, as
+ * {@link relax} takes them: −1 for one `keep` turns down.
+ */
+function latticeNeighbours(nodes: number[], W: number, keep?: (b: number) => boolean): Int32Array {
+  const steps = [-W, W, -1, 1];
+  const nb = new Int32Array(nodes.length * 4);
+  nodes.forEach((a, f) =>
+    steps.forEach((s, q) => (nb[f * 4 + q] = !keep || keep(a + s) ? a + s : -1)),
+  );
+  return nb;
 }
 
 /**
@@ -529,7 +562,8 @@ function gridLines(r: number, spacing: number): number[][] {
  * the first {@link ISO_REACH} Å or so; beyond that they are level lines of a
  * field that is harmonic between the last of those rings and the circle
  * where the bulk ring starts, so they turn smoothly into that circle. Spokes
- * run across the rings, from the rim in towards the protein, and stop where
+ * run across the rings, from the rim in towards the protein, evenly spread
+ * round the circle and round the last constant-distance ring, and stop where
  * they would crowd one another. Nothing is drawn inside the protein or in its
  * pores (space outside the interface with no way out to the bulk).
  */
@@ -577,9 +611,7 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
       u[a] = (d[a] - iso) / (d[a] - iso + inner - rho[a]);
     }
   }
-  relax(u, free, (a, visit) => {
-    for (const s of steps) visit(a + s);
-  });
+  relax(u, free, latticeNeighbours(free, W));
   // How far the harmonic band reaches, on average: its rings are spread over that.
   let gap = 0;
   let edge = 0;
@@ -607,8 +639,13 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
   for (let k = 0; k * spacing <= iso + 1e-9; k++) levels.push(k * spacing);
   const nBand = Math.max(1, Math.round(span / spacing));
   if (span > 0) for (let j = 1; j < nBand; j++) levels.push(iso + (j / nBand) * span);
+  const isoRings: number[][] = [];
   for (const level of levels)
-    for (const line of levelLines(phi, W, level)) lines.push(resample(toO(line), lineStep));
+    for (const line of levelLines(phi, W, level)) {
+      const ring = toO(line);
+      if (level === iso) isoRings.push(ring);
+      lines.push(resample(ring, lineStep));
+    }
   // The circle where the bulk ring starts.
   const nCircle = Math.max(12, Math.round((2 * Math.PI * inner) / lineStep));
   const circle: number[] = [];
@@ -618,8 +655,167 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
   }
   if (inner > 0 && inner < r) lines.push(circle);
 
-  // Spokes, traced down the field from the circle, then out to the rim.
-  const sample = (ox: number, oy: number) => {
+  // Spokes, from the circle in. Across the band each follows a level line of
+  // an angle that is harmonic there: the polar angle on the circle and, round
+  // the last constant-distance ring, mostly in proportion to arc length (see
+  // ringAngle), so spokes are evenly spread at both and in between. (Where
+  // there is no such angle, see bandAngle, they run down phi instead.) Inside
+  // that ring each runs down a field that is harmonic between the interface
+  // (0) and the ring (iso), so spokes spread over the interface rather than
+  // gathering on the nearest samples, with the turn between the two rounded
+  // off. Where they close up, the finer ones (see spokeOrder) stop.
+  const theta = bandAngle(rho, d, W, M, h, inner, iso, isoRings);
+  const down = Float64Array.from(phi);
+  const zone: number[] = [];
+  for (let a = 0; a < W * W; a++) if (rho[a] < inner && d[a] > 0 && d[a] < iso) zone.push(a);
+  relax(down, zone, latticeNeighbours(zone, W), null, DESCENT_TOLERANCE);
+  const sample = bilinear(phi, W, M, h);
+  const descent = bilinear(down, W, M, h);
+  const thetaAt = (ox: number, oy: number): number => {
+    if (!theta) return NaN;
+    const fi = ox / h + M;
+    const fj = oy / h + M;
+    const i = Math.floor(fi);
+    const j = Math.floor(fj);
+    if (i < 0 || j < 0 || i >= W - 1 || j >= W - 1) return NaN;
+    const ti = fi - i;
+    const tj = fj - j;
+    const t0 = theta[i * W + j];
+    return (
+      t0 +
+      ti * (1 - tj) * wrapAngle(theta[(i + 1) * W + j] - t0) +
+      (1 - ti) * tj * wrapAngle(theta[i * W + j + 1] - t0) +
+      ti * tj * wrapAngle(theta[(i + 1) * W + j + 1] - t0)
+    );
+  };
+  const gradTheta = (x: number, y: number): [number, number] => [
+    wrapAngle(thetaAt(x + 0.5, y) - thetaAt(x - 0.5, y)),
+    wrapAngle(thetaAt(x, y + 0.5) - thetaAt(x, y - 0.5)),
+  ];
+  /** Unit direction inwards at (x, y): along the angle's level line in the band, else down. */
+  const heading = (x: number, y: number, band: boolean): [number, number] | null => {
+    if (band && theta) {
+      const [gx, gy] = gradTheta(x, y);
+      const g = Math.hypot(gx, gy);
+      return g > 1e-9 ? [-gy / g, gx / g] : null;
+    }
+    const f = band ? sample : descent;
+    const gx = f(x + 0.5, y) - f(x - 0.5, y);
+    const gy = f(x, y + 0.5) - f(x, y - 0.5);
+    const g = Math.hypot(gx, gy);
+    return g > 1e-9 ? [-gx / g, -gy / g] : null;
+  };
+  const nSpokes = 8 * Math.max(1, Math.round((2 * Math.PI * inner) / spacing / 8));
+  const stepLen = h / 2;
+  const maxSteps = (4 * inner) / stepLen;
+  // Points of the spokes drawn so far, binned by `near`, so a later (finer)
+  // spoke stops where it comes that close to one.
+  const near = spacing / 2;
+  const bins = new Map<number, number[]>();
+  const bin = (x: number, y: number) =>
+    (Math.floor(x / near) + 4096) * 8192 + Math.floor(y / near) + 4096;
+  const crowded = (x: number, y: number): boolean => {
+    const b0 = bin(x, y);
+    for (const di of [-8192, 0, 8192])
+      for (const dj of [-1, 0, 1]) {
+        const list = bins.get(b0 + di + dj);
+        if (!list) continue;
+        for (let q = 0; q < list.length; q += 2)
+          if ((list[q] - x) ** 2 + (list[q + 1] - y) ** 2 < near * near) return true;
+      }
+    return false;
+  };
+  const ringLevels = [...levels, iso + span].sort((a, b) => a - b);
+  const spokes: number[][] = new Array(nSpokes);
+  for (const s of spokeOrder(nSpokes)) {
+    const target = (s / nSpokes) * 2 * Math.PI;
+    const [c, sn] = [Math.cos(target), Math.sin(target)];
+    const pts = [r * c, r * sn, inner * c, inner * sn];
+    let [x, y] = [inner * c, inner * sn];
+    // Where the spoke turns from the band's level line to the descent.
+    let corner = -1;
+    for (let k = 0; k < maxSteps; k++) {
+      const f0 = sample(x, y);
+      const band = f0 > iso;
+      if (!band && corner < 0) corner = pts.length / 2 - 1;
+      const h0 = heading(x, y, band);
+      if (!h0) break;
+      const hm = heading(x + (stepLen / 2) * h0[0], y + (stepLen / 2) * h0[1], band);
+      if (!hm) break;
+      let nx = x + stepLen * hm[0];
+      let ny = y + stepLen * hm[1];
+      if (band && theta) {
+        // Back onto the level line.
+        const [gx, gy] = gradTheta(nx, ny);
+        const g = Math.hypot(gx, gy);
+        const err = wrapAngle(thetaAt(nx, ny) - target);
+        if (g > 1e-6) {
+          const move = Math.sign(err) * Math.min(stepLen, Math.abs(err) / g);
+          nx -= (move * gx) / g;
+          ny -= (move * gy) / g;
+        }
+      }
+      const f = sample(nx, ny);
+      let last = false;
+      if (!(f > SPOKE_SHORT)) {
+        // Stop just short of the interface.
+        if (!(f0 > SPOKE_SHORT) || Number.isNaN(f)) break;
+        const t = (f0 - SPOKE_SHORT) / (f0 - f);
+        nx = x + t * (nx - x);
+        ny = y + t * (ny - y);
+        last = true;
+      }
+      if ((!band || !theta) && crowded(nx, ny)) {
+        // Stop here, or just across the ring outside if that is close.
+        const fc = sample(nx, ny);
+        const up = ringLevels.find((v) => v > fc) ?? Infinity;
+        if (up - fc <= near) {
+          let i = pts.length - 2;
+          while (i > 2 && !(sample(pts[i], pts[i + 1]) >= up)) i -= 2;
+          if (i > 2 && i + 2 < pts.length) {
+            const fa = sample(pts[i], pts[i + 1]);
+            const fb = sample(pts[i + 2], pts[i + 3]);
+            const seg = Math.hypot(pts[i + 2] - pts[i], pts[i + 3] - pts[i + 1]);
+            const t = Math.min(
+              1,
+              (fa > fb ? (fa - up) / (fa - fb) : 0) + (seg > 0 ? SPOKE_OVERRUN / seg : 0),
+            );
+            const cx = pts[i] + t * (pts[i + 2] - pts[i]);
+            const cy = pts[i + 1] + t * (pts[i + 3] - pts[i + 1]);
+            pts.length = i + 2;
+            pts.push(cx, cy);
+          } else pts.length = Math.min(pts.length, i + 2);
+        }
+        break;
+      }
+      [x, y] = [nx, ny];
+      pts.push(x, y);
+      if (last) break;
+    }
+    const path =
+      corner > 1 && corner < pts.length / 2 - 1
+        ? roundCorner(pts, corner, Math.min(spacing / 2, iso / 2))
+        : pts;
+    for (let q = 4; q < path.length; q += 2) {
+      const kk = bin(path[q], path[q + 1]);
+      const list = bins.get(kk);
+      if (list) list.push(path[q], path[q + 1]);
+      else bins.set(kk, [path[q], path[q + 1]]);
+    }
+    spokes[s] = resample(path, lineStep);
+  }
+  for (const spoke of spokes) lines.push(spoke);
+  return lines;
+}
+
+/** An angle wrapped into [−π, π]. */
+function wrapAngle(a: number): number {
+  return a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+}
+
+/** Bilinear interpolation of lattice values (spacing h, node (M, M) at the origin); NaN off it. */
+function bilinear(f: Float64Array, W: number, M: number, h: number) {
+  return (ox: number, oy: number): number => {
     const fi = ox / h + M;
     const fj = oy / h + M;
     const i = Math.floor(fi);
@@ -628,40 +824,330 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
     const ti = fi - i;
     const tj = fj - j;
     return (
-      (1 - ti) * (1 - tj) * phi[i * W + j] +
-      ti * (1 - tj) * phi[(i + 1) * W + j] +
-      (1 - ti) * tj * phi[i * W + j + 1] +
-      ti * tj * phi[(i + 1) * W + j + 1]
+      (1 - ti) * (1 - tj) * f[i * W + j] +
+      ti * (1 - tj) * f[(i + 1) * W + j] +
+      (1 - ti) * tj * f[i * W + j + 1] +
+      ti * tj * f[(i + 1) * W + j + 1]
     );
   };
-  const nSpokes = Math.max(8, Math.round((2 * Math.PI * inner) / spacing));
-  const cell = spacing / 2;
-  const owner = new Map<string, number>();
-  const stepLen = h / 2;
-  for (let s = 0; s < nSpokes; s++) {
-    const th = (s / nSpokes) * 2 * Math.PI;
-    const [c, sn] = [Math.cos(th), Math.sin(th)];
-    const pts = [r * c, r * sn, inner * c, inner * sn];
-    let [x, y] = [inner * c, inner * sn];
-    for (let k = 0; k < (4 * inner) / stepLen; k++) {
-      const gx = sample(x + 0.5, y) - sample(x - 0.5, y);
-      const gy = sample(x, y + 0.5) - sample(x, y - 0.5);
-      const g = Math.hypot(gx, gy);
-      if (!(g > 1e-9)) break;
-      const nx = x - (stepLen * gx) / g;
-      const ny = y - (stepLen * gy) / g;
-      const f = sample(nx, ny);
-      if (!(f > 0)) break;
-      const key = `${Math.floor(nx / cell)},${Math.floor(ny / cell)}`;
-      const o = owner.get(key);
-      if (o !== undefined && o !== s) break;
-      owner.set(key, s);
-      [x, y] = [nx, ny];
-      pts.push(x, y);
+}
+
+/**
+ * The order to draw `n` spokes in (n a multiple of 8), coarsest first: the
+ * eight at multiples of 45°, then in each eighth the one splitting the widest
+ * gap left, and so on, so a spoke that stops for crowding is always a finer one.
+ */
+function spokeOrder(n: number): number[] {
+  const m = n / 8;
+  const rank = new Array<number>(m).fill(0);
+  const picked = [0];
+  for (let t = 1; t < m; t++) {
+    let best = 0;
+    let widest = 0;
+    for (let i = 0; i < picked.length; i++) {
+      const gap = (i + 1 < picked.length ? picked[i + 1] : m) - picked[i];
+      if (gap > widest) [best, widest] = [i, gap];
     }
-    lines.push(resample(pts, lineStep));
+    const p = picked[best] + Math.floor(widest / 2);
+    rank[p] = t;
+    picked.splice(best + 1, 0, p);
   }
-  return lines;
+  return Array.from({ length: n }, (_, k) => k).sort((a, b) => rank[a % m] - rank[b % m] || a - b);
+}
+
+/**
+ * An angle at each lattice node, harmonic over the band between the last
+ * constant-distance ring (`d` ≤ `iso`) and the circle of radius `inner`,
+ * where it is the polar angle. On the ring (of `rings`, closed lines in disc
+ * coordinates where `d` is `iso`, the one enclosing the most) it is as
+ * {@link ringAngle} gives. Elsewhere it is the polar angle. Null where that
+ * ring does not go once round the centre, or the band also meets another
+ * ring (the protein in pieces far apart), as no one angle then suits.
+ */
+function bandAngle(
+  rho: Float64Array,
+  d: Float64Array,
+  W: number,
+  M: number,
+  h: number,
+  inner: number,
+  iso: number,
+  rings: number[][],
+): Float64Array | null {
+  const FREE = 1;
+  const FIXED = 2;
+  const theta = new Float64Array(W * W);
+  for (let a = 0; a < W * W; a++) theta[a] = Math.atan2((a % W) - M, Math.floor(a / W) - M);
+  // The ring round the protein: the closed one enclosing the most.
+  let ring: number[] | null = null;
+  let most = 0;
+  for (const line of rings) {
+    const n = line.length / 2;
+    if (n < 4 || line[0] !== line[line.length - 2] || line[1] !== line[line.length - 1]) continue;
+    let area = 0;
+    for (let p = 0; p + 1 < n; p++)
+      area += line[p * 2] * line[p * 2 + 3] - line[p * 2 + 2] * line[p * 2 + 1];
+    if (Math.abs(area) > most) {
+      most = Math.abs(area);
+      ring = area > 0 ? line : reversePairs(line);
+    }
+  }
+  if (ring) {
+    // Without repeated points (where the line runs through lattice nodes).
+    const kept = [ring[0], ring[1]];
+    for (let p = 2; p < ring.length; p += 2)
+      if (Math.hypot(ring[p] - kept[kept.length - 2], ring[p + 1] - kept[kept.length - 1]) > 1e-6)
+        kept.push(ring[p], ring[p + 1]);
+    kept[kept.length - 2] = kept[0];
+    kept[kept.length - 1] = kept[1];
+    ring = kept.length >= 8 ? kept : null;
+  }
+  if (!ring) return null;
+  const n = ring.length / 2;
+  const cum = [0];
+  for (let p = 1; p < n; p++)
+    cum.push(
+      cum[p - 1] + Math.hypot(ring[p * 2] - ring[p * 2 - 2], ring[p * 2 + 1] - ring[p * 2 - 1]),
+    );
+  const L = cum[n - 1];
+  if (!(L > 0)) return null;
+  // It must go once round the centre.
+  let turn = 0;
+  for (let p = 0; p + 1 < n; p++)
+    turn += wrapAngle(
+      Math.atan2(ring[p * 2 + 3], ring[p * 2 + 2]) - Math.atan2(ring[p * 2 + 1], ring[p * 2]),
+    );
+  if (Math.abs(turn - 2 * Math.PI) > 0.5) return null;
+  const param = ringAngle(ring, cum, inner);
+  // Band nodes joined to the circle.
+  const role = new Uint8Array(W * W);
+  const queue: number[] = [];
+  for (let a = 0; a < W * W; a++)
+    if (rho[a] >= inner) {
+      role[a] = FIXED;
+      queue.push(a);
+    }
+  const steps = [-W, W, -1, 1];
+  const free: number[] = [];
+  for (let q = 0; q < queue.length; q++)
+    for (const s of steps) {
+      const b = queue[q] + s;
+      if (b < 0 || b >= W * W || role[b] || !(rho[b] < inner && d[b] > iso)) continue;
+      role[b] = FREE;
+      free.push(b);
+      queue.push(b);
+    }
+  if (!free.length) return theta;
+  // Nodes just inside the ring take the angle of the nearest point on it,
+  // and those next to the band hold it there.
+  const reach = 2.5 * h;
+  const cellOf = (x: number, y: number) =>
+    (Math.floor(x / reach) + 1024) * 2048 + Math.floor(y / reach) + 1024;
+  const segs = new Map<number, number[]>();
+  for (let p = 0; p + 1 < n; p++) {
+    const [x0, x1] = [
+      Math.min(ring[p * 2], ring[p * 2 + 2]),
+      Math.max(ring[p * 2], ring[p * 2 + 2]),
+    ];
+    const [y0, y1] = [
+      Math.min(ring[p * 2 + 1], ring[p * 2 + 3]),
+      Math.max(ring[p * 2 + 1], ring[p * 2 + 3]),
+    ];
+    for (let i = Math.floor(x0 / reach); i <= Math.floor(x1 / reach); i++)
+      for (let j = Math.floor(y0 / reach); j <= Math.floor(y1 / reach); j++) {
+        const key = (i + 1024) * 2048 + j + 1024;
+        const list = segs.get(key);
+        if (list) list.push(p);
+        else segs.set(key, [p]);
+      }
+  }
+  const near = new Uint8Array(W * W);
+  for (let a = 0; a < W * W; a++) {
+    if (role[a] || !(d[a] > iso - reach) || d[a] > iso + reach) continue;
+    const x = (Math.floor(a / W) - M) * h;
+    const y = ((a % W) - M) * h;
+    let best = Infinity;
+    let at = 0;
+    const c0 = cellOf(x, y);
+    for (const dc of [-2049, -2048, -2047, -1, 0, 1, 2047, 2048, 2049]) {
+      const list = segs.get(c0 + dc);
+      if (!list) continue;
+      for (const p of list) {
+        const ax = ring[p * 2];
+        const ay = ring[p * 2 + 1];
+        const ex = ring[p * 2 + 2] - ax;
+        const ey = ring[p * 2 + 3] - ay;
+        const e2 = ex * ex + ey * ey;
+        const t = e2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / e2)) : 0;
+        const dd = (ax + t * ex - x) ** 2 + (ay + t * ey - y) ** 2;
+        if (dd < best) [best, at] = [dd, param[p] + t * (param[p + 1] - param[p])];
+      }
+    }
+    if (best > reach ** 2) continue;
+    near[a] = best <= (1.5 * h) ** 2 ? 2 : 1;
+    theta[a] = wrapAngle(at);
+  }
+  for (const a of free)
+    for (const s of steps) {
+      const b = a + s;
+      if (role[b]) continue;
+      if (near[b] !== 2) return null;
+      role[b] = FIXED;
+    }
+  // Harmonic in the band. Neighbours' angles are taken on the branch
+  // nearest each node's starting value, so the solve needs no wrapping.
+  const nb = latticeNeighbours(free, W);
+  const off = new Float64Array(free.length * 4);
+  free.forEach((a, f) => {
+    for (let q = f * 4; q < f * 4 + 4; q++)
+      off[q] = theta[nb[q]] - theta[a] - wrapAngle(theta[nb[q]] - theta[a]);
+  });
+  relax(theta, free, nb, off, ANGLE_TOLERANCE);
+  return theta;
+}
+
+/**
+ * The spokes' angle at each point of a closed ring round the origin (flat
+ * pairs, anticlockwise, last point the first, `cum` the arc length to each),
+ * increasing, the last 2π past the first: as near proportional to arc length
+ * as it can be while near the polar angle where the ring comes close to the
+ * circle of radius `inner`, weighed by {@link SPOKE_LEAN}, so spokes are evenly
+ * spread round the ring but need not lean steeply across a narrow band.
+ */
+function ringAngle(ring: number[], cum: number[], inner: number): number[] {
+  const n = ring.length / 2;
+  const N = n - 1;
+  const L = cum[N];
+  // Polar angle, unwound along the ring.
+  const polar = [Math.atan2(ring[1], ring[0])];
+  for (let p = 1; p < n; p++)
+    polar.push(polar[p - 1] + wrapAngle(Math.atan2(ring[p * 2 + 1], ring[p * 2]) - polar[p - 1]));
+  // Least squares in arc-length units: springs keep each step its length;
+  // weights pull each point to its polar angle by the lean that leaves across
+  // the band, and very lightly everywhere, which fixes where the count starts.
+  const k: number[] = [];
+  for (let p = 0; p < N; p++) k.push(1 / Math.max(1e-6, cum[p + 1] - cum[p]));
+  const a: number[] = [];
+  const b: number[] = [];
+  const c: number[] = [];
+  const rhs: number[] = [];
+  for (let p = 0; p < N; p++) {
+    const q = (p + N - 1) % N;
+    const ds = (cum[p + 1] - cum[p] + cum[q + 1] - cum[q]) / 2;
+    const gap = inner - Math.hypot(ring[p * 2], ring[p * 2 + 1]);
+    const hold = SPOKE_LEAN / Math.max(1, gap) ** 2;
+    const w = ds * (1e-6 + hold);
+    a.push(-k[q]);
+    c.push(-k[p]);
+    b.push(k[q] + k[p] + w);
+    rhs.push(
+      k[q] * (cum[q + 1] - cum[q]) -
+        k[p] * (cum[p + 1] - cum[p]) +
+        (w * polar[p] * L) / (2 * Math.PI),
+    );
+  }
+  rhs[0] -= k[N - 1] * L;
+  rhs[N - 1] += k[N - 1] * L;
+  let T = N >= 3 ? cyclicTridiagonal(a, b, c, rhs) : null;
+  if (!T || T.some((v, p) => p > 0 && !(v > T![p - 1]))) {
+    // Arc length alone, started where it best matches the polar angle.
+    let sc = 0;
+    let ss = 0;
+    for (let p = 0; p < N; p++) {
+      const off = polar[p] - (2 * Math.PI * cum[p]) / L;
+      sc += Math.cos(off);
+      ss += Math.sin(off);
+    }
+    const origin = (Math.atan2(ss, sc) * L) / (2 * Math.PI);
+    T = cum.slice(0, N).map((v) => v + origin);
+  }
+  const out = T.map((v) => (2 * Math.PI * v) / L);
+  out.push(out[0] + 2 * Math.PI);
+  return out;
+}
+
+/**
+ * Solves a cyclic tridiagonal system: row p is a[p]·x[p−1] + b[p]·x[p] +
+ * c[p]·x[p+1] = d[p], indices wrapping round (Sherman–Morrison).
+ */
+function cyclicTridiagonal(a: number[], b: number[], c: number[], d: number[]): number[] | null {
+  const n = b.length;
+  const alpha = a[0];
+  const beta = c[n - 1];
+  const gamma = -b[0];
+  const bb = b.slice();
+  bb[0] -= gamma;
+  bb[n - 1] -= (alpha * beta) / gamma;
+  const solve = (r: number[]): number[] => {
+    const cp = new Array<number>(n);
+    const x = new Array<number>(n);
+    let m = bb[0];
+    cp[0] = c[0] / m;
+    x[0] = r[0] / m;
+    for (let i = 1; i < n; i++) {
+      m = bb[i] - a[i] * cp[i - 1];
+      cp[i] = c[i] / m;
+      x[i] = (r[i] - a[i] * x[i - 1]) / m;
+    }
+    for (let i = n - 2; i >= 0; i--) x[i] -= cp[i] * x[i + 1];
+    return x;
+  };
+  const y = solve(d);
+  const u = new Array<number>(n).fill(0);
+  u[0] = gamma;
+  u[n - 1] = beta;
+  const z = solve(u);
+  const fact = (y[0] + (alpha * y[n - 1]) / gamma) / (1 + z[0] + (alpha * z[n - 1]) / gamma);
+  const x = y.map((v, i) => v - fact * z[i]);
+  return x.every(Number.isFinite) ? x : null;
+}
+
+/**
+ * A polyline (flat pairs) with the corner at point `j` rounded off: the
+ * stretch within `R` (along it) either side replaced by a quadratic curve,
+ * touching the line there. Points before 1 are left alone.
+ */
+function roundCorner(pts: number[], j: number, R: number): number[] {
+  const m = pts.length / 2;
+  const len = (i: number) =>
+    Math.hypot(pts[i * 2 + 2] - pts[i * 2], pts[i * 2 + 3] - pts[i * 2 + 1]);
+  let back = 0;
+  for (let i = 1; i < j; i++) back += len(i);
+  let fwd = 0;
+  for (let i = j; i < m - 1; i++) fwd += len(i);
+  R = Math.min(R, back, fwd);
+  if (!(R > 0.5)) return pts;
+  let i = j;
+  let acc = 0;
+  while (i > 2 && acc + len(i - 1) < R) acc += len(--i);
+  let t = Math.min(1, (R - acc) / (len(i - 1) || 1));
+  const ax = pts[i * 2] + t * (pts[i * 2 - 2] - pts[i * 2]);
+  const ay = pts[i * 2 + 1] + t * (pts[i * 2 - 1] - pts[i * 2 + 1]);
+  let k = j;
+  acc = 0;
+  while (k < m - 2 && acc + len(k) < R) acc += len(k++);
+  t = Math.min(1, (R - acc) / (len(k) || 1));
+  const bx = pts[k * 2] + t * (pts[k * 2 + 2] - pts[k * 2]);
+  const by = pts[k * 2 + 1] + t * (pts[k * 2 + 3] - pts[k * 2 + 1]);
+  const [jx, jy] = [pts[j * 2], pts[j * 2 + 1]];
+  const out = pts.slice(0, i * 2);
+  const n = Math.max(2, Math.ceil(R / 0.5) * 2);
+  for (let q = 0; q <= n; q++) {
+    const u = q / n;
+    out.push(
+      (1 - u) * (1 - u) * ax + 2 * u * (1 - u) * jx + u * u * bx,
+      (1 - u) * (1 - u) * ay + 2 * u * (1 - u) * jy + u * u * by,
+    );
+  }
+  for (let q = (k + 1) * 2; q < pts.length; q++) out.push(pts[q]);
+  return out;
+}
+
+/** Flat (x, y) pairs in reverse order. */
+function reversePairs(pts: number[]): number[] {
+  const out: number[] = [];
+  for (let p = pts.length - 2; p >= 0; p -= 2) out.push(pts[p], pts[p + 1]);
+  return out;
 }
 
 /**
