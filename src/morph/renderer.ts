@@ -694,9 +694,10 @@ export class MorphRenderer {
 
   /**
    * Fix the start and end framing. `clientWidth` is the visible width of the
-   * scroll container and `scroll0` its scroll offset at the 2-D end.
+   * scroll container and `scroll0` its scroll offset at the 2-D end. A
+   * finite `fillHeight` makes the 3-D view exactly that tall (full screen).
    */
-  configure(clientWidth: number, scroll0: number): void {
+  configure(clientWidth: number, scroll0: number, fillHeight = Infinity): void {
     const { model, options } = this;
     const fr = model.scene.frame;
     const half = model.scene.slab.half;
@@ -797,9 +798,9 @@ export class MorphRenderer {
     };
     const [ex1, ey1] = extent(1, 500);
     const sw = (width1 - 2 * margin) / (2 * ex1);
-    const height1 = Math.round(
-      Math.min(640, Math.max(height0, 360, Math.min(2 * ey1 * sw + 2 * margin, 640))),
-    );
+    const height1 = Number.isFinite(fillHeight)
+      ? Math.max(120, Math.round(fillHeight))
+      : Math.round(Math.min(640, Math.max(height0, 360, Math.min(2 * ey1 * sw + 2 * margin, 640))));
     let scale1 = Math.min(sw, (height1 - 2 * margin) / (2 * ey1), 9);
     for (let i = 0; i < 3; i++) {
       const [ex, ey] = extent(scale1, height1);

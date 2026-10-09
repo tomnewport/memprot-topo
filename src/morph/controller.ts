@@ -47,6 +47,8 @@ export class MorphController {
   private scroll0 = 0;
   /** Container width the current framing was fitted to. */
   private framedWidth = 0;
+  /** Height the 3-D view fills (full screen); Infinity sizes it to the content. */
+  private fillHeight = Infinity;
   /** Last scrollLeft we applied (writing it forces a layout, so skip no-ops). */
   private appliedScroll = NaN;
   private readonly orbit: Orbit = { az: 0, el: 0 };
@@ -174,7 +176,7 @@ export class MorphController {
     if (!this.mounted) return;
     const focused = old.svg.matches(':focus');
     const renderer = this.ensureRenderer();
-    renderer.configure(this.framedWidth, this.scroll0);
+    renderer.configure(this.framedWidth, this.scroll0, this.fillHeight);
     this.prepared = true;
     this.label(renderer.svg);
     old.svg.replaceWith(renderer.svg);
@@ -207,6 +209,19 @@ export class MorphController {
     loops.forEach((l, i) => hit(l.selectable) && ids.push(elements.length + i));
     this.selectedIds = ids;
     this.renderer?.setSelected(ids);
+    if (this.mounted && !this.raf) this.show(this.tau);
+  }
+
+  /**
+   * Make the 3-D view exactly `height` px tall (full screen), or size it to
+   * its content again with Infinity.
+   */
+  setFillHeight(height: number): void {
+    if (height === this.fillHeight) return;
+    this.fillHeight = height;
+    if (!this.renderer || (!this.mounted && !this.prepared)) return;
+    this.renderer.configure(this.framedWidth, this.scroll0, height);
+    this.appliedScroll = NaN;
     if (this.mounted && !this.raf) this.show(this.tau);
   }
 
@@ -260,7 +275,7 @@ export class MorphController {
     if (!this.mounted && !this.prepared) {
       this.scroll0 = this.scroll.scrollLeft;
       this.framedWidth = this.scroll.clientWidth;
-      renderer.configure(this.framedWidth, this.scroll0);
+      renderer.configure(this.framedWidth, this.scroll0, this.fillHeight);
       this.prepared = true;
     }
     return renderer;
@@ -271,7 +286,7 @@ export class MorphController {
     const width = this.scroll.clientWidth;
     if (!this.mounted || !this.renderer || width === this.framedWidth || width <= 0) return;
     this.framedWidth = width;
-    this.renderer.configure(width, this.scroll0);
+    this.renderer.configure(width, this.scroll0, this.fillHeight);
     this.appliedScroll = NaN;
     if (!this.raf) this.show(this.tau);
   }
