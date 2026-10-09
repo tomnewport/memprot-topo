@@ -278,7 +278,7 @@ const STYLES = `
   }
   .fullscreen-button svg { width: 0.9rem; height: 0.9rem; }
   /* Full screen (issue #73): the element covers the screen and the diagram
-     box takes the space the controls above it leave. The box is zoomed to
+     box takes the space the controls above it leave. The box is scaled to
      fit (see TopologyDisplay.fitFullscreen) and scrolls both ways. */
   :host([fullscreen]) {
     position: fixed;
@@ -304,9 +304,14 @@ const STYLES = `
   }
   /* One row of chains, scrolled sideways, so the picker stays short. */
   :host([fullscreen]) .chain-picker { flex-wrap: nowrap; overflow-x: auto; flex: none; }
-  :host([fullscreen]) .scroll-frame { flex: 1; min-height: 0; }
+  :host([fullscreen]) .scroll-frame { flex: 1; min-height: 0; overflow: hidden; }
+  /* Sized (in its own, unscaled px) and scaled up by fitFullscreen. */
   :host([fullscreen]) .svg-scroll {
-    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    box-sizing: border-box;
+    transform-origin: 0 0;
     overflow: auto;
     display: flex;
   }
@@ -2937,7 +2942,7 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Show the element full screen, with the diagram zoomed to fit. Uses the
+   * Show the element full screen, with the diagram scaled to fit. Uses the
    * Fullscreen API where the browser allows it (not iPhone Safari), else
    * covers the window. Escape, or the button, leaves.
    */
@@ -3026,31 +3031,40 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Zoom the diagram box to the screen: the 2-D topology as large as fits
+   * Scale the diagram box to the screen: the 2-D topology as large as fits
    * (at most 4×; see below for when it is shrunk), with the 1-D and 3-D
-   * views at the same zoom; the 3-D view fills the box's height. Undoes it
+   * views at the same scale; the 3-D view fills the box's height. Undoes it
    * all when not full screen.
+   *
+   * The box is laid out at the frame's size divided by the scale and then
+   * scaled up with a transform, so the views, which fit themselves to the
+   * box's width, see the smaller width. (CSS `zoom` would be simpler, but
+   * stray lines were seen across a zoomed 3-D view in Firefox.)
    */
   private fitFullscreen(): void {
     const box = this._scrollBox;
     const svg = this._shown?.svg;
     if (!box) return;
-    let zoom = 1;
+    const style = box.scroll.style;
     let fill = Infinity;
     if (this._fullscreen && svg) {
       const w = Number(svg.getAttribute('width')) || 1;
       const h = Number(svg.getAttribute('height')) || 1;
+      const fw = box.frame.clientWidth;
+      const fh = box.frame.clientHeight;
       // Leave the border and a little slack, so rounding adds no scrollbars.
-      const fw = box.frame.clientWidth - 4;
-      const fh = box.frame.clientHeight - 4;
+      const aw = fw - 4;
+      const ah = fh - 4;
       // As large as fits; never smaller than natural size for the width (it
       // scrolls sideways instead), but shrunk, to a point, to fit the height.
-      const floor = Math.max(0.6, Math.min(1, fh / h));
-      zoom = Math.min(4, Math.max(floor, Math.min(fw / w, fh / h)));
-      box.scroll.style.zoom = String(zoom);
+      const floor = Math.max(0.6, Math.min(1, ah / h));
+      const scale = Math.min(4, Math.max(floor, Math.min(aw / w, ah / h)));
+      style.width = `${fw / scale}px`;
+      style.height = `${fh / scale}px`;
+      style.transform = scale === 1 ? '' : `scale(${scale})`;
       fill = box.scroll.clientHeight;
     } else {
-      box.scroll.style.zoom = '';
+      style.width = style.height = style.transform = '';
     }
     this._fillHeight = fill > 0 ? fill : Infinity;
     this._morph?.setFillHeight(this._fillHeight);
