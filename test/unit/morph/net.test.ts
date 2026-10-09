@@ -482,6 +482,84 @@ describe('membrane styles', () => {
     }
   });
 
+  it('keeps polar spokes apart and going one way round proteins of several lobes', () => {
+    /** The net as the 3-D view builds it: centred on the samples, 19 Å past them. */
+    const polar = (protein: number[], spacing: number) => {
+      const xs = protein.filter((_, i) => i % 2 === 0);
+      const ys = protein.filter((_, i) => i % 2 === 1);
+      const centre = {
+        x: (Math.min(...xs) + Math.max(...xs)) / 2,
+        y: (Math.min(...ys) + Math.max(...ys)) / 2,
+      };
+      let extent = 0;
+      for (let i = 0; i < protein.length; i += 2)
+        extent = Math.max(extent, Math.hypot(protein[i] - centre.x, protein[i + 1] - centre.y));
+      const radius = Math.max(extent, 10) + 19;
+      const net = buildFishnet({
+        centre,
+        radius,
+        margin: 5,
+        spacing,
+        style: 'polar',
+        bulk: BULK,
+        annular: BULK,
+        protein,
+      });
+      return {
+        radius,
+        spokes: net.upper.filter((l) => Math.abs(Math.hypot(l[0], l[1]) - radius) < 1e-9),
+      };
+    };
+    // Two small helices 48 Å apart: a spoke used to step to and fro on a
+    // flat stretch between them.
+    const helices = [
+      25.467, 2.819, 24.732, 3.831, 23.542, 3.444, 23.542, 2.193, 24.732, 1.807, -21.903, -6.867,
+      -22.744, -5.409, -24.428, -5.409, -25.27, -6.867, -24.428, -8.325, -22.744, -8.325,
+    ];
+    // Five lobes: a deep notch between two used to fold neighbouring spokes
+    // onto each other at the circle.
+    const lobes: number[] = [];
+    const discs = [
+      [24.82, -28.68, 7.65],
+      [-19.47, 6.63, 7.44],
+      [1.7, 21.79, 14.24],
+      [-7.9, -34.59, 5.72],
+      [-29.41, -24.47, 12.77],
+    ];
+    for (let x = -100; x <= 100; x += 1.5)
+      for (let y = -100; y <= 100; y += 1.5)
+        if (discs.some(([cx, cy, r]) => Math.hypot(x - cx, y - cy) < r)) lobes.push(x, y);
+    for (const [protein, spacing] of [
+      [helices, 3],
+      [lobes, 3],
+    ] as const) {
+      const { radius, spokes } = polar(protein, spacing);
+      for (const l of spokes)
+        for (let i = 3; i + 3 < l.length; i += 3) {
+          const [ax, ay] = [l[i] - l[i - 3], l[i + 1] - l[i - 2]];
+          const [bx, by] = [l[i + 3] - l[i], l[i + 4] - l[i + 1]];
+          expect(ax * bx + ay * by).toBeGreaterThan(0);
+        }
+      // Neighbouring spokes stay at least 1 Å apart just inside the circle.
+      const near = spokes.map((l) => {
+        const out: [number, number][] = [];
+        for (let i = 3; i + 3 < l.length; i += 3)
+          for (let k = 0; k < 8; k++) {
+            const x = l[i] + (k / 8) * (l[i + 3] - l[i]);
+            const y = l[i + 1] + (k / 8) * (l[i + 4] - l[i + 1]);
+            const rho = Math.hypot(x, y);
+            if (rho > radius - 13 && rho < radius - 5.5) out.push([x, y]);
+          }
+        return out;
+      });
+      near.forEach((a, s) => {
+        for (const [x, y] of a)
+          for (const [u, v] of near[(s + 1) % near.length])
+            expect(Math.hypot(x - u, y - v)).toBeGreaterThan(1);
+      });
+    }
+  });
+
   it('still draws polar spokes round a protein in two pieces far apart', () => {
     const pieces: number[] = [];
     for (const cx of [-22, 22])

@@ -798,8 +798,16 @@ function polarLines(r: number, inner: number, spacing: number, shape: ProteinSha
         ny = y + t * (ny - y);
         last = true;
       }
-      // A spoke on the descent that stops descending has nowhere to go.
+      // A spoke on the descent that stops descending has nowhere to go, nor
+      // has one stepping back the way it just came (on a flat stretch of the
+      // field), or, on the descent, turning back out against the way it came in.
       if (!band && !(descent(nx, ny) < descent(x, y))) break;
+      const back = pts.length - 4;
+      if (back >= 2 && (nx - x) * (x - pts[back]) + (ny - y) * (y - pts[back + 1]) <= 0) break;
+      if (!band && corner > 1) {
+        const [ex, ey] = [pts[corner * 2] - pts[2], pts[corner * 2 + 1] - pts[3]];
+        if ((nx - x) * ex + (ny - y) * ey <= 0) break;
+      }
       if ((!band || !theta) && crowded(nx, ny)) {
         // Stop here, or just across the ring outside if that is close.
         const fc = sample(nx, ny);
@@ -1046,29 +1054,36 @@ function ringAngle(ring: number[], cum: number[], inner: number): number[] {
   // the band, and very lightly everywhere, which fixes where the count starts.
   const k: number[] = [];
   for (let p = 0; p < N; p++) k.push(1 / Math.max(1e-6, cum[p + 1] - cum[p]));
-  const a: number[] = [];
-  const b: number[] = [];
-  const c: number[] = [];
-  const rhs: number[] = [];
-  for (let p = 0; p < N; p++) {
-    const q = (p + N - 1) % N;
-    const ds = (cum[p + 1] - cum[p] + cum[q + 1] - cum[q]) / 2;
-    const gap = inner - Math.hypot(ring[p * 2], ring[p * 2 + 1]);
-    const hold = SPOKE_LEAN / Math.max(1, gap) ** 2;
-    const w = ds * (1e-6 + hold);
-    a.push(-k[q]);
-    c.push(-k[p]);
-    b.push(k[q] + k[p] + w);
-    rhs.push(
-      k[q] * (cum[q + 1] - cum[q]) -
-        k[p] * (cum[p + 1] - cum[p]) +
-        (w * polar[p] * L) / (2 * Math.PI),
-    );
-  }
-  rhs[0] -= k[N - 1] * L;
-  rhs[N - 1] += k[N - 1] * L;
-  let T = N >= 3 ? cyclicTridiagonal(a, b, c, rhs) : null;
-  if (!T || T.some((v, p) => p > 0 && !(v > T![p - 1]))) {
+  const solve = (lean: number): number[] | null => {
+    if (N < 3) return null;
+    const a: number[] = [];
+    const b: number[] = [];
+    const c: number[] = [];
+    const rhs: number[] = [];
+    for (let p = 0; p < N; p++) {
+      const q = (p + N - 1) % N;
+      const ds = (cum[p + 1] - cum[p] + cum[q + 1] - cum[q]) / 2;
+      const gap = inner - Math.hypot(ring[p * 2], ring[p * 2 + 1]);
+      const w = ds * (1e-6 + lean / Math.max(1, gap) ** 2);
+      a.push(-k[q]);
+      c.push(-k[p]);
+      b.push(k[q] + k[p] + w);
+      rhs.push(
+        k[q] * (cum[q + 1] - cum[q]) -
+          k[p] * (cum[p + 1] - cum[p]) +
+          (w * polar[p] * L) / (2 * Math.PI),
+      );
+    }
+    rhs[0] -= k[N - 1] * L;
+    rhs[N - 1] += k[N - 1] * L;
+    return cyclicTridiagonal(a, b, c, rhs);
+  };
+  const folded = (T: number[] | null) => !T || T.some((v, p) => p > 0 && !(v > T[p - 1]));
+  // Where the ring doubles back on its polar angle (a deep notch), holding it
+  // to that angle would fold the spokes over: hold it more loosely.
+  let T = solve(SPOKE_LEAN);
+  for (let lean = SPOKE_LEAN / 4; folded(T) && lean > 1e-3; lean /= 4) T = solve(lean);
+  if (!T || folded(T)) {
     // Arc length alone, started where it best matches the polar angle.
     let sc = 0;
     let ss = 0;

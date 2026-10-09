@@ -132,14 +132,18 @@ Inside the last constant-distance ring each spoke runs down a field that is
 harmonic between that ring and the interface, which spreads spokes over the
 interface rather than gathering them on the nearest atoms, and the turn
 between the two parts is rounded off. A spoke stops 0.3 Å short of the
-interface, at a pore, or where it comes within half a spacing of a spoke
-drawn before it. Spokes are drawn coarsest first (the eight at multiples of
+interface, at a pore, where its path would turn back, or, inside the last
+constant-distance ring, where it comes within half a spacing of a spoke drawn
+before it. Spokes are drawn coarsest first (the eight at multiples of
 45°, then those halving the widest gaps), so the ones that stop are the
 in-between ones, and a spoke stopping near a ring runs just across it. If
 the protein is in pieces far apart, or the last constant-distance ring does
 not go once round the centre, no single angle suits and the spokes run down
-the blend's gradient instead. Pores the protein encloses (not reachable from
-outside without crossing the interface) get no lines.
+the blend's gradient instead. Where the last constant-distance ring doubles
+back on its polar angle (a deep notch between lobes), its angle is held to the
+polar angle more loosely, so neighbouring spokes don't fold onto each other.
+Pores the protein encloses (not reachable from outside without crossing the
+interface) get no lines.
 
 The surface is a 2 Å mesh over the disc, drawn behind the protein like the
 sheets it replaces. It is coloured by the bilayer's local thickness (upper
