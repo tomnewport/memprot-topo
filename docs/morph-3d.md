@@ -100,6 +100,70 @@ Neighbouring barrel strands are ≈ 4.8 Å apart, so the default leaves a gap
 between ribbons and keeps arrowheads from cutting into the next strand. The
 issue's suggested ~10 × 2.5 Å works, but the strands then overlap heavily.
 
+`morph-grid-spacing` sets the membrane grid's spacing in Å (from 2 Å up to
+the disc's radius; unset, `auto` or `0` sizes it from the membrane disc, an
+eighth of its radius within 4–8 Å). A finer grid shows more of the local
+surface but adds lines to every frame.
+
+`morph-membrane-style` picks how the leaflets are drawn:
+
+| `morph-membrane-style` | Drawn                                                                                        |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `grid` (default)       | A square grid of lines, `morph-grid-spacing` apart.                                          |
+| `polar`                | Rings and spokes: rings follow the protein's outline near it and become circles further out. |
+| `surface`              | A translucent surface per leaflet, coloured by its rise or drop from the bulk plane.         |
+
+The polar rings are spaced by `morph-grid-spacing`. The first follows the
+protein-lipid interface, taken as 4 Å out from the drawn protein's
+membrane-spanning samples, and the next ones keep a constant distance from it
+out to about 10 Å (the largest whole number of spacings up to 10 Å, at least
+one). From there to the circle where the bulk starts (5 Å in from the rim), the
+rings follow a harmonic blend (Laplace's equation, solved on a 1 Å lattice)
+from the outline to the circle, so their shape eases from one to the other.
+The spokes are evenly spaced round that circle, a multiple of eight of them
+about `morph-grid-spacing` apart. Each runs straight in from the rim to the
+circle. Across the blend it follows a level line of an angle that is harmonic
+there: the polar angle on the circle and, round the last constant-distance
+ring, close to proportional to the distance along that ring. So spokes are
+evenly spread round both and in between, leaning where the protein is
+lopsided. Where the protein comes close to the circle, the ring's angle is
+held nearer the polar angle, so spokes don't run sideways through the gap.
+Inside the last constant-distance ring each spoke runs down a field that is
+harmonic between that ring and the interface, which spreads spokes over the
+interface rather than gathering them on the nearest atoms, and the turn
+between the two parts is rounded off. A spoke stops 0.3 Å short of the
+interface, at a pore, where its path would turn back, or, inside the last
+constant-distance ring, where it comes within half a spacing of a spoke drawn
+before it. Spokes are drawn coarsest first (the eight at multiples of
+45°, then those halving the widest gaps), so the ones that stop are the
+in-between ones, and a spoke stopping near a ring runs just across it. If
+the protein is in pieces far apart, or the last constant-distance ring does
+not go once round the centre, no single angle suits and the spokes run down
+the blend's gradient instead. Where the last constant-distance ring doubles
+back on its polar angle (a deep notch between lobes), its angle is held to the
+polar angle more loosely, so neighbouring spokes don't fold onto each other.
+Pores the protein encloses (not reachable from outside without crossing the
+interface) get no lines.
+
+The surface is a 2 Å mesh over the disc, drawn behind the protein like the
+sheets it replaces. It is coloured by the bilayer's local thickness (upper
+leaflet height minus lower) against the bulk's, in 1 Å bands from `membrane`
+at the bulk thickness towards `membraneThinned` where the bilayer is thinner
+and `membraneThickened` where it is thicker, reaching full strength at 6 Å
+either way. Both leaflets take the same colour at each point, so a bilayer
+that bends without changing thickness stays uncoloured. Where only the other
+leaflet is open (a pore on that side alone), a leaflet's own shift from its
+bulk plane is doubled, as if the bilayer were symmetric there. The bands meet
+along smooth contours. The upper leaflet is
+40 % opaque and the lower 30 %. A piece of protein seen through the surface
+takes the colour of the band where its line of sight first crosses the
+surface (found by marching along the line of sight about every 1 Å across the
+leaflet's height range, then bisecting), so the tint matches the surface in
+front of it, with the far leaflet's colour under the near one's. Pores stay
+open: next to a pore the surface is drawn over the part of each mesh cell
+nearest its lipid corners, which is also where the tint stops. There is no
+colour key in the view yet.
+
 `morph-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent
 perspective while the camera backs off to keep the scale at the target constant.
@@ -126,6 +190,28 @@ finished 3-D view stays vector (and exportable).
   across the element. The rims are depth-sorted with the protein, so the near
   rim passes in front of whatever lies behind it and marks the edge of the
   tint.
+- Each leaflet also carries a fishnet: a square grid of thin lines over its
+  disc (4–8 Å apart by default; see `morph-grid-spacing` above), depth-sorted
+  with the protein like the rims, so the membrane stays visible without hiding
+  the protein. The net follows the leaflet's height: the local surface from a
+  distortions file (averaged over 1.5 grid cells, kept within 6–12 Å), or
+  else the annular height next to the protein easing to the bulk 4–14 Å away.
+  Where the file has no lipid within 6 Å and the drawn protein surrounds the
+  point (its membrane-spanning parts lie in all twelve 30° sectors around it:
+  a pore), the net is left open. Where it has none elsewhere (other subunits,
+  which the view doesn't draw; the drawn protein's own footprint; or past the
+  file's edge) the net is filled in as a stretched membrane would be: each
+  point there is the mean of its neighbours along the lines, held by the lipid
+  around the gap and the bulk at the rim, so it neither tears nor steps. The
+  disc reaches 19 Å past the farthest membrane-spanning helix or strand
+  sample (at least 29 Å from its centre): room for the annular leaflet to ease
+  to the bulk (4 + 10 Å), then a flat ring of bulk 5 Å wide at the edge
+  (`BULK_MARGIN` in `src/morph/net.ts`). Inside that ring the net eases to
+  the bulk over the outer fifth. It grows out of the flat planes as the sheets
+  fade in. The tinted sheets stay at the bulk planes. With
+  `morph-membrane-style="polar"` the lines are rings and spokes instead, and
+  with `"surface"` the sheets themselves follow the heights and are coloured
+  by them (see above). See [membrane.md](membrane.md).
 - Consecutive sections of the same element are merged into one path whenever
   nothing drawn in between overlaps them on screen (convex-footprint test).
   This keeps the DOM small and avoids anti-aliasing seams; contiguous sections

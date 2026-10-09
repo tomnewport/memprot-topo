@@ -196,7 +196,7 @@ export class SequenceRenderer {
 
   /** The membrane slab, revealed from the left up to the folding wave. */
   private drawSlab(alpha: number, front: number): void {
-    const { origin2d: o, slab, membraneHalf } = this.src;
+    const { origin2d: o, slab, membrane } = this.src;
     const x0 = o.x + slab.x0 * o.pxPerA + this.offset.x;
     const last = this.trace.length - 1;
     const full = o.x + slab.x1 * o.pxPerA + this.offset.x;
@@ -207,9 +207,9 @@ export class SequenceRenderer {
     const g = this.add(el('g', { opacity: alpha.toFixed(3) }));
     const rect = el('rect', {
       x: x0,
-      y: o.y - membraneHalf * o.pxPerA + this.offset.y,
+      y: o.y - membrane.upper * o.pxPerA + this.offset.y,
       width: Math.max(0, x1 - x0),
-      height: membraneHalf * 2 * o.pxPerA,
+      height: Math.max(0, membrane.upper - membrane.lower) * o.pxPerA,
       'fill-opacity': 0.55,
     });
     this.add(
@@ -231,13 +231,13 @@ export class SequenceRenderer {
   private drawRowFurniture(layout: SequenceLayout, alpha: number): void {
     const g = this.add(el('g', { opacity: alpha.toFixed(3) }));
     g.setAttribute('pointer-events', 'none');
-    const { residues, z, membraneHalf, lanes } = this.src;
+    const { residues, z, membrane, lanes } = this.src;
     const cell = SEQ.cellPx;
     for (const row of layout.rows) {
       // Membrane: residues the 2-D layout puts inside the slab.
       let start = -1;
       for (let i = row.first; i <= row.last + 1; i++) {
-        const inside = i <= row.last && Math.abs(z[i]) <= membraneHalf;
+        const inside = i <= row.last && z[i] >= membrane.lower && z[i] <= membrane.upper;
         if (inside && start < 0) start = i;
         if (!inside && start >= 0) {
           const xa = layout.x[start] - cell / 2;

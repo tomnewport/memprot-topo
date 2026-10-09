@@ -17,6 +17,8 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | `src/components/chain-icon.ts`   | AI-generated | Chain-picker icons on a 5 × 6 membrane grid (issue #20).                          |
 | `src/components/scroll-box.ts`   | AI-generated | Scrolling diagram box with edge gradients and arrows (issue #21).                 |
 | `src/components/residue-data.ts` | AI-generated | Per-residue colour/width data series and colour legend (issue #23).               |
+| `src/membrane/`                  | AI-generated | Leaflet positions, MemProtMD distortions files, membrane profile (issue #24).     |
+| `src/demo-distortions.ts`        | AI-generated | Demo toggle for the sample distortions files, with OPM → MemProtMD registration.  |
 | `src/theme/`                     | AI-generated | Themes: tokens, built-in light/dark, registry and in-place repaint (issue #26).   |
 | `src/sequence/`                  | AI-generated | 1-D sequence view and its transition to the 2-D topology.                         |
 

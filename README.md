@@ -41,4 +41,5 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 - [docs/selection.md](docs/selection.md) — the `selection` attribute and selection events
 - [docs/secondary-structure.md](docs/secondary-structure.md) — `min-helix-length` and `min-strand-length`
 - [docs/residue-data.md](docs/residue-data.md) — per-residue colours, widths and the colour legend
+- [docs/membrane.md](docs/membrane.md) — membrane leaflet positions and MemProtMD distortions files
 - [docs/theming.md](docs/theming.md) — light/dark and custom themes: `theme`, `theme-light`, `theme-dark`, `registerTheme`

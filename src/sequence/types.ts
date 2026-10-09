@@ -52,7 +52,8 @@ export interface SequenceSource {
   elements: SeqElement[];
   /** Residue depth in the 2-D layout (Å, + up), or NaN where it wasn't drawn. */
   z: number[];
-  membraneHalf: number;
+  /** The bulk leaflet headgroup planes the 2-D band flattens to (Å, + up). */
+  membrane: { upper: number; lower: number };
   /** The 2-D SVG's viewBox and the (arc 0, z 0) origin in it. */
   frame2d: { minX: number; minY: number; width: number; height: number };
   origin2d: { x: number; y: number; pxPerA: number };

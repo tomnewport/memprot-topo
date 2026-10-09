@@ -1,4 +1,5 @@
 import { buildMorphModel } from './model.js';
+import type { Fishnet } from './net.js';
 import { DEFAULT_MORPH_OPTIONS, MorphRenderer, type MorphOptions, type Orbit } from './renderer.js';
 import type { MorphScene, ResidueSpan } from './types.js';
 
@@ -44,6 +45,8 @@ export class MorphController {
   /** Renderer framed for the current scroll state but not yet swapped in. */
   private prepared = false;
   private raf = 0;
+  /** Whether {@link raf} is blending the membrane rather than moving the view. */
+  private blending = false;
   private scroll0 = 0;
   /** Container width the current framing was fitted to. */
   private framedWidth = 0;
@@ -146,10 +149,44 @@ export class MorphController {
     return {
       tau: this.tau,
       goal: this.goal,
-      animating: this.raf !== 0,
+      animating: this.raf !== 0 && !this.blending,
       orbit: { ...this.orbit },
       scroll0: this.mounted ? this.scroll0 : this.scroll.scrollLeft,
     };
+  }
+
+  /** The 3-D membrane as drawn, to blend from after a redraw (null in 2-D). */
+  get membraneNet(): Fishnet | null {
+    return this.mounted ? (this.renderer?.drawnNet ?? null) : null;
+  }
+
+  /**
+   * Blend the 3-D membrane over `ms` from `from` (another controller's
+   * {@link membraneNet} of the same chain) to this one's. Skipped before the
+   * 3-D membrane shows, while the view is moving, with reduced motion, or if
+   * the two membranes have different points. The first frame changes on the next animation
+   * frame, so until then the new membrane shows.
+   */
+  blendMembraneFrom(from: Fishnet | null, ms: number): void {
+    const r = this.renderer;
+    if (!from || !r || !this.mounted || this.raf || ms <= 0 || prefersReducedMotion()) return;
+    if (!r.showsMembrane(this.tau)) return;
+    if (!r.blendNetFrom(from)) return;
+    this.blending = true;
+    const start = performance.now();
+    const step = (now: number): void => {
+      const f = Math.max(0, Math.min(1, (now - start) / ms));
+      r.setNetBlend(easeInOut(f));
+      r.render(this.tau, this.orbit);
+      if (f < 1) {
+        this.raf = requestAnimationFrame(step);
+      } else {
+        this.raf = 0;
+        this.blending = false;
+        r.blendNetFrom(null);
+      }
+    };
+    this.raf = requestAnimationFrame(step);
   }
 
   /** Show `view` (from another controller of the same chain), resuming any animation. */
@@ -171,6 +208,8 @@ export class MorphController {
     this.options = { ...DEFAULT_MORPH_OPTIONS, ...options };
     const old = this.renderer;
     if (!old) return;
+    // The new renderer has its own membrane: end any blend into the old one.
+    if (this.blending) this.cancel();
     this.renderer = null;
     this.prepared = false;
     if (!this.mounted) return;
@@ -234,6 +273,8 @@ export class MorphController {
   private cancel(): void {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    if (this.blending) this.renderer?.blendNetFrom(null);
+    this.blending = false;
   }
 
   private show(tau: number): void {
