@@ -6,8 +6,11 @@
  * each frame.
  */
 
-/** Leaflet height (Å) at a world point, or null where there is no lipid. */
-export type HeightAt = (x: number, y: number) => number | null;
+/**
+ * Leaflet height (Å) at a world point, averaged over `radius` Å, or null
+ * where there is no lipid that close.
+ */
+export type HeightAt = (x: number, y: number, radius: number) => number | null;
 
 export interface FishnetInput {
   /** Disc centre (world Å) and radius. */
@@ -18,13 +21,18 @@ export interface FishnetInput {
   annular: { upper: number; lower: number };
   /** World xy of the membrane-spanning samples, flat (x, y) pairs. */
   protein: ArrayLike<number>;
-  /** Local leaflet heights, when a distortions file gives them. */
-  local?: { upper: HeightAt; lower: HeightAt };
+  /**
+   * Local leaflet heights, when a distortions file gives them, and the radius
+   * (Å) they are averaged over.
+   */
+  local?: { upper: HeightAt; lower: HeightAt; radius: number };
+  /** Grid spacing (Å). Default {@link fishnetSpacing} of the radius. */
+  spacing?: number;
 }
 
 /**
  * Each leaflet's net as polylines of (ox, oy, z): position relative to the
- * disc centre and height, broken where there is no lipid (e.g. a pore).
+ * disc centre and height, broken over pores in the drawn protein.
  */
 export interface Fishnet {
   /** Grid spacing (Å). */
@@ -41,6 +49,28 @@ const ANNULAR_REACH = 4;
 const ANNULAR_FADE = 10;
 /** Fraction of the radius beyond which every height eases to the bulk, so the net meets the rim. */
 const RIM_FADE = 0.8;
+/**
+ * A point with no lipid within this distance (Å), or the averaging radius if
+ * smaller, is in a pore when the drawn protein surrounds it.
+ */
+const PORE_RADIUS = 6;
+/**
+ * A point counts as enclosed by the protein when membrane-spanning samples lie
+ * in every one of this many equal sectors around it.
+ */
+const ENCLOSING_SECTORS = 12;
+/** Over-relaxation, tolerance (Å) and iteration limit of the gap fill. */
+const FILL_OMEGA = 1.8;
+const FILL_TOLERANCE = 1e-3;
+const FILL_MAX_ITERATIONS = 2000;
+
+/** Neighbour slot values: none, or the line's end on the rim. */
+const NONE = -1;
+const RIM = -2;
+/** Node states in a leaflet with local heights. */
+const KNOWN = 0;
+const GAP = 1;
+const PORE = 2;
 
 function smoothstep(x: number): number {
   const t = Math.max(0, Math.min(1, x));
@@ -54,7 +84,7 @@ export function fishnetSpacing(r: number): number {
 
 export function buildFishnet(input: FishnetInput): Fishnet {
   const { centre, radius: r, bulk, annular, protein, local } = input;
-  const spacing = fishnetSpacing(r);
+  const spacing = input.spacing ?? fishnetSpacing(r);
   const np = Math.floor(protein.length / 2);
 
   /** Distance (Å) in xy from a world point to the nearest protein sample. */
@@ -69,56 +99,196 @@ export function buildFishnet(input: FishnetInput): Fishnet {
     return Math.sqrt(best);
   };
 
-  const height = (leaf: 'upper' | 'lower', x: number, y: number, rho: number, dP: number) => {
-    const toRim = smoothstep((rho - RIM_FADE) / (1 - RIM_FADE));
-    if (local) {
-      if (toRim >= 1) return bulk[leaf];
-      const h = local[leaf](x, y);
-      if (h === null) return NaN;
-      return h + toRim * (bulk[leaf] - h);
+  /** Whether the membrane-spanning samples surround (x, y) on every side. */
+  const enclosed = (x: number, y: number): boolean => {
+    const all = (1 << ENCLOSING_SECTORS) - 1;
+    let seen = 0;
+    for (let i = 0; i < np; i++) {
+      const dx = protein[i * 2] - x;
+      const dy = protein[i * 2 + 1] - y;
+      if (dx === 0 && dy === 0) continue;
+      const t = (Math.atan2(dy, dx) + Math.PI) / (2 * Math.PI);
+      seen |= 1 << Math.min(ENCLOSING_SECTORS - 1, Math.floor(t * ENCLOSING_SECTORS));
+      if (seen === all) return true;
     }
-    const toBulk = Math.max(toRim, smoothstep((dP - ANNULAR_REACH) / ANNULAR_FADE));
+    return false;
+  };
+
+  const toRim = (ox: number, oy: number) =>
+    smoothstep((Math.hypot(ox, oy) / r - RIM_FADE) / (1 - RIM_FADE));
+
+  /** Heights without local ones: annular next to the protein, easing to the bulk. */
+  const plain = (leaf: 'upper' | 'lower', ox: number, oy: number) => {
+    const dP = toProtein(centre.x + ox, centre.y + oy);
+    const toBulk = Math.max(toRim(ox, oy), smoothstep((dP - ANNULAR_REACH) / ANNULAR_FADE));
     return annular[leaf] + toBulk * (bulk[leaf] - annular[leaf]);
   };
 
   const flat = !local && annular.upper === bulk.upper && annular.lower === bulk.lower;
   // A flat net only needs splitting for depth order; a shaped one follows its heights.
   const step = flat ? spacing : spacing / 2;
-  const net: Fishnet = { spacing, upper: [], lower: [] };
   const K = Math.floor((r - 1e-6) / spacing);
+  // Each line as (ox, oy) pairs: both ends on the rim, the rest on a lattice
+  // of `step`, so crossing lines share their points.
+  const lines: number[][] = [];
   for (const across of [0, 1]) {
     for (let k = -K; k <= K; k++) {
       const off = k * spacing;
       const half = Math.sqrt(r * r - off * off);
-      // Points along the line: both ends on the rim, the rest on the grid.
       const along: number[] = [-half];
       for (let j = Math.ceil(-half / step + 1e-9); j * step < half - 1e-9; j++)
         along.push(j * step);
       along.push(half);
-      for (const leaf of ['upper', 'lower'] as const) {
-        let line: number[] = [];
-        const flush = () => {
-          if (line.length >= 6) net[leaf].push(Float64Array.from(line));
-          line = [];
-        };
-        for (const a of along) {
-          const ox = across ? a : off;
-          const oy = across ? off : a;
-          const x = centre.x + ox;
-          const y = centre.y + oy;
-          const rho = Math.hypot(ox, oy) / r;
-          const z = flat ? bulk[leaf] : height(leaf, x, y, rho, local ? Infinity : toProtein(x, y));
-          if (Number.isNaN(z)) {
-            flush();
-            continue;
-          }
-          line.push(ox, oy, z);
+      lines.push(along.flatMap((a) => (across ? [a, off] : [off, a])));
+    }
+  }
+
+  const field = local ? localField(local) : null;
+  const net: Fishnet = { spacing, upper: [], lower: [] };
+  for (const leaf of ['upper', 'lower'] as const) {
+    const z = field?.(leaf);
+    for (const pts of lines) {
+      let line: number[] = [];
+      const flush = () => {
+        if (line.length >= 6) net[leaf].push(Float64Array.from(line));
+        line = [];
+      };
+      for (let p = 0; p < pts.length; p += 2) {
+        const [ox, oy] = [pts[p], pts[p + 1]];
+        const onRim = p === 0 || p === pts.length - 2;
+        const h = flat || onRim ? bulk[leaf] : z ? z(ox, oy) : plain(leaf, ox, oy);
+        if (Number.isNaN(h)) {
+          flush();
+          continue;
         }
-        flush();
+        line.push(ox, oy, h);
       }
+      flush();
     }
   }
   return net;
+
+  /**
+   * Heights from the local surfaces at the lines' inner points. Where a
+   * point has no lipid near it, it is left open (NaN) if the drawn protein
+   * surrounds it (a pore). Elsewhere the lipid is missing because of protein
+   * the view doesn't draw (other subunits), the drawn protein's own
+   * footprint, or the file's edge; there the net is filled in as a stretched
+   * membrane would be, each point the mean of its neighbours along the lines,
+   * from the lipid around and the bulk at the rim, so it is neither torn nor
+   * stepped.
+   */
+  function localField(
+    surfaces: NonNullable<FishnetInput['local']>,
+  ): (leaf: 'upper' | 'lower') => (ox: number, oy: number) => number {
+    const M = Math.ceil(r / step) + 1;
+    const W = 2 * M + 1;
+    const slot = (ox: number, oy: number) =>
+      (Math.round(ox / step) + M) * W + Math.round(oy / step) + M;
+    // The lattice points on the lines, and each one's neighbours along them.
+    const nodeAt = new Int32Array(W * W).fill(NONE);
+    const ox: number[] = [];
+    const oy: number[] = [];
+    for (const pts of lines) {
+      for (let p = 2; p < pts.length - 2; p += 2) {
+        const s = slot(pts[p], pts[p + 1]);
+        if (nodeAt[s] !== NONE) continue;
+        nodeAt[s] = ox.length;
+        ox.push(pts[p]);
+        oy.push(pts[p + 1]);
+      }
+    }
+    const n = ox.length;
+    const nbr = new Int32Array(n * 4).fill(NONE);
+    for (let a = 0; a < n; a++) {
+      const i = Math.round(ox[a] / step);
+      const j = Math.round(oy[a] / step);
+      // Lines run along y at even i and along x at even j.
+      const steps = [
+        [0, -1, i],
+        [0, 1, i],
+        [-1, 0, j],
+        [1, 0, j],
+      ];
+      steps.forEach(([di, dj, on], q) => {
+        if (on % 2 !== 0) return;
+        const b = nodeAt[(i + di + M) * W + j + dj + M];
+        nbr[a * 4 + q] = b === NONE ? RIM : b;
+      });
+    }
+    const poreRadius = Math.min(PORE_RADIUS, surfaces.radius);
+    const enclosedAt = new Int8Array(n).fill(-1);
+    const isEnclosed = (a: number) => {
+      if (enclosedAt[a] < 0) enclosedAt[a] = enclosed(centre.x + ox[a], centre.y + oy[a]) ? 1 : 0;
+      return enclosedAt[a] === 1;
+    };
+
+    return (leaf) => {
+      const at = surfaces[leaf];
+      const value = new Float64Array(n);
+      const state = new Uint8Array(n);
+      const queue: number[] = [];
+      for (let a = 0; a < n; a++) {
+        const x = centre.x + ox[a];
+        const y = centre.y + oy[a];
+        const near = at(x, y, poreRadius);
+        if (near === null && isEnclosed(a)) {
+          state[a] = PORE;
+          continue;
+        }
+        const h = poreRadius === surfaces.radius ? near : at(x, y, surfaces.radius);
+        if (h === null) {
+          state[a] = GAP;
+          value[a] = NaN;
+        } else {
+          state[a] = KNOWN;
+          value[a] = h;
+          queue.push(a);
+        }
+      }
+      // Start each gap point from the nearest lipid along the lines (or the
+      // plain heights where it reaches none), then relax.
+      for (let q = 0; q < queue.length; q++) {
+        for (let k = 0; k < 4; k++) {
+          const b = nbr[queue[q] * 4 + k];
+          if (b >= 0 && state[b] === GAP && Number.isNaN(value[b])) {
+            value[b] = value[queue[q]];
+            queue.push(b);
+          }
+        }
+      }
+      const gaps: number[] = [];
+      for (let a = 0; a < n; a++) {
+        if (state[a] !== GAP) continue;
+        gaps.push(a);
+        if (Number.isNaN(value[a])) value[a] = plain(leaf, ox[a], oy[a]);
+      }
+      for (let it = 0; it < FILL_MAX_ITERATIONS && gaps.length; it++) {
+        let change = 0;
+        for (const a of gaps) {
+          let sum = 0;
+          let count = 0;
+          for (let k = 0; k < 4; k++) {
+            const b = nbr[a * 4 + k];
+            if (b === RIM) sum += bulk[leaf];
+            else if (b >= 0 && state[b] !== PORE) sum += value[b];
+            else continue;
+            count++;
+          }
+          if (!count) continue;
+          const d = FILL_OMEGA * (sum / count - value[a]);
+          value[a] += d;
+          change = Math.max(change, Math.abs(d));
+        }
+        if (change < FILL_TOLERANCE) break;
+      }
+      return (x, y) => {
+        const a = nodeAt[slot(x, y)];
+        if (state[a] === PORE) return NaN;
+        return value[a] + toRim(x, y) * (bulk[leaf] - value[a]);
+      };
+    };
+  }
 }
 
 /**

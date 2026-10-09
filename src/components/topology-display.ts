@@ -2498,6 +2498,7 @@ export class TopologyDisplay extends HTMLElement {
     'morph-projection',
     'morph-strand-width',
     'morph-strand-thickness',
+    'morph-grid-spacing',
     'icon-bandwidth',
     'min-helix-length',
     'min-strand-length',
@@ -2871,7 +2872,8 @@ export class TopologyDisplay extends HTMLElement {
       name === 'morph-sweep' ||
       name === 'morph-projection' ||
       name === 'morph-strand-width' ||
-      name === 'morph-strand-thickness'
+      name === 'morph-strand-thickness' ||
+      name === 'morph-grid-spacing'
     ) {
       // 3-D only: update the morph in place, keeping its view.
       if (this._morphSource) {
@@ -3004,12 +3006,23 @@ export class TopologyDisplay extends HTMLElement {
     return opts;
   }
 
+  /**
+   * Spacing (Å) of the 3-D membrane grid (`morph-grid-spacing`), at least
+   * 2 Å; unset, `auto` or invalid gives 0, which sizes it from the membrane
+   * disc (an eighth of its radius, 4–8 Å).
+   */
+  private get morphGridSpacing(): number {
+    const v = Number.parseFloat(this.getAttribute('morph-grid-spacing') ?? '');
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  }
+
   /** Assemble the 3-D morph options from the component's attributes. */
   private get morphOptions(): Partial<MorphOptions> {
     return {
       sweep: this.morphSweep,
       ...PROJECTIONS[this.morphProjection],
       ...this.morphStrandOptions,
+      gridSpacing: this.morphGridSpacing,
     };
   }
 

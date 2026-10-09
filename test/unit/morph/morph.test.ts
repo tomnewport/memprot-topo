@@ -3,7 +3,12 @@ import { unrollChain, unwrapBarrel } from '../../../src/unroll/index.js';
 import { analyseBarrel } from '../../../src/contacts/index.js';
 import { buildMorphModel } from '../../../src/morph/model.js';
 import { computePose, localProgress } from '../../../src/morph/curtain.js';
-import { MorphRenderer, fitLine, findKink } from '../../../src/morph/renderer.js';
+import {
+  MorphRenderer,
+  fitLine,
+  findKink,
+  DEFAULT_MORPH_OPTIONS,
+} from '../../../src/morph/renderer.js';
 import type { MorphScene, MorphSegment, MorphElement } from '../../../src/morph/types.js';
 import type { UnrollResult } from '../../../src/unroll/index.js';
 import type {
@@ -338,6 +343,28 @@ describe('morph membrane', () => {
     expect(Math.min(...zs)).toBeCloseTo(15, 6);
     // Only once the leaflet sheets appear.
     expect(strokeCount(flat, 1)).toBeGreaterThan(strokeCount(flat, 0.2));
+  });
+
+  it('averages the local surface over 1.5 grid cells, kept within 6–12 Å', () => {
+    const radii = new Set<number>();
+    const surface = {
+      upper: (_x: number, _y: number, radius: number) => (radii.add(radius), 19),
+      lower: () => -19,
+    };
+    const scene: MorphScene = { ...flat, slab: { ...flat.slab, surface } };
+    const radiiAt = (gridSpacing: number) => {
+      radii.clear();
+      const r = new MorphRenderer(buildMorphModel(scene), {
+        ...DEFAULT_MORPH_OPTIONS,
+        gridSpacing,
+      });
+      r.configure(900, 0);
+      return [...radii].sort((a, b) => a - b);
+    };
+    // The pore test looks within 6 Å; the heights are averaged wider.
+    expect(radiiAt(2)).toEqual([6]);
+    expect(radiiAt(6)).toEqual([6, 9]);
+    expect(radiiAt(20)).toEqual([6, 12]);
   });
 
   it('finds the local surface under a rolled-up β-barrel too', () => {
@@ -683,6 +710,31 @@ describe('<topology-display> 3-D morph', () => {
     expect(opts().arrowWidth).toBeCloseTo((10 * 4.65) / 2.85);
     el.setAttribute('morph-strand-width', '-1');
     expect(opts().strandWidth).toBeUndefined();
+  });
+
+  it('sets the membrane grid spacing from morph-grid-spacing, in place', async () => {
+    type WithNet = { _morph: { renderer: { net: { spacing: number } } | null } | null };
+    const el = mount(hairpinChain());
+    await el.setMorphProgress(1);
+    const spacing = () => (el as unknown as WithNet)._morph!.renderer!.net.spacing;
+    const auto = spacing();
+    expect(auto).toBeGreaterThanOrEqual(4);
+    expect(auto).toBeLessThanOrEqual(8);
+    el.setAttribute('morph-grid-spacing', '3');
+    expect(spacing()).toBe(3);
+    expect(el.morphProgress).toBe(1);
+    // At least 2 Å.
+    el.setAttribute('morph-grid-spacing', '0.5');
+    expect(spacing()).toBe(2);
+    // At most the disc's radius: two lines across.
+    el.setAttribute('morph-grid-spacing', '10000');
+    expect(spacing()).toBeLessThan(100);
+    expect(
+      (el as unknown as { _morph: { renderer: { net: { upper: unknown[] } } } })._morph.renderer.net
+        .upper,
+    ).toHaveLength(2);
+    el.setAttribute('morph-grid-spacing', 'auto');
+    expect(spacing()).toBe(auto);
   });
 
   it('changes 3-D settings in place, keeping the 3-D view', async () => {

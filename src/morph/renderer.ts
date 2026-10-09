@@ -32,6 +32,11 @@ export interface MorphOptions {
    * chain up at once; > 0 rolls from the N-terminal end to the C-terminal end.
    */
   sweep: number;
+  /**
+   * Spacing (Å) of the membrane's grid lines; 0 picks it from the size of
+   * the membrane disc ({@link fishnetSpacing}).
+   */
+  gridSpacing: number;
 }
 
 export { PROJECTIONS } from './projections.js';
@@ -47,6 +52,7 @@ export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
   elevation: Math.atan(1 / Math.SQRT2),
   fov: 0,
   sweep: 0.35,
+  gridSpacing: 0,
 };
 
 /** User orbit applied on top of the scripted camera (radians). */
@@ -2577,17 +2583,21 @@ export class MorphRenderer {
         world.push(x, y);
       }
     }
-    let local: { upper: HeightAt; lower: HeightAt } | undefined;
+    const spacing =
+      this.options.gridSpacing > 0
+        ? Math.min(dr, Math.max(MIN_GRID_SPACING, this.options.gridSpacing))
+        : fishnetSpacing(dr);
+    let local: { upper: HeightAt; lower: HeightAt; radius: number } | undefined;
     const surface = slab.surface;
     const fit = surface ? fitRigid2d(real, world) : null;
     // A misfit means the sample positions aren't the structure's own frame.
     if (surface && fit && fit.rms < NET_FIT_RMS) {
       // Averaged over about a grid cell, so single-frame noise doesn't
-      // show as spikes; holes wider than that (pores) stay open.
-      const R = Math.max(NET_SMOOTHING, 1.5 * fishnetSpacing(dr));
+      // show as spikes, but not so wide that the shape is lost.
       local = {
-        upper: (x, y) => surface.upper(...fit.invert(x, y), R),
-        lower: (x, y) => surface.lower(...fit.invert(x, y), R),
+        upper: (x, y, radius) => surface.upper(...fit.invert(x, y), radius),
+        lower: (x, y, radius) => surface.lower(...fit.invert(x, y), radius),
+        radius: Math.min(NET_SMOOTHING_MAX, Math.max(NET_SMOOTHING, 1.5 * spacing)),
       };
     }
     return buildFishnet({
@@ -2597,6 +2607,7 @@ export class MorphRenderer {
       annular: slab.annular ?? { upper: slab.upper, lower: slab.lower },
       protein,
       local,
+      spacing,
     });
   }
 
@@ -2981,8 +2992,11 @@ const NET: OpSpec = { layer: 0, key: 'net', kind: 'stroke', linecap: 'round' };
 const NET_WIDTH = 0.75;
 const NET_ALPHA = { upper: 0.9, lower: 0.6 };
 const NET_DARKEN = 0.5;
-/** Smallest radius (Å) the fishnet's local heights are averaged over. */
+/** Smallest and largest radii (Å) the fishnet's local heights are averaged over. */
 const NET_SMOOTHING = 6;
+const NET_SMOOTHING_MAX = 12;
+/** Finest membrane grid spacing (Å) a page can ask for; finer would slow every frame. */
+const MIN_GRID_SPACING = 2;
 /** Largest RMS misfit (Å) between the scene's sample positions and the finished pose for local heights to be used. */
 const NET_FIT_RMS = 1.5;
 const SILHOUETTE: OpSpec = { layer: 2, key: 'sil-l', kind: 'stroke', linecap: 'round' };

@@ -52,10 +52,13 @@ on the bulk midplane and is as thick as the bulk bilayer.
 In the 2-D → 3-D morph the band's local rises and drops flatten onto the bulk
 planes during the first 30 % of the transition. In 3-D each leaflet is a
 fishnet over a disc around the protein: it follows the local surface when a
-distortions file gives one (averaged over at least 6 Å; pores stay open), and
-otherwise holds the annular position next to the protein, easing to the bulk
-4–14 Å away. It eases to the bulk at the disc's rim. The translucent leaflet
-sheets behind it stay at the bulk planes.
+distortions file gives one (averaged over 6–12 Å; pores the drawn protein
+surrounds stay open, and gaps elsewhere, such as other subunits the view
+doesn't draw, are filled in smoothly from the lipid around), and otherwise
+holds the annular position next to the protein, easing to the bulk 4–14 Å
+away. Its spacing is `morph-grid-spacing` (see [morph-3d.md](morph-3d.md)). It
+eases to the bulk at the disc's rim. The translucent leaflet sheets behind it
+stay at the bulk planes.
 
 ## Placing the membrane
 

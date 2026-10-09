@@ -95,6 +95,11 @@ Neighbouring barrel strands are ≈ 4.8 Å apart, so the default leaves a gap
 between ribbons and keeps arrowheads from cutting into the next strand. The
 issue's suggested ~10 × 2.5 Å works, but the strands then overlap heavily.
 
+`morph-grid-spacing` sets the membrane grid's spacing in Å (from 2 Å up to
+the disc's radius; unset, `auto` or `0` sizes it from the membrane disc, an
+eighth of its radius within 4–8 Å). A finer grid shows more of the local
+surface but adds lines to every frame.
+
 `morph-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent
 perspective while the camera backs off to keep the scale at the target constant.
@@ -121,14 +126,22 @@ finished 3-D view stays vector (and exportable).
   across the element. The rims are depth-sorted with the protein, so the near
   rim passes in front of whatever lies behind it and marks the edge of the
   tint.
-- Each leaflet also carries a fishnet: a square grid of thin lines (4–8 Å
-  apart) over its disc, depth-sorted with the protein like the rims, so the
-  membrane stays visible without hiding the protein. The net follows the
-  leaflet's height: the local surface from a distortions file (averaged over
-  at least 6 Å, with pores left open), or else the annular height next to the
-  protein easing to the bulk 4–14 Å away. It eases to the bulk over the outer
-  fifth of the disc to meet the rim, and grows out of the flat planes as the
-  sheets fade in. The tinted sheets stay at the bulk planes. See
+- Each leaflet also carries a fishnet: a square grid of thin lines over its
+  disc (4–8 Å apart by default; see `morph-grid-spacing` above), depth-sorted
+  with the protein like the rims, so the membrane stays visible without hiding
+  the protein. The net follows the leaflet's height: the local surface from a
+  distortions file (averaged over 1.5 grid cells, kept within 6–12 Å), or
+  else the annular height next to the protein easing to the bulk 4–14 Å away.
+  Where the file has no lipid within 6 Å and the drawn protein surrounds the
+  point (its membrane-spanning parts lie in all twelve 30° sectors around it:
+  a pore), the net is left open. Where it has none elsewhere (other subunits,
+  which the view doesn't draw; the drawn protein's own footprint; or past the
+  file's edge) the net is filled in as a stretched membrane would be: each
+  point there is the mean of its neighbours along the lines, held by the lipid
+  around the gap and the bulk at the rim, so it neither tears nor steps. It
+  eases to the bulk over the outer fifth of the disc to meet the rim, and
+  grows out of the flat planes as the sheets fade in. The tinted sheets stay
+  at the bulk planes. See
   [membrane.md](membrane.md).
 - Consecutive sections of the same element are merged into one path whenever
   nothing drawn in between overlaps them on screen (convex-footprint test).

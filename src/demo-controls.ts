@@ -209,6 +209,16 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Strand ribbon thickness in the 3-D view (Å).',
   },
   {
+    attribute: 'morph-grid-spacing',
+    kind: 'number',
+    default: 0,
+    min: 0,
+    max: 20,
+    step: 2,
+    scope: 'all',
+    description: 'Membrane grid spacing in the 3-D view (Å, at least 2); 0 sizes it from the disc.',
+  },
+  {
     attribute: 'icon-bandwidth',
     kind: 'number',
     default: 0,
