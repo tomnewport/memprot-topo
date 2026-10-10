@@ -14,6 +14,9 @@ export interface Calpha {
   x: number;
   y: number;
   z: number;
+  /** The Cα's occupancy and temperature factor (B-factor) columns, when the file has them. */
+  occupancy?: number;
+  tempFactor?: number;
 }
 
 export interface ChainData {

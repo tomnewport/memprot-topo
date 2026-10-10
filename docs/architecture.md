@@ -113,7 +113,9 @@ All three views are SVG and are built from the same `ChainLayout`:
   it is needed. See [view-3d.md](view-3d.md).
 - **1-D sequence view**: `buildSequence` ([`layout/sequence.ts`](../src/layout/sequence.ts))
   gives each residue its position in the 2-D picture; [`sequence/`](../src/sequence/)
-  word-wraps the sequence with its secondary-structure cartoon and data lanes,
+  word-wraps the sequence with its secondary-structure cartoon, data lanes and
+  data tracks ([`tracks/`](../src/tracks/), drawn by `sequence/tracks-draw.ts`;
+  [data-tracks.md](data-tracks.md)),
   and animates the transition between it and the topology. See
   [sequence-view.md](sequence-view.md).
 
@@ -148,6 +150,7 @@ The `dimension` attribute moves between the three (1 → 2 → 3).
 | [`src/components/`](../src/components/)                   | The web components, the 2-D painter, residue data and chrome.         |
 | [`src/view3d/`](../src/view3d/)                           | The 3-D view and the 2-D ↔ 3-D morph, drawn as SVG.                   |
 | [`src/sequence/`](../src/sequence/)                       | The 1-D sequence view and the 1-D ↔ 2-D transition.                   |
+| [`src/tracks/`](../src/tracks/)                           | Data tracks: configuration, sources, series and their resolution.     |
 | [`src/theme/`](../src/theme/)                             | Theme tokens, built-in themes, registry and in-place repaint.         |
 | [`src/secondary-structure/`](../src/secondary-structure/) | Reserved for in-browser DSSP (#79).                                   |
 

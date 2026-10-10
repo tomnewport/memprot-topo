@@ -17,6 +17,7 @@ off a flag that is on by default.
 | `protein-data`                                                                                            | none        | Protein data as JSON. The `proteinData` property is the usual route.             |
 | `selection`                                                                                               | none        | `A`, `A:45` or `A:45-60`. See [selection.md](selection.md).                      |
 | `residue-colours`, `residue-widths`                                                                       | none        | Per-residue values. See [residue-data.md](residue-data.md).                      |
+| `tracks`                                                                                                  | none        | Data tracks as JSON. See [data-tracks.md](data-tracks.md).                       |
 | `residue-numbering`                                                                                       | `author`    | `author` or `uniprot` (via SIFTS). See [residue-data.md](residue-data.md).       |
 | `colour-scale`, `colour-domain`, `colour-label`                                                           | data range  | Residue colour scale and legend.                                                 |
 | `dimension`                                                                                               | `2`         | `1` sequence, `2` topology, `3` structure; fractions are part-way.               |
@@ -40,12 +41,14 @@ off a flag that is on by default.
 ## `<topology-loader>` attributes
 
 `pdb-id`, `sim-id` and `distortions` choose what to load. `theme*`,
-`membrane-detail`, `transition-*` and `structure-*` are passed through to the
-inner `<topology-display>`.
+`membrane-detail`, `transition-*`, `structure-*` and `tracks` are passed through to the
+inner `<topology-display>`. The loader also takes the `tracks` property and a
+`<script type="application/json" slot="tracks">` child.
 
 ## Properties and methods
 
-`proteinData`, `residueColours`, `residueWidths`, `residueNumbering`, `sequenceTracks`,
+`proteinData`, `residueColours`, `residueWidths`, `residueNumbering`, `tracks`,
+`sequenceTracks`,
 `distortions`, `membraneDetail`, `selection`, `dimension`, `fullscreen`,
 `transitionProgress` (read-only, 0 = 2-D, 1 = 3-D) and
 `setTransitionProgress(tau)`, `resetView()`, and the static `registerTheme`.

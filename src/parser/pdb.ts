@@ -57,7 +57,12 @@ export function parsePdb(content: string): RawChain[] {
     if (acc.residues.has(resKey)) continue;
     acc.residues.add(resKey);
     const resName = line.slice(17, 20).trim();
-    acc.calphas.push(resName ? { resSeq, iCode, resName, x, y, z } : { resSeq, iCode, x, y, z });
+    const ca: Calpha = resName ? { resSeq, iCode, resName, x, y, z } : { resSeq, iCode, x, y, z };
+    const occupancy = Number.parseFloat(line.slice(54, 60));
+    const tempFactor = Number.parseFloat(line.slice(60, 66));
+    if (Number.isFinite(occupancy)) ca.occupancy = occupancy;
+    if (Number.isFinite(tempFactor)) ca.tempFactor = tempFactor;
+    acc.calphas.push(ca);
   }
 
   return Array.from(chainMap.entries()).map(([chainId, acc]) => ({

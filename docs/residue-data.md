@@ -14,6 +14,9 @@ width.
 </script>
 ```
 
+The [data tracks](data-tracks.md) configuration's `chain` part sets the same
+series from a file column, e.g. a PDB file's `tempFactor`.
+
 ## Input
 
 Both series are keyed by chain ID, then author residue number (`resSeq`, as in
