@@ -18,6 +18,7 @@ off a flag that is on by default.
 | `selection`                                                                                               | none        | `A`, `A:45` or `A:45-60`. See [selection.md](selection.md).                      |
 | `residue-colours`, `residue-widths`                                                                       | none        | Per-residue values. See [residue-data.md](residue-data.md).                      |
 | `tracks`                                                                                                  | none        | Data tracks as JSON. See [data-tracks.md](data-tracks.md).                       |
+| `residue-numbering`                                                                                       | `author`    | `author` or `uniprot` (via SIFTS). See [residue-data.md](residue-data.md).       |
 | `colour-scale`, `colour-domain`, `colour-label`                                                           | data range  | Residue colour scale and legend.                                                 |
 | `dimension`                                                                                               | `2`         | `1` sequence, `2` topology, `3` structure; fractions are part-way.               |
 | `fit`                                                                                                     | `width`     | `width` or `content`. See [sizing.md](sizing.md).                                |
@@ -46,7 +47,8 @@ inner `<topology-display>`. The loader also takes the `tracks` property and a
 
 ## Properties and methods
 
-`proteinData`, `residueColours`, `residueWidths`, `tracks`, `sequenceTracks`,
+`proteinData`, `residueColours`, `residueWidths`, `residueNumbering`, `tracks`,
+`sequenceTracks`,
 `distortions`, `membraneDetail`, `selection`, `dimension`, `fullscreen`,
 `transitionProgress` (read-only, 0 = 2-D, 1 = 3-D) and
 `setTransitionProgress(tau)`, `resetView()`, and the static `registerTheme`.
