@@ -67,16 +67,20 @@ test('the 3-D view resolves its gradients inside the shadow DOM', async ({ page 
   expect(missing.count).toBeGreaterThan(0);
   expect(missing.missing).toEqual([]);
 
-  // And the browser paints them. An unresolved url(#…) paints nothing, so
-  // breaking the references must change the picture; if the browser could
-  // not resolve them in the first place, it would not.
+  // And the browser paints them. A url(#…) that does not resolve paints
+  // nothing, so swapping every reference for `none` must change the picture;
+  // if the browser could not resolve them in the first place, it would not.
+  // The swap rewrites the referring attributes so every engine repaints:
+  // renaming the gradients' ids instead left WebKit's picture unchanged.
   const painted = await morph.screenshot({ animations: 'disabled' });
   await page.evaluate(() => {
-    const root = document.getElementById('td-5g53')!.shadowRoot!;
-    for (const g of root.querySelectorAll(
-      'svg.morph-svg linearGradient, svg.morph-svg radialGradient',
-    )) {
-      g.id = `${g.id}-unresolved`;
+    const svg = document.getElementById('td-5g53')!.shadowRoot!.querySelector('svg.morph-svg')!;
+    for (const el of svg.querySelectorAll('*')) {
+      for (const attr of Array.from(el.attributes)) {
+        if (attr.value.includes('url(#')) {
+          el.setAttribute(attr.name, attr.value.replace(/url\(#[^)]+\)/g, 'none'));
+        }
+      }
     }
   });
   const unresolved = await morph.screenshot({ animations: 'disabled' });

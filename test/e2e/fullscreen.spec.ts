@@ -10,13 +10,15 @@ test('the full-screen button fills the window and comes back', async ({ page }) 
   await button.click();
   await expect(display).toHaveAttribute('fullscreen', '');
   await expect(button).toHaveText('Exit full screen');
-  const viewport = page.viewportSize()!;
+  // The window, not the viewport Playwright set: native full screen in
+  // headless Firefox takes the (larger) screen size.
   await expect
     .poll(async () => {
       const box = await display.boundingBox();
-      return box && [Math.round(box.width), Math.round(box.height)];
+      const win = await page.evaluate(() => [window.innerWidth, window.innerHeight]);
+      return box && [Math.round(box.width) - win[0], Math.round(box.height) - win[1]];
     })
-    .toEqual([viewport.width, viewport.height]);
+    .toEqual([0, 0]);
   // The diagram is still drawn while full screen.
   await expect(display.locator('polygon.ss-element').first()).toBeVisible();
 
@@ -24,5 +26,5 @@ test('the full-screen button fills the window and comes back', async ({ page }) 
   await expect(display).not.toHaveAttribute('fullscreen', '');
   await expect(button).toHaveText('Full screen');
   const box = await display.boundingBox();
-  expect(box!.width).toBeLessThan(viewport.width);
+  expect(box!.width).toBeLessThan(page.viewportSize()!.width);
 });
