@@ -1,4 +1,4 @@
-REMARK    TRIMMED FIXTURE: 2omf_default_dppc at.pdb from MemProtMD, the header, the
+REMARK    TRIMMED: MemProtMD 2omf_default_dppc structures/at.pdb: the header, the
 REMARK    first 20 atoms, then every protein CA and lipid P8 atom (no water or ions)
 TITLE     Gnomes, ROc Andsters And Chili Sauce
 REMARK    THIS IS A SIMULATION BOX

@@ -7,7 +7,7 @@ import {
   resolveMembrane,
 } from '../../../src/membrane/index.js';
 import { helixCalphas, syntheticDistortions } from '../fixtures/distortions.js';
-import OMF_AT from '../fixtures/2omf-memprotmd-at.pdb?raw';
+import OMF_AT from '../../../examples/2omf_default_dppc-at.pdb?raw';
 import OMF_OPM from '../../../examples/2omf.pdb?raw';
 
 const f = (v: number, w: number, d: number) => v.toFixed(d).padStart(w);

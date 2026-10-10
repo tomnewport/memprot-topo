@@ -41,7 +41,7 @@ function tokeniseLine(line: string): string[] {
  * Parse a loop_ block for a given mmcif category (e.g. '_struct_conf').
  * Returns an array of row objects keyed by the field name (part after the dot).
  */
-function parseMmcifLoop(content: string, category: string): Array<Record<string, string>> {
+export function parseMmcifLoop(content: string, category: string): Array<Record<string, string>> {
   const lines = content.split('\n');
   const categoryPrefix = category + '.';
   const results: Array<Record<string, string>> = [];
