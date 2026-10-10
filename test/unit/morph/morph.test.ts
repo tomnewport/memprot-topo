@@ -3,14 +3,10 @@ import { unrollChain, unwrapBarrel } from '../../../src/unroll/index.js';
 import { analyseBarrel } from '../../../src/contacts/index.js';
 import { buildMorphModel } from '../../../src/morph/model.js';
 import { computePose, localProgress } from '../../../src/morph/curtain.js';
-import {
-  MorphRenderer,
-  Veil,
-  fitLine,
-  findKink,
-  DEFAULT_MORPH_OPTIONS,
-  type SurfaceShading,
-} from '../../../src/morph/renderer.js';
+import { MorphRenderer } from '../../../src/morph/renderer.js';
+import { DEFAULT_MORPH_OPTIONS } from '../../../src/morph/options.js';
+import { Veil, type SurfaceShading } from '../../../src/morph/membrane-layer.js';
+import { fitLine, findKink } from '../../../src/morph/prims/kinks.js';
 import { Camera } from '../../../src/morph/camera.js';
 import { buildFishnet } from '../../../src/morph/net.js';
 import type { MorphScene, MorphSegment, MorphElement } from '../../../src/morph/types.js';
