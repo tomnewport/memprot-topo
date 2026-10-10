@@ -5,7 +5,15 @@ import { blendFishnet, discRadius, sameNetShape, type Fishnet } from './net.js';
 import { clamp01, FOG, hexRgb, lerp, type RGB, smooth } from './colour.js';
 import { Pooled, type Prim } from './engine.js';
 import { DEFAULT_VIEW3D_OPTIONS, type View3DOptions } from './options.js';
-import { sheetsIn, SURFACE_BANDS, Veil } from './membrane-layer.js';
+import {
+  NET_ALPHA,
+  netBandColours,
+  netBands,
+  sheetsIn,
+  SURFACE_ALPHA,
+  SURFACE_BANDS,
+  Veil,
+} from './membrane-layer.js';
 import type { FrameCtx } from './prims/frame.js';
 import { helixPrims } from './prims/helix.js';
 import { loopPrims, tiePrims } from './prims/loop.js';
@@ -25,6 +33,7 @@ import {
   surfaceShading,
 } from './membrane-layer.js';
 import type { ContextChain } from './prims/frame.js';
+import { type KeyContent, changeRange, SurfaceKey, swatchesOver } from './surface-key.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -94,6 +103,8 @@ export class View3DRenderer {
   /** Writes each frame's runs into the runs group, reusing its elements. */
   private readonly writer: RunWriter;
   private readonly labelsG: SVGGElement;
+  /** Colour key for a membrane coloured by thickness; null when it isn't. */
+  private readonly surfaceKey: SurfaceKey | null;
   private readonly texts: Pooled<SVGTextElement>[] = [];
   private framing: Framing | null = null;
   /** The leaflets' fishnets at τ = 1, about the final disc centre. */
@@ -187,7 +198,12 @@ export class View3DRenderer {
     this.runsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG.setAttribute('font-family', st.labelFontFamily);
+    this.surfaceKey =
+      options.membraneStyle === 'surface' || options.membraneColour === 'thickness'
+        ? new SurfaceKey()
+        : null;
     svg.append(this.defs, backG, this.runsG, this.labelsG);
+    if (this.surfaceKey) svg.append(this.surfaceKey.el);
     this.writer = new RunWriter(this.runsG, this.defs, idPrefix);
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
@@ -807,6 +823,22 @@ export class View3DRenderer {
     };
     this.writer.emit(mergeRuns(prims, width, height, look), look);
     this.drawLabels(ctx, labelAlpha);
+    if (this.surfaceKey) {
+      // Swatches as each band looks on the upper leaflet.
+      const net = this.drawnNet;
+      const key: KeyContent | null = surface
+        ? {
+            swatches: swatchesOver(surface.colours, this.ground, SURFACE_ALPHA.upper),
+            range: changeRange(surface),
+          }
+        : net && net.upper.length + net.lower.length > 0
+          ? {
+              swatches: swatchesOver(netBandColours(st), this.ground, NET_ALPHA.upper),
+              range: netBands(net, { upper, lower }).range,
+            }
+          : null;
+      this.surfaceKey.draw(key, planesOn ? eDisc : 0, st, this.ground, scrollLeft, height);
+    }
 
     this.svg.setAttribute('viewBox', `0 0 ${width.toFixed(2)} ${height.toFixed(2)}`);
     this.svg.setAttribute('width', width.toFixed(2));

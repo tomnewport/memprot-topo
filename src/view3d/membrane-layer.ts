@@ -804,6 +804,69 @@ export function buildNet(
   });
 }
 
+/** Colour of the plain fishnet lines. */
+export function netEdge(st: View3DModel['scene']['style']): RGB {
+  return mixRgb(hexRgb(st.membraneEdge), hexRgb(st.midplane), NET_DARKEN);
+}
+
+/**
+ * Colour of each band for the fishnet lines coloured by thickness: the plain
+ * line colour at the bulk thickness, easing to `membraneThinned` or
+ * `membraneThickened` as the surface style's bands do.
+ */
+export function netBandColours(st: View3DModel['scene']['style']): RGB[] {
+  const edge = netEdge(st);
+  const thinned = hexRgb(st.membraneThinned);
+  const thickened = hexRgb(st.membraneThickened);
+  const half = (SURFACE_BANDS - 1) / 2;
+  return Array.from({ length: SURFACE_BANDS }, (_, i) => {
+    const t = (i - half) / half;
+    return t >= 0 ? mixRgb(edge, thickened, t) : mixRgb(edge, thinned, -t);
+  });
+}
+
+/** Thickness bands of a fishnet's segments, and the range of the change they show. */
+export interface NetBands {
+  /** Band of each segment of each line (-1 where the net is open). */
+  bands: Record<Leaf, Int8Array[]>;
+  /** Lowest and highest thickness change (Å) at the segments; null if none. */
+  range: [number, number] | null;
+}
+
+const netBandsCache = new WeakMap<Fishnet, NetBands>();
+
+/**
+ * The colour band of each fishnet segment: the change in the bilayer's
+ * thickness at its midpoint, as the surface style colours it. Kept per net.
+ */
+export function netBands(net: Fishnet, bulk: Record<Leaf, number>): NetBands {
+  const hit = netBandsCache.get(net);
+  if (hit) return hit;
+  let lo = Infinity;
+  let hi = -Infinity;
+  const of = (leaf: Leaf) =>
+    net[leaf].map((line) => {
+      const m = line.length / 3;
+      const out = new Int8Array(Math.max(0, m - 1)).fill(-1);
+      for (let i = 0; i < m - 1; i++) {
+        const z = (line[i * 3 + 2] + line[i * 3 + 5]) / 2;
+        if (Number.isNaN(z)) continue;
+        const x = (line[i * 3] + line[i * 3 + 3]) / 2;
+        const y = (line[i * 3 + 1] + line[i * 3 + 4]) / 2;
+        const dz = thicknessChange(leaf, z, net.heightAt(other(leaf), x, y), bulk);
+        if (Number.isNaN(dz)) continue;
+        lo = Math.min(lo, dz);
+        hi = Math.max(hi, dz);
+        out[i] = surfaceBand(dz);
+      }
+      return out;
+    });
+  const bands = { upper: of('upper'), lower: of('lower') };
+  const out: NetBands = { bands, range: lo <= hi ? [lo, hi] : null };
+  netBandsCache.set(net, out);
+  return out;
+}
+
 /**
  * The leaflets' fishnets, depth-sorted with the protein. They grow out of
  * the bulk planes as the sheets fade in (`alpha`); `k` scales the final
@@ -823,15 +886,20 @@ export function netPrims(
   if (!net) return;
   const { cam, prims, fogAt } = ctx;
   const st = env.model.scene.style;
-  const edge = mixRgb(hexRgb(st.membraneEdge), hexRgb(st.midplane), NET_DARKEN);
+  const edge = netEdge(st);
   const ground = env.ground;
+  // Coloured by thickness: each segment by its band.
+  const byBand =
+    env.options.membraneColour === 'thickness'
+      ? { ...netBands(net, { upper, lower }), colours: netBandColours(st) }
+      : null;
   let sub = 0;
   for (const [leaf, bulk, id] of [
     ['upper', upper, -13],
     ['lower', lower, -14],
   ] as const) {
     const opacity = NET_ALPHA[leaf] * alpha;
-    for (const line of net[leaf]) {
+    for (const [j, line] of net[leaf].entries()) {
       const m = line.length / 3;
       const p = new Float64Array(m * 3);
       for (let i = 0; i < m; i++) {
@@ -846,7 +914,8 @@ export function netPrims(
         if (Number.isNaN(line[i * 3 + 2] + line[i * 3 + 5])) continue;
         const pts = [p[i * 3], p[i * 3 + 1], p[i * 3 + 3], p[i * 3 + 4]];
         const depth = (p[i * 3 + 2] + p[i * 3 + 5]) / 2;
-        const c = fogged(edge, fogAt(depth), ground);
+        const band = byBand ? byBand.bands[leaf][j][i] : -1;
+        const c = fogged(band >= 0 ? byBand!.colours[band] : edge, fogAt(depth), ground);
         prims.push({
           id,
           order: -1,

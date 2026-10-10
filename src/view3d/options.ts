@@ -3,7 +3,12 @@
  * so pages can read them without loading the renderer.
  */
 
-import { DEFAULT_MEMBRANE_STYLE, type MembraneStyle } from './membrane-style.js';
+import {
+  DEFAULT_MEMBRANE_COLOUR,
+  DEFAULT_MEMBRANE_STYLE,
+  type MembraneColour,
+  type MembraneStyle,
+} from './membrane-style.js';
 
 /** Tunable 3-D appearance. Lengths in Å, angles in radians. */
 export interface View3DOptions {
@@ -38,6 +43,8 @@ export interface View3DOptions {
   gridSpacing: number;
   /** How the leaflets are drawn: grid or polar lines, or a coloured surface. */
   membraneStyle: MembraneStyle;
+  /** How the grid and polar lines are coloured (the surface is always coloured). */
+  membraneColour: MembraneColour;
 }
 
 export const DEFAULT_VIEW3D_OPTIONS: View3DOptions = {
@@ -53,4 +60,5 @@ export const DEFAULT_VIEW3D_OPTIONS: View3DOptions = {
   sweep: 0.35,
   gridSpacing: 0,
   membraneStyle: DEFAULT_MEMBRANE_STYLE,
+  membraneColour: DEFAULT_MEMBRANE_COLOUR,
 };

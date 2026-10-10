@@ -28,6 +28,7 @@ const FORWARDED = [
   'structure-strand-thickness',
   'structure-grid-spacing',
   'structure-membrane-style',
+  'structure-membrane-colour',
   'scale',
   'height',
   'tracks',

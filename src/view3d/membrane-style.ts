@@ -7,3 +7,11 @@
 export type MembraneStyle = 'grid' | 'polar' | 'surface';
 export const MEMBRANE_STYLES: readonly MembraneStyle[] = ['grid', 'polar', 'surface'];
 export const DEFAULT_MEMBRANE_STYLE: MembraneStyle = 'grid';
+
+/**
+ * How the grid and polar lines are coloured: one plain colour, or by how much
+ * thinner or thicker the bilayer is than the bulk, as the surface style is.
+ */
+export type MembraneColour = 'plain' | 'thickness';
+export const MEMBRANE_COLOURS: readonly MembraneColour[] = ['plain', 'thickness'];
+export const DEFAULT_MEMBRANE_COLOUR: MembraneColour = 'plain';

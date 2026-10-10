@@ -56,7 +56,7 @@ export class View3DController {
   /** Last scrollLeft we applied (writing it forces a layout, so skip no-ops). */
   private appliedScroll = NaN;
   private readonly orbit: Orbit = { az: 0, el: 0 };
-  private drag: { x: number; y: number; id: number; touch: boolean } | null = null;
+  private drag: { x: number; y: number; id: number } | null = null;
   private options: View3DOptions;
   /** Model ids of the selected elements and loops. */
   private selectedIds: number[] = [];
@@ -378,13 +378,14 @@ export class View3DController {
 
   private bindOrbit(svg: SVGSVGElement): void {
     svg.style.cursor = 'grab';
-    // Touch: a horizontal drag turns the view, a vertical swipe still scrolls
-    // the page (the diagram can fill most of a phone's screen).
+    // Touch: a vertical swipe still scrolls the page (the diagram can fill
+    // most of a phone's screen); a drag that starts sideways isn't a scroll,
+    // so the page keeps it to the end, and it tilts as well as turns.
     svg.style.touchAction = 'pan-y';
     svg.setAttribute('tabindex', '0');
     svg.addEventListener('pointerdown', (e) => {
       if (this.tau <= 0) return;
-      this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId, touch: e.pointerType === 'touch' };
+      this.drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
       svg.setPointerCapture(e.pointerId);
       svg.style.cursor = 'grabbing';
     });
@@ -394,7 +395,7 @@ export class View3DController {
       const dy = e.clientY - this.drag.y;
       this.drag.x = e.clientX;
       this.drag.y = e.clientY;
-      this.turn(-dx * 0.01, this.drag.touch ? 0 : dy * 0.008);
+      this.turn(-dx * 0.01, dy * 0.008);
     });
     const end = (e: PointerEvent): void => {
       if (!this.drag || e.pointerId !== this.drag.id) return;

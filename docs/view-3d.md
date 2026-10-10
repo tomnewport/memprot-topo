@@ -73,9 +73,10 @@ ratio. A precomputed zoom track backs the camera off where a half-rolled frame
 would otherwise run out of the picture.
 
 Once in 3-D, drag to orbit, or use the arrow keys on the focused diagram. On
-touch screens a horizontal drag turns the view and a vertical swipe still
-scrolls the page (the diagram can fill most of a phone screen), so tilting is
-mouse/pen/keyboard only. The framing is refitted when the container changes
+touch screens a vertical swipe still scrolls the page (the diagram can fill
+most of a phone screen); a drag that starts sideways turns the view, and once
+started it tilts it too, since the browser leaves a gesture that began
+sideways to the page. The framing is refitted when the container changes
 width. With `prefers-reduced-motion: reduce` the 3D button jumps straight to
 the other view instead of animating.
 
@@ -112,6 +113,12 @@ surface but adds lines to every frame.
 | `grid` (default)           | A square grid of lines, `structure-grid-spacing` apart.                                      |
 | `polar`                    | Rings and spokes: rings follow the protein's outline near it and become circles further out. |
 | `surface`                  | A translucent surface per leaflet, coloured by its rise or drop from the bulk plane.         |
+
+With `structure-membrane-colour="thickness"` the grid or polar lines are
+coloured by the same thickness change as the surface (below): each segment
+takes the band at its midpoint, from the plain line colour at the bulk
+thickness towards `membraneThinned` or `membraneThickened`, with the same key.
+The default, `plain`, draws them in one colour.
 
 The polar rings are spaced by `structure-grid-spacing`. The first follows the
 protein-lipid interface, taken as 4 Å out from the drawn protein's
@@ -154,7 +161,13 @@ either way. Both leaflets take the same colour at each point, so a bilayer
 that bends without changing thickness stays uncoloured. Where only the other
 leaflet is open (a pore on that side alone), a leaflet's own shift from its
 bulk plane is doubled, as if the bilayer were symmetric there. The bands meet
-along smooth contours. The upper leaflet is
+along smooth contours. A key in the bottom-left corner of the view shows the
+bands, marks the saturated ends (≤ −6 and ≥ +6 Å), and, when the bilayer's
+thickness change runs past either end, the range it spans, so a strongly
+distorted bilayer that reads as one solid colour says how far it goes. The
+distortions file's B-factor clamp (±10 Å per leaflet) doesn't apply: the
+heights come from the points' positions, which aren't clamped (7AHL spans
+about −39 to +1 Å). The upper leaflet is
 40 % opaque and the lower 30 %. A piece of protein seen through the surface
 takes the colour of the band where its line of sight first crosses the
 surface (found by marching along the line of sight about every 1 Å across the
