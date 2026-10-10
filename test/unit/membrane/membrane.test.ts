@@ -6,6 +6,7 @@ import {
   MEMBRANE_OVERHANG_PX,
   MEMBRANE_REACH_A,
   alignToDistortions,
+  membraneCore,
   membraneAtDetail,
   membraneProfile,
   parseDistortions,
@@ -123,6 +124,22 @@ describe('LeafletSurface.heightAt', () => {
       prev = h;
     }
     expect(worst).toBeLessThan(0.05);
+  });
+});
+
+describe('membraneCore', () => {
+  it('is ±12 Å for the 40 Å default bilayer', () => {
+    expect(membraneCore(DEFAULT_BULK)).toEqual({ upper: 12, lower: -12 });
+  });
+
+  it('sits 8 Å inside each leaflet of thin, thick and asymmetric bilayers', () => {
+    expect(membraneCore({ upper: 15, lower: -15 })).toEqual({ upper: 7, lower: -7 });
+    expect(membraneCore({ upper: 25, lower: -25 })).toEqual({ upper: 17, lower: -17 });
+    expect(membraneCore({ upper: 26, lower: -14 })).toEqual({ upper: 18, lower: -6 });
+  });
+
+  it('closes to the midpoint in a bilayer thinner than 16 Å', () => {
+    expect(membraneCore({ upper: 9, lower: -5 })).toEqual({ upper: 2, lower: 2 });
   });
 });
 

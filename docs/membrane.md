@@ -11,7 +11,8 @@ positions and then to the bulk:
    bilayer (0 inside it), fading to annular 10–30 Å from it.
 2. **Annular**: the leaflet positions next to the protein, where the residues
    are within 10 Å of the transmembrane segments along the membrane plane
-   (in-plane distance to any Cα with |z| < 12 Å, in any chain), fading to
+   (in-plane distance to any Cα in the membrane core, in any chain: more
+   than 8 Å inside both bulk leaflets, so |z| < 12 Å for the 40 Å default), fading to
    bulk 10–30 Å from them.
 3. **Bulk**: the far-field leaflet positions everywhere else.
 
@@ -169,7 +170,8 @@ that frame, trying in turn:
 1. already centred on the midplane (no shift);
 2. in the box frame (shifted by −midplane, so that z = 0 is the bulk midplane).
 
-A placement fits when at least 6 Cα lie within 12 Å of the midplane and their
+A placement fits when at least 6 Cα lie in the core of the file's bulk bilayer
+(more than 8 Å inside both leaflets) and their
 mean xy is within 8 Å (or 15 % of the disc radius, if larger) of the disc
 centre. A structure that fits is moved accordingly and drawn against the
 local surfaces. One that fits neither (for example OPM coordinates, which are

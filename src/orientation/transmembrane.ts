@@ -1,27 +1,38 @@
 import type { Calpha, ChainData } from '../types.js';
-import { MEMBRANE_CORE_HALF } from '../membrane/model.js';
+import { DEFAULT_BULK, membraneCore } from '../membrane/model.js';
+import type { LeafletPair } from '../membrane/types.js';
 
 export interface TransmembraneOptions {
   /**
-   * Minimum |z| (Å) that must be reached on each side of the bilayer for a
-   * chain to count as transmembrane. Defaults to `MEMBRANE_CORE_HALF` (12 Å) — comfortably inside the
-   * hydrophobic core for a DPPC bilayer (half-width ≈ 15 Å).
+   * Edges (Å, membrane frame) of the membrane core a chain must reach on both
+   * sides to count as transmembrane: one Cα at or above `upper` and one at or
+   * below `lower`. Usually `membraneCore(membrane.bulk)`. Defaults to the
+   * core of {@link DEFAULT_BULK}, ±12 Å.
+   */
+  core?: LeafletPair;
+  /**
+   * A symmetric core, ±`threshold` Å about z = 0, for callers without a
+   * membrane. Ignored when `core` is given.
    */
   threshold?: number;
 }
 
 /**
- * A chain is transmembrane if at least one of its Cα sits above +threshold
- * and at least one sits below −threshold (in the membrane frame, where z = 0
- * is the bilayer midplane).
+ * A chain is transmembrane if at least one of its Cα reaches the upper edge
+ * of the membrane core and at least one reaches the lower edge (in the
+ * membrane frame, where z = 0 is the bulk midplane).
  */
 export function isTransmembrane(calphas: Calpha[], options: TransmembraneOptions = {}): boolean {
-  const threshold = options.threshold ?? MEMBRANE_CORE_HALF;
+  const core =
+    options.core ??
+    (options.threshold !== undefined
+      ? { upper: options.threshold, lower: -options.threshold }
+      : membraneCore(DEFAULT_BULK));
   let above = false;
   let below = false;
   for (const ca of calphas) {
-    if (ca.z >= threshold) above = true;
-    else if (ca.z <= -threshold) below = true;
+    if (ca.z >= core.upper) above = true;
+    else if (ca.z <= core.lower) below = true;
     if (above && below) return true;
   }
   return false;

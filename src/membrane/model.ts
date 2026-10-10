@@ -10,12 +10,28 @@ import type { LeafletPair } from './types.js';
 export const DEFAULT_BULK: Readonly<LeafletPair> = { upper: 20, lower: -20 };
 
 /**
- * |z| (Å) from the bulk midplane within which a Cα counts as membrane core:
- * when lining a structure up with a distortions file, and as part of the
- * transmembrane segments the annular leaflets follow. Also the transmembrane
- * test's default threshold (`isTransmembrane`).
+ * Depth (Å) below each bulk leaflet at which the membrane core starts: 8 Å,
+ * so the 40 Å default bilayer has its core within ±12 Å of the midplane.
  */
-export const MEMBRANE_CORE_HALF = 12;
+export const MEMBRANE_CORE_INSET = 8;
+
+/**
+ * The membrane core between `bulk` leaflets: z (Å) of its upper and lower
+ * edges, each {@link MEMBRANE_CORE_INSET} inside its own leaflet, so an
+ * asymmetric bilayer gets an asymmetric core. In a bilayer too thin to have
+ * one, both edges sit at the midpoint of the leaflets. A Cα strictly between
+ * the edges is in the core: when lining a structure up with a distortions
+ * file, and as part of the transmembrane segments the annular leaflets
+ * follow. A chain that reaches both edges is transmembrane
+ * (`isTransmembrane`).
+ */
+export function membraneCore(bulk: LeafletPair): LeafletPair {
+  const mid = (bulk.upper + bulk.lower) / 2;
+  return {
+    upper: Math.max(mid, bulk.upper - MEMBRANE_CORE_INSET),
+    lower: Math.min(mid, bulk.lower + MEMBRANE_CORE_INSET),
+  };
+}
 
 /** Fewest core Cα for a candidate alignment to be judged at all. */
 const MIN_CORE = 6;
@@ -75,8 +91,8 @@ export interface Membrane {
  * distortions files in the same simulation-box frame, with the analysed
  * surface patch centred on the protein. Two placements are tried: one
  * already centred on the midplane (shift = 0), then the box frame as is
- * (shift = −midplane). A placement fits when at least 6 Cα lie within 12 Å
- * of the midplane and, on average, sit near the patch centre: within 8 Å or
+ * (shift = −midplane). A placement fits when at least 6 Cα lie in the core
+ * of the file's bulk bilayer ({@link membraneCore}) and, on average, sit near the patch centre: within 8 Å or
  * 15 % of the patch radius, whichever is larger. A box-frame structure has
  * no Cα near z = 0, so it fails the first; a structure in another frame
  * (e.g. OPM, which centres the protein on the origin and rotates it) fails
@@ -84,12 +100,14 @@ export interface Membrane {
  */
 export function alignToDistortions(calphas: Point3[], d: MembraneDistortions): number | null {
   const tolerance = Math.max(8, 0.15 * d.radius);
+  const core = membraneCore(d.bulk);
   for (const shift of [0, -d.midplane]) {
     let n = 0;
     let sx = 0;
     let sy = 0;
     for (const c of calphas) {
-      if (Math.abs(c.z + shift) >= MEMBRANE_CORE_HALF) continue;
+      const z = c.z + shift;
+      if (z <= core.lower || z >= core.upper) continue;
       n++;
       sx += c.x;
       sy += c.y;
