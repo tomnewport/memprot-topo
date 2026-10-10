@@ -139,6 +139,7 @@ The `dimension` attribute moves between the three (1 → 2 → 3).
 | Directory                                                 | Role                                                                  |
 | --------------------------------------------------------- | --------------------------------------------------------------------- |
 | [`src/parser/`](../src/parser/)                           | PDB Cα and DSSP mmCIF parsing; merge into `ProteinData`.              |
+| [`src/numbering/`](../src/numbering/)                     | UniProt → structure residue numbering from SIFTS.                     |
 | [`src/membrane/`](../src/membrane/)                       | Leaflet positions, distortions files, the 2-D membrane profile.       |
 | [`src/orientation/`](../src/orientation/)                 | Which chains are transmembrane.                                       |
 | [`src/contacts/`](../src/contacts/)                       | β-strand pairing and β-barrel geometry.                               |

@@ -36,6 +36,42 @@ and negative values count as 0. To map another quantity, scale it first, e.g.
 `2 × contact fraction`. Data for chains other than the one shown is kept, so switching
 chain shows that chain's values with the same colour mapping.
 
+## UniProt numbering
+
+Data from UniProt-based sources (variants, conservation, sequence features) is
+numbered along the UniProt sequence, which usually differs from the
+structure's author numbering. Set `residue-numbering="uniprot"` (or the
+`residueNumbering` property) to give `residueColours`, `residueWidths` and
+`sequenceTracks` in UniProt numbering:
+
+```html
+<topology-display residue-numbering="uniprot"></topology-display>
+<script type="module">
+  const view = document.querySelector('topology-display');
+  view.proteinData = data; // data.pdbId names the PDB entry, e.g. '5g53'
+  view.residueColours = { C: { 166: 1 } }; // UniProt 166 is author residue 40 in 5G53
+</script>
+```
+
+The map comes from PDBe's residue-level SIFTS file for `proteinData.pdbId`
+(`https://www.ebi.ac.uk/pdbe/files/sifts/<id>.xml.gz`), fetched once per
+entry and shared by every display on the page. Until it arrives no residue
+data is drawn, and if it can't be fetched (no network, or a `pdbId` that is
+not a PDB ID) none is drawn and a warning is logged, so no value lands on the
+wrong residue. Residues with no UniProt counterpart (tags, linkers, residues
+not observed) get no value. A chain fused to another protein (e.g. a receptor
+with T4 lysozyme or BRIL) is mapped through the UniProt entry covering most of
+its residues; the fusion partner has no UniProt numbers.
+
+Chain IDs stay the structure's author chain IDs. The default,
+`residue-numbering="author"`, needs no network. `selection` is always in
+author numbering. `<topology-loader>` does not offer UniProt numbering, as
+MemProtMD renumbers its structures from 1 (#77).
+
+The map is also available on its own: `fetchUniprotNumbering(pdbId)` returns
+it per chain (UniProt position → residue key), and `renumberSeries(series,
+map)` moves a series into the structure's numbering.
+
 ## Colour modes
 
 The mode follows the values. When every value is a number, colours come from a

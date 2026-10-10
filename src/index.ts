@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './residue-key.js';
+export * from './numbering/index.js';
 export * from './parser/index.js';
 export * from './components/index.js';
 export * from './unroll/index.js';
