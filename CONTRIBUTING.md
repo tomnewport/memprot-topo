@@ -82,4 +82,5 @@ Before opening a PR, please confirm:
 - [ ] Lint and format checks pass (`npm run lint && npm run format:check`)
 - [ ] Commit messages follow Conventional Commits
 - [ ] The PR description explains _what_ changed and _why_
+- [ ] The PR description links its issue with `Closes #N` (or `Part of #N` for partial work); `(#N)` or `for #N` does not close the issue
 - [ ] AI assistance (if any) is disclosed in the PR description

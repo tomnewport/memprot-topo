@@ -38,4 +38,5 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 
 - PR descriptions should state when Claude Code was used to generate or substantially revise code.
 - Commit messages may include the trailer `Co-authored-by: Claude (Anthropic)` where appropriate.
+- PR descriptions must link the issue with `Closes #N` (or `Part of #N` for partial work) so GitHub closes it on merge; see `.github/pull_request_template.md`.
 - Reviewers should apply the same scrutiny to AI-generated code as to human-written code.
