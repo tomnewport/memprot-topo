@@ -165,6 +165,32 @@ export interface TopologyElementDetail extends TopologySelection {
   type: 'helix' | 'strand';
 }
 
+/** `detail` of `dimension-change` events: the dimension now shown, 1 to 3. */
+export interface DimensionChangeDetail {
+  dimension: number;
+}
+
+/** `detail` of `theme-change` events: the name of the theme now in use. */
+export interface ThemeChangeDetail {
+  name: string;
+}
+
+/** `detail` of `fullscreen-change` events. */
+export interface FullscreenChangeDetail {
+  fullscreen: boolean;
+}
+
+/** The events `<topology-display>` dispatches, by type. All bubble and are composed. */
+export interface TopologyDisplayEventMap {
+  'chain-select': CustomEvent<TopologySelection>;
+  'element-click': CustomEvent<TopologyElementDetail>;
+  /** `detail` is null when the pointer leaves an element. */
+  'element-hover': CustomEvent<TopologyElementDetail | null>;
+  'dimension-change': CustomEvent<DimensionChangeDetail>;
+  'theme-change': CustomEvent<ThemeChangeDetail>;
+  'fullscreen-change': CustomEvent<FullscreenChangeDetail>;
+}
+
 /** A parsed `selection` attribute; `start`/`end` are null for a whole chain. */
 interface ParsedSelection {
   chainId: string;
@@ -966,7 +992,7 @@ export class TopologyDisplay extends HTMLElement {
 
   private dispatchFullscreenChange(): void {
     this.dispatchEvent(
-      new CustomEvent('fullscreen-change', {
+      new CustomEvent<FullscreenChangeDetail>('fullscreen-change', {
         detail: { fullscreen: this.fullscreen },
         bubbles: true,
         composed: true,
@@ -1606,8 +1632,11 @@ export class TopologyDisplay extends HTMLElement {
     this.emit('chain-select', detail);
   }
 
-  private emit<T>(type: string, detail: T): void {
-    this.dispatchEvent(new CustomEvent<T>(type, { detail, bubbles: true, composed: true }));
+  private emit<K extends keyof TopologyDisplayEventMap>(
+    type: K,
+    detail: TopologyDisplayEventMap[K]['detail'],
+  ): void {
+    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
   /** Event detail for an SS element polygon. */
@@ -1904,7 +1933,7 @@ export class TopologyDisplay extends HTMLElement {
     if (p !== this._lastPosition) {
       this._lastPosition = p;
       this.dispatchEvent(
-        new CustomEvent('dimension-change', {
+        new CustomEvent<DimensionChangeDetail>('dimension-change', {
           detail: { dimension: 1 + p },
           bubbles: true,
           composed: true,
@@ -1956,6 +1985,12 @@ export interface SequenceTrack {
   scale?: string[];
   /** Value range; by default the data's. */
   domain?: [number, number];
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'topology-display': TopologyDisplay;
+  }
 }
 
 if (!customElements.get('topology-display')) {

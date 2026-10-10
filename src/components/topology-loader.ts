@@ -172,6 +172,12 @@ function forward(from: Element, to: Element, name: string): void {
   else to.setAttribute(name, value);
 }
 
+declare global {
+  interface HTMLElementTagNameMap {
+    'topology-loader': TopologyLoader;
+  }
+}
+
 if (!customElements.get('topology-loader')) {
   customElements.define('topology-loader', TopologyLoader);
 }

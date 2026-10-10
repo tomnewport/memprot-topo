@@ -5,15 +5,17 @@
   "type": "module",
   "main": "dist/memprot2d.cjs",
   "module": "dist/memprot2d.js",
+  "types": "dist/types/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/types/index.d.ts",
       "import": "./dist/memprot2d.js",
       "require": "./dist/memprot2d.cjs"
     }
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && tsc -p tsconfig.build.json",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx --no-error-on-unmatched-pattern",
     "lint:fix": "eslint src --ext .ts,.tsx --fix --no-error-on-unmatched-pattern",
