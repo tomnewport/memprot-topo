@@ -1,16 +1,42 @@
 import { mmcifCategory, parseMmcifLoops } from './mmcif-tokenizer.js';
 import type { RawSSSegment } from './types.js';
 
-export function parseDsspMmcif(content: string): RawSSSegment[] {
+export interface DsspParseOptions {
+  /**
+   * Draw DSSP's 3₁₀ helices (`HELX_RH_3T_P`) as helices. Off by default:
+   * they are usually three or four residues of a loop or a helix cap.
+   */
+  helix310?: boolean;
+}
+
+/**
+ * Whether a `_struct_conf.conf_type_id` is drawn as a helix (issue #79).
+ * α (`HELX_RH_AL_P`, or the generic `HELX_P`) and π (`HELX_RH_PI_P`; DSSP 4
+ * gives π priority inside α helices) are helices; 3₁₀ only with `helix310`.
+ * Polyproline II (`HELX_LH_PP_P`), turns and anything else are coil.
+ */
+export function isHelixConfType(confType: string, options: DsspParseOptions = {}): boolean {
+  switch (confType) {
+    case 'HELX_P':
+    case 'HELX_RH_AL_P':
+    case 'HELX_RH_PI_P':
+      return true;
+    case 'HELX_RH_3T_P':
+      return options.helix310 === true;
+    default:
+      return false;
+  }
+}
+
+export function parseDsspMmcif(content: string, options: DsspParseOptions = {}): RawSSSegment[] {
   const segments: RawSSSegment[] = [];
   const loops = parseMmcifLoops(content);
 
-  // Parse helices from _struct_conf. _struct_conf can also contain TURN_P and
-  // other non-helix conformations — filter on conf_type_id starting with 'HELX'.
+  // Parse helices from _struct_conf, which also lists turns and
+  // polyproline II stretches; see isHelixConfType for which rows count.
   const confRows = mmcifCategory(loops, '_struct_conf');
   for (const row of confRows) {
-    const confType = row['conf_type_id'] ?? '';
-    if (!confType.startsWith('HELX')) continue;
+    if (!isHelixConfType(row['conf_type_id'] ?? '', options)) continue;
 
     const chainId = row['beg_auth_asym_id'];
     const startStr = row['beg_auth_seq_id'];

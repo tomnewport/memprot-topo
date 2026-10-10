@@ -30,7 +30,7 @@ const FORWARDED = [
 ];
 
 export class TopologyLoader extends HTMLElement {
-  static observedAttributes = ['pdb-id', 'sim-id', 'distortions', ...FORWARDED];
+  static observedAttributes = ['pdb-id', 'sim-id', 'distortions', 'ss-310', ...FORWARDED];
 
   private _pdbId: string | null = null;
   private _simId: string | null = null;
@@ -185,7 +185,9 @@ export class TopologyLoader extends HTMLElement {
       if (myGen !== this._generation || !this.isConnected) return;
 
       const chains = parsePdb(pdbText);
-      const ssSegments = parseDsspMmcif(dsspText);
+      const ssSegments = parseDsspMmcif(dsspText, {
+        helix310: this.getAttribute('ss-310') === 'helix',
+      });
       const proteinData = mergeProteinData(pdbId, chains, ssSegments);
 
       this.renderData(proteinData, distortions);
