@@ -558,7 +558,7 @@ describe('membrane styles', () => {
             expect(Math.hypot(x - u, y - v)).toBeGreaterThan(1);
       });
     }
-  });
+  }, 20_000); // About 2 s locally; CI runners can take over 5 s.
 
   it('still draws polar spokes round a protein in two pieces far apart', () => {
     const pieces: number[] = [];

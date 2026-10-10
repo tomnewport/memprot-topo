@@ -28,6 +28,8 @@ export const SEQ = {
   laneHeightPx: 16,
   laneGapPx: 3,
   rowGapPx: 14,
+  /** Row pitch while the rows are collapsed to the cartoon (1-D ↔ 2-D transition). */
+  compactPitchPx: 24,
   /** Residues per row when the width is unknown. */
   fallbackPerRow: 50,
 };
@@ -37,9 +39,20 @@ export interface SeqRow {
   /** First and last residue index in the row. */
   first: number;
   last: number;
-  /** Top of the row (px). */
+  /** Top of the row's letters and cartoon (px); data tracks may sit above it. */
   y: number;
 }
+
+/** Room around each row for data tracks (issue #83), and the left gutter's width. */
+export interface RowExtras {
+  /** Height of the tracks above the letters (px, gap included). */
+  above: number;
+  /** Height of the tracks below the lanes (px, gap included). */
+  below: number;
+  gutterLeft: number;
+}
+
+export const NO_EXTRAS: RowExtras = { above: 0, below: 0, gutterLeft: SEQ.gutterLeftPx };
 
 export interface SequenceLayout {
   perRow: number;
@@ -50,16 +63,22 @@ export interface SequenceLayout {
   laneCount: number;
   width: number;
   height: number;
+  /** Track room and gutter the layout was made with. */
+  extras: RowExtras;
 }
 
 /**
  * Residues per row: `wrap` when given (rounded up to a whole block where it is
  * at least a block), otherwise as many whole blocks as fit in `width`.
  */
-export function residuesPerRow(width: number | null, wrap: number | null): number {
+export function residuesPerRow(
+  width: number | null,
+  wrap: number | null,
+  gutterLeft = SEQ.gutterLeftPx,
+): number {
   if (wrap !== null && Number.isFinite(wrap) && wrap >= 1) return Math.round(wrap);
   if (width === null || !(width > 0)) return SEQ.fallbackPerRow;
-  const usable = width - SEQ.gutterLeftPx - SEQ.gutterRightPx;
+  const usable = width - gutterLeft - SEQ.gutterRightPx;
   const blockPx = SEQ.blockSize * SEQ.cellPx + SEQ.blockGapPx;
   const blocks = Math.max(1, Math.floor((usable + SEQ.blockGapPx) / blockPx));
   return blocks * SEQ.blockSize;
@@ -86,20 +105,21 @@ export function layoutSequence(
   perRow: number,
   laneCount: number,
   width = 0,
+  extras: RowExtras = NO_EXTRAS,
 ): SequenceLayout {
   const rows: SeqRow[] = [];
   const x: number[] = [];
   const row: number[] = [];
-  const h = rowHeight(laneCount);
+  const h = extras.above + rowHeight(laneCount) + extras.below;
   let maxRight = 0;
   for (let first = 0, r = 0; first < count; first += perRow, r++) {
     const last = Math.min(count - 1, first + perRow - 1);
-    const y = SEQ.topPx + r * (h + SEQ.rowGapPx);
+    const y = SEQ.topPx + r * (h + SEQ.rowGapPx) + extras.above;
     rows.push({ first, last, y });
     for (let i = first; i <= last; i++) {
       const col = i - first;
       const cx =
-        SEQ.gutterLeftPx +
+        extras.gutterLeft +
         (col + 0.5) * SEQ.cellPx +
         Math.floor(col / SEQ.blockSize) * SEQ.blockGapPx;
       x.push(cx);
@@ -108,7 +128,9 @@ export function layoutSequence(
     }
   }
   const height =
-    rows.length > 0 ? rows[rows.length - 1].y + h + SEQ.topPx : SEQ.topPx * 2 + SEQ.cartoonPx;
+    rows.length > 0
+      ? rows[rows.length - 1].y - extras.above + h + SEQ.topPx
+      : SEQ.topPx * 2 + SEQ.cartoonPx;
   return {
     perRow,
     rows,
@@ -117,6 +139,7 @@ export function layoutSequence(
     laneCount,
     width: Math.max(width, maxRight + SEQ.gutterRightPx),
     height,
+    extras,
   };
 }
 
@@ -133,4 +156,14 @@ export function rowPoint(layout: SequenceLayout, r: number, f: number): { x: num
   const i = Math.floor(f);
   const t = f - i;
   return { x: layout.x[i] + t * (layout.x[i + 1] - layout.x[i]), y: yc };
+}
+
+/** Cartoon centre of row `r` when the rows are collapsed to the cartoon's height (px). */
+export function compactCentre(r: number): number {
+  return SEQ.topPx + SEQ.compactPitchPx / 2 + r * SEQ.compactPitchPx;
+}
+
+/** Picture height with `rows` rows collapsed to the cartoon's height (px). */
+export function compactHeight(rows: number): number {
+  return SEQ.topPx * 2 + Math.max(1, rows) * SEQ.compactPitchPx;
 }

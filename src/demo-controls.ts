@@ -373,6 +373,14 @@ export const DEMO_CONTROLS: DemoControl[] = [
     scope: 'all',
     description: 'Numbering of the residue data: the structure’s own, or UniProt (via SIFTS).',
   },
+  {
+    attribute: 'tracks',
+    kind: 'text',
+    default: '',
+    placeholder: '{"sources":{…},"series":{…},"tracks":[…]}',
+    scope: 'each',
+    description: 'Data tracks for the sequence view (JSON; see docs/data-tracks.md).',
+  },
 ];
 
 /** The value an input shows when its display has `value` for the attribute. */
