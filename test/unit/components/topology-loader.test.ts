@@ -170,6 +170,7 @@ describe('TopologyLoader', () => {
     const el = attach(new TopologyLoader());
     el.setAttribute('distortions', DIST_URL);
     el.setAttribute('membrane-detail', 'annular');
+    el.setAttribute('structure-projection', 'perspective');
     el.setAttribute('pdb-id', '1abc');
 
     await flushPromises();
@@ -185,6 +186,10 @@ describe('TopologyLoader', () => {
     const calls = fetchMock.mock.calls.length;
     el.setAttribute('membrane-detail', 'bulk');
     expect(display.membraneDetail).toBe('bulk');
+    // So are the 3-D view and transition attributes.
+    expect(display.getAttribute('structure-projection')).toBe('perspective');
+    el.setAttribute('transition-sweep', '0');
+    expect(display.getAttribute('transition-sweep')).toBe('0');
     // … without loading the structure again.
     await flushPromises();
     expect(fetchMock.mock.calls.length).toBe(calls);

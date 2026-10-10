@@ -31,6 +31,7 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | `src/components/chain-picker.ts`     | AI-generated | Chain-picker labels and markup.                                                     |
 | `src/components/topology-styles.ts`  | AI-generated | Shadow-DOM styles of `<topology-display>`.                                          |
 | `src/demo-controls.ts`               | AI-generated | Demo-page controls for every `<topology-display>` attribute (issue #15).            |
+| `src/residue-key.ts`                 | AI-generated | Residue keys (number plus insertion code) used for residue data (A3).               |
 | `src/demo.ts`, `src/demo-data.ts`    | AI-generated | Demo page and its build-time pre-parsed data.                                       |
 
 ## Disclosure Guidelines

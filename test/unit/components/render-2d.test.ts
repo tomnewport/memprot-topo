@@ -47,6 +47,31 @@ describe('render2d', () => {
   });
 });
 
+describe('<topology-display> insertion codes', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('colours 26 and 26A separately, and still takes plain numbers', async () => {
+    const chain = threeHelixChain();
+    for (const ca of chain.calphas) {
+      if (ca.resSeq === 27) Object.assign(ca, { resSeq: 26, iCode: 'A' });
+      else if (ca.resSeq === 28) ca.resSeq = 27;
+    }
+    const el = document.createElement('topology-display') as TopologyDisplay;
+    document.body.appendChild(el);
+    el.residueColours = { A: { 3: 0, 26: 0, '26A': 10 } };
+    el.proteinData = { pdbId: 'tst3', chains: [chain] };
+    await new Promise((r) => setTimeout(r, 0));
+    const colour = (res: string) =>
+      el.shadowRoot!.querySelector(`[data-res="${res}"]`)?.getAttribute('stroke');
+    expect(colour('26')).toBeTruthy();
+    expect(colour('26A')).toBeTruthy();
+    expect(colour('26')).not.toBe(colour('26A'));
+    expect(colour('3')).toBe(colour('26'));
+  });
+});
+
 describe('<topology-display> layout reuse', () => {
   afterEach(() => {
     document.body.innerHTML = '';

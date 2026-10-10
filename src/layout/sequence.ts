@@ -1,4 +1,5 @@
 import type { ChainData } from '../types.js';
+import { residueKey, type ResidueKey } from '../residue-key.js';
 import type { SeqElement, SeqResidue, SequenceSource, TracePoint } from '../sequence/types.js';
 import { oneLetter } from '../sequence/amino-acids.js';
 import { measure } from '../components/residue-data.js';
@@ -39,7 +40,7 @@ export function buildSequence(
   chain: ChainData,
   layout: ChainLayout,
   /** Residue colour (issue #23), or null when the chain isn't coloured. */
-  colour: ((resSeq: number) => string | undefined) | null = null,
+  colour: ((key: ResidueKey) => string | undefined) | null = null,
 ): SequenceSource {
   const layouts = layout.segments;
   const { originX, originY, minX, minY, width, height } = layout.frame;
@@ -59,21 +60,14 @@ export function buildSequence(
   const z = residues.map(() => NaN);
   const focal = (s: number): boolean => layouts[s].focal;
 
-  // Match each drawn residue to its place in the chain (in order, so repeated
-  // numbers with insertion codes still land on the right residue).
+  // Match each drawn residue to its place in the chain by its key, so `100`
+  // and `100A` land on their own residues.
   const fOf: ((sample: number) => number)[] = [];
-  const indexOfResSeq = new Map<number, number[]>();
-  residues.forEach((r, i) =>
-    indexOfResSeq.set(r.resSeq, [...(indexOfResSeq.get(r.resSeq) ?? []), i]),
-  );
-  let cursor = 0;
-  const globalIndex = (resSeq: number): number | undefined => {
-    const hits = indexOfResSeq.get(resSeq);
-    if (!hits) return undefined;
-    const i = hits.find((h) => h >= cursor) ?? hits[0];
-    cursor = i;
-    return i;
-  };
+  const indexOf = new Map<ResidueKey, number>();
+  residues.forEach((r, i) => {
+    const key = residueKey(r);
+    if (!indexOf.has(key)) indexOf.set(key, i);
+  });
   layouts.forEach((layout, s) => {
     if (!focal(s)) {
       fOf.push(() => 0);
@@ -81,7 +75,7 @@ export function buildSequence(
     }
     const anchors: { sample: number; f: number }[] = [];
     for (const r of layout.residues) {
-      const i = globalIndex(r.resSeq);
+      const i = indexOf.get(residueKey(r));
       if (i === undefined) continue;
       anchors.push({ sample: r.sampleIndex, f: i });
       z[i] = layout.samples[r.sampleIndex]?.z ?? NaN;
@@ -106,14 +100,10 @@ export function buildSequence(
     });
   }
   const dashed: [number, number][] = [];
-  const firstIndex = new Map<number, number>();
-  residues.forEach((r, i) => {
-    if (!firstIndex.has(r.resSeq)) firstIndex.set(r.resSeq, i);
-  });
   for (const loop of layout.loops) {
     if (loop.faded || !focal(loop.seg)) continue;
     const idx = loop.residues
-      .map((r) => firstIndex.get(r))
+      .map((key) => indexOf.get(key))
       .filter((i): i is number => i !== undefined);
     const f0 = loop.from ? fOf[loop.from.seg](loop.from.sample) : (idx[0] ?? 0) - 0.5;
     const f1 = loop.to ? fOf[loop.to.seg](loop.to.sample) : (idx[idx.length - 1] ?? f0) + 0.5;
@@ -158,7 +148,7 @@ export function buildSequence(
     origin2d: { x: origin.x, y: origin.y, pxPerA: px },
     // The band as drawn, flattened onto the bulk planes.
     slab: { x0: profile.x[0], x1: profile.x[profile.x.length - 1] },
-    colourAt: colour ? (i) => colour(residues[i].resSeq) : null,
+    colourAt: colour ? (i) => colour(residueKey(residues[i])) : null,
     lanes: [],
     halfWidthPx: SS_BODY.halfWidthPx,
     arrowHalfWidthPx: SS_BODY.arrowHalfWidthPx,

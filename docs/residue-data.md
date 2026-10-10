@@ -17,7 +17,10 @@ width.
 ## Input
 
 Both series are keyed by chain ID, then author residue number (`resSeq`, as in
-the PDB file):
+the PDB file). A residue with an insertion code is keyed by the number and the
+code, as a string: `{ H: { 100: 1, "100A": 2 } }` gives residues 100 and 100A
+their own values. A bare number only matches the residue without an insertion
+code. Codes are case-insensitive (`"100a"` is `100A`).
 
 | Property         | Attribute (JSON)  | Values                                |
 | ---------------- | ----------------- | ------------------------------------- |

@@ -23,8 +23,9 @@ chain or clicking a helix/strand, which fires an event.
 | `A:-3-10` | negative residue numbers are allowed    |
 | `A:60-45` | a reversed range is read as `A:45-60`   |
 
-Residue numbers are author numbers (`resSeq`, as in the PDB file); insertion
-codes are ignored. Chain IDs are case-sensitive. Whitespace is ignored.
+Residue numbers are author numbers (`resSeq`, as in the PDB file). A range
+takes in residues with insertion codes by their number, so `A:100-101` includes
+100A. Chain IDs are case-sensitive. Whitespace is ignored.
 
 Setting it:
 

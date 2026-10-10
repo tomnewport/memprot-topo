@@ -39,7 +39,8 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 - [docs/architecture.md](docs/architecture.md) — the pipeline from structure file to the 1-D, 2-D and 3-D views, and a module map
 - [docs/rendering.md](docs/rendering.md) — how Cα traces are smoothed into helix and strand axes
 - [docs/beta-barrels.md](docs/beta-barrels.md) — β-barrel detection and the cylindrical unwrap
-- [docs/chain-icons.md](docs/chain-icons.md) — chain-picker icons and `icon-bandwidth`
+- [docs/attributes.md](docs/attributes.md) — every `<topology-display>` attribute, property and event
+- [docs/chain-icons.md](docs/chain-icons.md) — chain-picker icons and `chain-icon-bandwidth`
 - [docs/sizing.md](docs/sizing.md) — `fit` attribute and the scrolling diagram box
 - [docs/selection.md](docs/selection.md) — the `selection` attribute and selection events
 - [docs/secondary-structure.md](docs/secondary-structure.md) — `min-helix-length` and `min-strand-length`

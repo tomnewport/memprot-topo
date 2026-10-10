@@ -43,7 +43,7 @@ Things the 2-D layout invents are blended out as the curtain rolls:
   non-barrel strands grow their arrowheads.
 
 By default the roll travels as a wave from the N-terminus to the C-terminus
-(`morph-sweep`, default `0.35` of the chain; `0` rolls the whole chain at once).
+(`transition-sweep`, default `0.35` of the chain; `0` rolls the whole chain at once).
 Each joint of the curtain bends by its own share of the final turn, so the strip
 rolls up like a carpet: the finished part is already a rigid copy of the real
 structure, the rest is still flat, and the curtain never curls tighter than it
@@ -84,36 +84,36 @@ their own colour and are outlined wider (by `selectionWidth / outlineWidth`).
 Each depth-sorted run of a selected element carries `class="selected"` and
 `data-type`, which the component's styles give the glow.
 
-Attribute and data changes keep the view. The `morph-*` attributes and
+Attribute and data changes keep the view. The `structure-*` attributes, `transition-sweep` and
 `selection` update the 3-D picture in place, so it keeps its progress, orbit and any running
-animation. 2-D drawing attributes (`debug-loops`, `loop-*`, `show-contacts`, `min-*-length`, residue data and `colour-*`),
+animation. 2-D drawing attributes (`debug`, `loop-*`, `show-contacts`, `min-*-length`, residue data and `colour-*`),
 a chain switch and new protein data redraw but restore the scroll position and
 3-D view; new data also keeps the user's chain pick and selection when it has
-that chain. `icon-bandwidth` redraws only the chain picker. Re-assigning the
+that chain. `chain-icon-bandwidth` redraws only the chain picker. Re-assigning the
 same `proteinData` object does nothing. To start afresh, call `resetView()`:
 it returns to the 2-D view of the default chain and forgets the user's chain
 pick, selection and orbit (attributes the page set are kept).
 
-`morph-strand-width` and `morph-strand-thickness` set the strand ribbon size
+`structure-strand-width` and `structure-strand-thickness` set the strand ribbon size
 in Å (defaults 2.85 × 1.0; the arrowhead, 4.65 Å, scales with the width).
 Neighbouring barrel strands are ≈ 4.8 Å apart, so the default leaves a gap
 between ribbons and keeps arrowheads from cutting into the next strand. The
 issue's suggested ~10 × 2.5 Å works, but the strands then overlap heavily.
 
-`morph-grid-spacing` sets the membrane grid's spacing in Å (from 2 Å up to
+`structure-grid-spacing` sets the membrane grid's spacing in Å (from 2 Å up to
 the disc's radius; unset, `auto` or `0` sizes it from the membrane disc, an
 eighth of its radius within 4–8 Å). A finer grid shows more of the local
 surface but adds lines to every frame.
 
-`morph-membrane-style` picks how the leaflets are drawn:
+`structure-membrane-style` picks how the leaflets are drawn:
 
-| `morph-membrane-style` | Drawn                                                                                        |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `grid` (default)       | A square grid of lines, `morph-grid-spacing` apart.                                          |
-| `polar`                | Rings and spokes: rings follow the protein's outline near it and become circles further out. |
-| `surface`              | A translucent surface per leaflet, coloured by its rise or drop from the bulk plane.         |
+| `structure-membrane-style` | Drawn                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `grid` (default)           | A square grid of lines, `structure-grid-spacing` apart.                                      |
+| `polar`                    | Rings and spokes: rings follow the protein's outline near it and become circles further out. |
+| `surface`                  | A translucent surface per leaflet, coloured by its rise or drop from the bulk plane.         |
 
-The polar rings are spaced by `morph-grid-spacing`. The first follows the
+The polar rings are spaced by `structure-grid-spacing`. The first follows the
 protein-lipid interface, taken as 4 Å out from the drawn protein's
 membrane-spanning samples, and the next ones keep a constant distance from it
 out to about 10 Å (the largest whole number of spacings up to 10 Å, at least
@@ -121,7 +121,7 @@ one). From there to the circle where the bulk starts (5 Å in from the rim), the
 rings follow a harmonic blend (Laplace's equation, solved on a 1 Å lattice)
 from the outline to the circle, so their shape eases from one to the other.
 The spokes are evenly spaced round that circle, a multiple of eight of them
-about `morph-grid-spacing` apart. Each runs straight in from the rim to the
+about `structure-grid-spacing` apart. Each runs straight in from the rim to the
 circle. Across the blend it follows a level line of an angle that is harmonic
 there: the polar angle on the circle and, round the last constant-distance
 ring, close to proportional to the distance along that ring. So spokes are
@@ -164,7 +164,7 @@ open: next to a pore the surface is drawn over the part of each mesh cell
 nearest its lipid corners, which is also where the tint stops. There is no
 colour key in the view yet.
 
-`morph-projection="perspective"` switches to a dolly-zoom instead: the field of
+`structure-projection="perspective"` switches to a dolly-zoom instead: the field of
 view opens from 0 (orthographic, the 2-D view) to a 35 mm-equivalent
 perspective while the camera backs off to keep the scale at the target constant.
 
@@ -191,7 +191,7 @@ finished 3-D view stays vector (and exportable).
   rim passes in front of whatever lies behind it and marks the edge of the
   tint.
 - Each leaflet also carries a fishnet: a square grid of thin lines over its
-  disc (4–8 Å apart by default; see `morph-grid-spacing` above), depth-sorted
+  disc (4–8 Å apart by default; see `structure-grid-spacing` above), depth-sorted
   with the protein like the rims, so the membrane stays visible without hiding
   the protein. The net follows the leaflet's height: the local surface from a
   distortions file (averaged over 1.5 grid cells, kept within 6–12 Å), or
@@ -209,7 +209,7 @@ finished 3-D view stays vector (and exportable).
   (`BULK_MARGIN` in `src/morph/net.ts`). Inside that ring the net eases to
   the bulk over the outer fifth. It grows out of the flat planes as the sheets
   fade in. The tinted sheets stay at the bulk planes. With
-  `morph-membrane-style="polar"` the lines are rings and spokes instead, and
+  `structure-membrane-style="polar"` the lines are rings and spokes instead, and
   with `"surface"` the sheets themselves follow the heights and are coloured
   by them (see above). See [membrane.md](membrane.md).
 - Consecutive sections of the same element are merged into one path whenever

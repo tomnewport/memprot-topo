@@ -52,7 +52,7 @@ async function recordTransition(page, outPath) {
   await page.waitForTimeout(150);
   const display = page.locator('topology-display');
   const scroll = page.locator('topology-display .svg-scroll');
-  const setTau = (tau) => display.evaluate((e, t) => e.setMorphProgress(t), tau);
+  const setTau = (tau) => display.evaluate((e, t) => e.setTransitionProgress(t), tau);
 
   // A fixed frame that holds both ends of the morph.
   let box = null;
@@ -265,7 +265,7 @@ async function main() {
 
     // The 2-D → 3-D morph, halfway and finished.
     for (const view of MORPH_VIEWS) {
-      await el.evaluate((e, tau) => e.setMorphProgress(tau), view.tau);
+      await el.evaluate((e, tau) => e.setTransitionProgress(tau), view.tau);
       await page.waitForTimeout(100);
       const morphPath = join(OUT_DIR, `${protein.pdbId}${view.suffix}.png`);
       await el.screenshot({ path: morphPath });
@@ -273,7 +273,7 @@ async function main() {
     }
 
     if (animate) {
-      await el.evaluate((e) => e.setMorphProgress(0));
+      await el.evaluate((e) => e.setTransitionProgress(0));
       const animPath = join(OUT_DIR, `${protein.pdbId}${MORPH_ANIM.suffix}`);
       if (await recordTransition(page, animPath)) console.log(`  Saved: ${animPath}`);
     }

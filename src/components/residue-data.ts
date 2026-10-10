@@ -3,11 +3,13 @@
  * residue, from a category (categorical colour map) or a number (numerical
  * colour scale), and a drawn width per residue relative to the normal width.
  *
- * Inputs are keyed by chain ID, then by author residue number:
+ * Inputs are keyed by chain ID, then by author residue number, with the
+ * insertion code where a residue has one (`100A`; see {@link ResidueKey}):
  *
  *   residueColours = { A: { 45: 'K', 46: 'L' } }   // categorical
  *   residueColours = { A: { 45: 0.7, 46: 0.2 } }   // numerical
  *   residueWidths  = { A: { 45: 1.5, 46: 0 } }     // 1.5× width, line only
+ *   residueWidths  = { H: { 100: 1, '100A': 2 } }  // insertion codes
  *
  * Default colours are theme tokens (#26): the theme's `dataScale` and
  * `dataCategories`, exposed on the component host as CSS custom properties so
@@ -15,8 +17,9 @@
  */
 
 import { paint, TABLEAU_10, VIRIDIS } from '../theme/index.js';
+import { parseResidueKey, residueKey, type ResidueKey } from '../residue-key.js';
 
-/** Values keyed by chain ID, then author residue number. */
+/** Values keyed by chain ID, then residue key (`45`, `'100A'`). */
 export type ResidueSeries<T> = Record<string, Record<string | number, T>>;
 
 export type ResidueColourValues = ResidueSeries<string | number>;
@@ -85,18 +88,18 @@ export function parseSeriesAttribute<T>(
   return null;
 }
 
-/** A chain's values as a residue-number map, dropping unusable entries. */
+/** A chain's values as a residue-key map, dropping unusable entries. */
 function chainValues<T>(
   series: ResidueSeries<T> | null,
   chainId: string,
   ok: (v: unknown) => v is T,
-): Map<number, T> {
-  const out = new Map<number, T>();
+): Map<ResidueKey, T> {
+  const out = new Map<ResidueKey, T>();
   const values = series?.[chainId];
   if (!values || typeof values !== 'object') return out;
   for (const [k, v] of Object.entries(values)) {
-    const resSeq = Number(k);
-    if (Number.isInteger(resSeq) && ok(v)) out.set(resSeq, v);
+    const key = parseResidueKey(k);
+    if (key !== null && ok(v)) out.set(key, v);
   }
   return out;
 }
@@ -112,8 +115,8 @@ const isColourValue = (v: unknown): v is string | number =>
 export function widthFactors(
   series: ResidueWidthValues | null,
   chainId: string,
-): Map<number, number> {
-  const out = new Map<number, number>();
+): Map<ResidueKey, number> {
+  const out = new Map<ResidueKey, number>();
   for (const [r, f] of chainValues(series, chainId, isFiniteNumber)) out.set(r, Math.max(0, f));
   return out;
 }
@@ -230,7 +233,7 @@ export interface NumericalColouring {
 
 export type Colouring = (CategoricalColouring | NumericalColouring) & {
   /** Residue colour of one chain, or undefined where it has no value. */
-  residueColour(chainId: string, resSeq: number): string | undefined;
+  residueColour(chainId: string, key: ResidueKey): string | undefined;
 };
 
 /**
@@ -245,7 +248,7 @@ export function resolveColouring(
   theme: DataTheme,
 ): Colouring | null {
   if (!series || typeof series !== 'object') return null;
-  const perChain = new Map<string, Map<number, string | number>>();
+  const perChain = new Map<string, Map<ResidueKey, string | number>>();
   for (const chainId of Object.keys(series)) {
     const m = chainValues(series, chainId, isColourValue);
     if (m.size > 0) perChain.set(chainId, m);
@@ -285,8 +288,8 @@ export function resolveColouring(
       min,
       max,
       label,
-      residueColour(chainId, resSeq) {
-        const v = perChain.get(chainId)?.get(resSeq);
+      residueColour(chainId, key) {
+        const v = perChain.get(chainId)?.get(key);
         return v === undefined
           ? undefined
           : interpolateStops(rgb, ((v as number) - min) / span || 0);
@@ -322,8 +325,8 @@ export function resolveColouring(
     colourOf,
     categories,
     label,
-    residueColour(chainId, resSeq) {
-      const v = perChain.get(chainId)?.get(resSeq);
+    residueColour(chainId, key) {
+      const v = perChain.get(chainId)?.get(key);
       return v === undefined ? undefined : colourOf.get(String(v));
     },
   };
@@ -461,18 +464,18 @@ export function renderLegend(
  * are dropped.
  */
 export function residueSpans(
-  residues: { resSeq: number; sampleIndex: number }[],
+  residues: { resSeq: number; iCode?: string; sampleIndex: number }[],
   lo: number,
   hi: number,
-): { resSeq: number; from: number; to: number }[] {
-  const out: { resSeq: number; from: number; to: number }[] = [];
+): { key: ResidueKey; from: number; to: number }[] {
+  const out: { key: ResidueKey; from: number; to: number }[] = [];
   for (let k = 0; k < residues.length; k++) {
     const si = residues[k].sampleIndex;
     const from = k === 0 ? lo : (residues[k - 1].sampleIndex + si) / 2;
     const to = k === residues.length - 1 ? hi : (si + residues[k + 1].sampleIndex) / 2;
     const a = Math.max(lo, from);
     const b = Math.min(hi, to);
-    if (b > a) out.push({ resSeq: residues[k].resSeq, from: a, to: b });
+    if (b > a) out.push({ key: residueKey(residues[k]), from: a, to: b });
   }
   return out;
 }
@@ -537,8 +540,8 @@ export function monotoneCubic(xs: number[], ys: number[]): (x: number) => number
  * factor at its sample (residues with no value count as 1).
  */
 export function widthProfile(
-  residues: { resSeq: number; sampleIndex: number }[],
-  factors: Map<number, number>,
+  residues: { resSeq: number; iCode?: string; sampleIndex: number }[],
+  factors: Map<ResidueKey, number>,
 ): (sample: number) => number {
   const xs: number[] = [];
   const ys: number[] = [];
@@ -546,7 +549,7 @@ export function widthProfile(
     // Duplicate sample positions can't carry two values; keep the first.
     if (xs.length > 0 && r.sampleIndex <= xs[xs.length - 1]) continue;
     xs.push(r.sampleIndex);
-    ys.push(factors.get(r.resSeq) ?? 1);
+    ys.push(factors.get(residueKey(r)) ?? 1);
   }
   return monotoneCubic(xs, ys);
 }

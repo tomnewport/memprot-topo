@@ -13,7 +13,19 @@ const STYLES = `
 `;
 
 /** Attributes passed through to the inner `<topology-display>`. */
-const FORWARDED = ['theme', 'theme-light', 'theme-dark', 'membrane-detail'];
+const FORWARDED = [
+  'theme',
+  'theme-light',
+  'theme-dark',
+  'membrane-detail',
+  'transition-time',
+  'transition-sweep',
+  'structure-projection',
+  'structure-strand-width',
+  'structure-strand-thickness',
+  'structure-grid-spacing',
+  'structure-membrane-style',
+];
 
 export class TopologyLoader extends HTMLElement {
   static observedAttributes = ['pdb-id', 'sim-id', 'distortions', ...FORWARDED];
@@ -158,6 +170,12 @@ function forward(from: Element, to: Element, name: string): void {
   const value = from.getAttribute(name);
   if (value === null) to.removeAttribute(name);
   else to.setAttribute(name, value);
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'topology-loader': TopologyLoader;
+  }
 }
 
 if (!customElements.get('topology-loader')) {

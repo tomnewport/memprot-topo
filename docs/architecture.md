@@ -152,7 +152,11 @@ The `dimension` attribute moves between the three (1 → 2 → 3).
 
 Top-level files: [`src/index.ts`](../src/index.ts) is the library entry
 (the public exports), [`src/types.ts`](../src/types.ts) the shared
-input types, and `src/demo*.ts` the demo page served by `index.html`.
+input types, [`src/residue-key.ts`](../src/residue-key.ts) the residue key
+(author number plus insertion code) that residue data, loops, contacts and
+the sequence view are keyed by, and `src/demo*.ts` the demo page served by
+`index.html`. Every public attribute, property and event is listed in
+[attributes.md](attributes.md).
 
 ## Design decisions
 
@@ -175,4 +179,5 @@ input types, and `src/demo*.ts` the demo page served by `index.html`.
 
 Unit tests (Vitest, jsdom) live in `test/unit/`, one directory per `src/`
 module, with shared structures in `test/unit/fixtures/`. End-to-end tests
-(Playwright) go in `test/e2e/`.
+(Playwright) are in `test/e2e/`. Example input files (PDB, DSSP and MemProtMD
+files) are in `examples/`.
