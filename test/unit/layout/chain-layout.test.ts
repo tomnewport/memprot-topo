@@ -96,10 +96,8 @@ describe('layoutChain', () => {
     const lastArc = layout.segments[0].samples[layout.segments[0].samples.length - 1].arc;
     expect(x[0]).toBeLessThanOrEqual(0);
     expect(x[x.length - 1]).toBeGreaterThanOrEqual(lastArc);
-    // The plot is at least ±zRangeMin tall around the midplane.
-    expect(frame.originY - PLOT.margin.top).toBeGreaterThanOrEqual(
-      PLOT.zRangeMin * PLOT.zPxPerA - 1e-9,
-    );
+    // The plot shows the membrane and 1.5 thicknesses above it (issue #27).
+    expect(frame.originY - PLOT.margin.top).toBeCloseTo(80 * PLOT.zPxPerA);
   });
 
   it('grows the frame only as far as the labels reach', () => {
@@ -179,5 +177,73 @@ describe('views from a layout', () => {
     }
     expect(seq.z.every((z) => Number.isFinite(z))).toBe(true);
     expect(seq.colourAt).toBeNull();
+  });
+});
+
+describe('layoutChain plot size (issue #27)', () => {
+  const layoutWith = (plot: { pxPerA?: number; heightPx?: number }): ChainLayout => {
+    const chain = threeHelixChain();
+    const core = chain.calphas.filter((c) => Math.abs(c.z) < 12);
+    return layoutChain(
+      chain,
+      OPTS,
+      analyseBarrel(chain.calphas, chain.segments),
+      false,
+      MEMBRANE,
+      core,
+      undefined,
+      plot,
+    );
+  };
+
+  it('defaults to 2.5 px/Å and a ±80 Å window about the midplane', () => {
+    const { frame } = layoutWith({});
+    expect(frame.pxPerA).toBe(PLOT.arcPxPerA);
+    expect(frame.originY).toBeCloseTo(PLOT.margin.top + 80 * PLOT.zPxPerA);
+    expect(frame.minY).toBe(0);
+    expect(frame.height).toBeCloseTo(PLOT.margin.top + 160 * 2.5 + PLOT.margin.bottom);
+  });
+
+  it('scales the plot but keeps element sizes in px', () => {
+    const base = layoutWith({});
+    const big = layoutWith({ pxPerA: 5 });
+    expect(big.frame.pxPerA).toBe(5);
+    expect(big.frame.originY).toBeCloseTo(PLOT.margin.top + 80 * 5);
+    // A helix is drawn about twice as long at twice the scale…
+    const len = (l: ChainLayout): number => {
+      const c = l.elements[0].centreline;
+      return Math.hypot(c[c.length - 1].sx - c[0].sx, c[c.length - 1].sy - c[0].sy);
+    };
+    expect(len(big) / len(base)).toBeCloseTo(2, 1);
+    // …but the fixed px gap between elements is the same number of px, so
+    // fewer Å, and the diagram is less than twice as wide.
+    expect(big.frame.width).toBeLessThan(2 * base.frame.width);
+  });
+
+  it('sets the plot height in px', () => {
+    const { frame } = layoutWith({ heightPx: 200, pxPerA: 2 });
+    expect(frame.height).toBeCloseTo(PLOT.margin.top + 200 + PLOT.margin.bottom);
+    expect(frame.originY).toBeCloseTo(PLOT.margin.top + 100);
+  });
+
+  it('re-centres on a protein above the window and keeps a quarter of the membrane', () => {
+    const chain = threeHelixChain();
+    const lifted: ChainData = {
+      ...chain,
+      calphas: chain.calphas.map((c) => ({ ...c, z: c.z + 200 })),
+    };
+    const core = lifted.calphas.filter((c) => Math.abs(c.z - 200) < 12);
+    const layout = layoutChain(
+      lifted,
+      OPTS,
+      analyseBarrel(lifted.calphas, lifted.segments),
+      false,
+      MEMBRANE,
+      core,
+    );
+    const { originY, pxPerA, height } = layout.frame;
+    const bottomZ = (originY - (height - PLOT.margin.bottom)) / pxPerA;
+    // Window bottom 10 Å below the upper leaflet (20 Å): a quarter of 40 Å.
+    expect(bottomZ).toBeCloseTo(10, 0);
   });
 });

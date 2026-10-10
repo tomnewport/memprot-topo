@@ -3,9 +3,9 @@
 This document explains how MemProt2D turns raw Cα coordinates into the smoothed
 2D traces that represent α-helices and β-strands, why the chosen methods are
 appropriate, and how they differ from the approaches taken by the established
-3D molecular viewers (PyMOL, VMD) and the classic ribbon algorithms. It is
-written to be readable by a structural biologist and is intended to be detailed
-enough to support the methods section of a publication.
+3D molecular viewers (PyMOL, VMD, Mol\*, ChimeraX) and the classic ribbon
+algorithms. It is written to be readable by a structural biologist and is
+intended to be detailed enough to support the methods section of a publication.
 
 It assumes the conceptual framing set out in [`PROJECT.md`](../PROJECT.md): the
 diagram is an **unwrapped Richardson diagram**, projecting a 3D structure into a
@@ -83,7 +83,7 @@ codebase that the zigzag had to be retained to encode the crossing angle.)
 
 ---
 
-## 2. Prior art: how PyMOL, VMD, and the classic ribbon algorithms do it
+## 2. Prior art: how PyMOL, VMD, Mol\*, ChimeraX and the classic ribbon algorithms do it
 
 The modern ribbon/cartoon representation descends from [Richardson's 1981
 taxonomy](<https://doi.org/10.1016/S0065-3233(08)60520-3>) and the first ribbon
@@ -153,16 +153,101 @@ distributed under a registration licence rather than a public repository, so
 this section relies on the developers' published notes and documentation rather
 than direct inspection of the source.)
 
-### 2.3 Summary of prior art
+### 2.3 Mol\* — one binomial pass, then a cardinal spline
 
-| Tool               | Sheet pleat           | Helix spiral        | Mechanism                                     |
-| ------------------ | --------------------- | ------------------- | --------------------------------------------- |
-| Carson & Bugg /    | removed               | preserved as radius | B-spline through peptide-plane guide points,  |
-| RIBBONS (1986)     |                       |                     | smoothed along & across strands               |
-| PyMOL              | removed (flat_sheets) | preserved (3D coil) | iterated ±1 box average of guide Cα + normals |
-| VMD NewCartoon     | removed (Cα filtered) | preserved (3D coil) | low-pass filter then Catmull-Rom; ribbon      |
-|                    |                       |                     | through Cα midpoints                          |
-| **MemProt2D (2D)** | **must be removed**   | **must be removed** | see §3 — projection forces both               |
+[Mol\*](https://molstar.org) ([Sehnal et al.,
+2021](https://doi.org/10.1093/nar/gkab314)), the viewer used by RCSB PDB and
+PDBe, builds its cartoon from one control point per residue (the Cα for
+proteins). Line numbers below are at Mol\* commit `447b833`.
+
+**Sheets.** Each strand control point is replaced by a single `[1, 2, 1]/4`
+binomial average of itself and its two neighbours
+([`setControlPoint`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/graphics/src/repr/structure/visual/util/polymer/trace-iterator.ts#L217-L223)),
+paraphrased:
+
+```ts
+if (isSheet(ss) || (tubularHelices && isHelix(ss))) {
+  out = (prev + 2 * self + next) / 4;
+} else {
+  out = self; // coil, and helices in the default mode
+}
+```
+
+The frequency response of `[1, 2, 1]/4` is `(1 + cos ω) / 2`, which is exactly
+zero at the period-2 pleat frequency (ω = π). One pass therefore removes the
+pleat completely, where PyMOL's `[1, 1, 1]/3` box needs several passes (§2.1).
+This is option 2 of §3.2 in its single-pass form.
+
+**Helices.** By default helices keep their 3-D coil: the Cα are used as they
+are, and only the spline tension is raised (0.9 for helices against 0.5
+elsewhere,
+[`polymer.ts`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/graphics/src/repr/structure/visual/util/polymer.ts#L28-L29)),
+which rounds the coil. With the `tubularHelices` option
+([`polymer-trace-mesh.ts`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/graphics/src/repr/structure/visual/polymer-trace-mesh.ts#L45))
+each helix Cα is instead replaced by a point on the local helix axis, and those
+axis points get the same `[1, 2, 1]/4` pass. The axis points come from
+[`calcHelixOrientation`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/model/src/props/computed/helix-orientation/helix-orientation.ts#L18-L19),
+which follows GROMACS
+[`gmx helixorient`](https://manual.gromacs.org/current/onlinehelp/gmx-helixorient.html):
+for each run of four consecutive Cα it takes the bisectors at the two middle
+atoms, uses their cross product as the local axis direction, and steps in from
+each middle Cα along its bisector by the local helix radius. This is a
+four-residue local-axis estimate: the same idea as §3.1's sliding window, but
+with a fixed, minimal window and a closed-form radius instead of PCA.
+
+**Spline.** The control points are interpolated with a cardinal (Hermite)
+spline whose tangents are `tension × (p[i+1] − p[i−1])`
+([`interpolatePointsAndTangents`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/graphics/src/repr/structure/visual/util/polymer/curve-segment.ts#L75);
+[`spline`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/core/src/math/interpolate.ts#L33-L39)). Tension 0.5 is the
+Catmull-Rom spline. The curve passes through every (smoothed) control point.
+
+### 2.4 ChimeraX — idealised strands, optional fitted tubes
+
+[UCSF ChimeraX](https://www.cgl.ucsf.edu/chimerax/) ([Goddard et al.,
+2018](https://doi.org/10.1002/pro.3235)) also uses one control point per
+residue and interpolates them with a natural cubic spline. Its smoothing step
+([`_smooth_ribbon`](https://github.com/RBVI/ChimeraX/blob/99ccebb6b6d4430a9d490746a612fa47eca9c41e/src/bundles/atomic/src/ribbon.py#L950-L971)) depends on the
+secondary structure and the cartoon mode. Line numbers below are at ChimeraX
+commit `99ccebb`.
+
+**Strands** (default mode,
+[`_smooth_strand`](https://github.com/RBVI/ChimeraX/blob/99ccebb6b6d4430a9d490746a612fa47eca9c41e/src/bundles/atomic/src/ribbon.py#L1062-L1101)): each interior
+control point moves towards its `[1, 2, 1]/4` average, the same filter as
+Mol\*. Each end residue is moved by the same offset as its neighbour but in the
+opposite direction, so a three-residue strand ends up on a straight line. How
+far each residue moves is set by a per-residue `ribbon_adjust` factor between 0
+(raw Cα) and 1 (fully averaged). It defaults to 1 for strands and 0 for helices
+([`Residue.h`](https://github.com/RBVI/ChimeraX/blob/99ccebb6b6d4430a9d490746a612fa47eca9c41e/src/bundles/atomic_lib/atomic_cpp/atomstruct_cpp/Residue.h#L289-L297)),
+so the pleat is removed in full.
+
+**Helices.** In the default mode the coil is kept. The code holds a
+cylinder-projection smoother for helices, but it is switched off because "it
+does not work well for bent helices". With
+[`cartoon style modeHelix tube`](https://www.cgl.ucsf.edu/chimerax/docs/user/commands/cartoon.html#style)
+ChimeraX instead fits a cylinder to each helix
+([`HelixCylinder`](https://github.com/RBVI/ChimeraX/blob/99ccebb6b6d4430a9d490746a612fa47eca9c41e/src/bundles/atomic/src/sse.py#L142-L166)) that minimises the squared
+distance of the Cα from its surface. Helices of 13 residues or more (about
+three turns) may be fitted with a curved cylinder (a section of a torus);
+shorter ones always get a straight one, because curved fits to short helices
+"minimize the atom-to-cylinder-surface distances but look wrong". The tube is a
+whole-helix fit with at most one bend radius. It cannot follow a proline kink,
+which is why §3.1 uses a sliding local axis instead.
+
+### 2.5 Summary of prior art
+
+| Tool               | Sheet pleat           | Helix spiral          | Mechanism                                     |
+| ------------------ | --------------------- | --------------------- | --------------------------------------------- |
+| Carson & Bugg /    | removed               | preserved as radius   | B-spline through peptide-plane guide points,  |
+| RIBBONS (1986)     |                       |                       | smoothed along & across strands               |
+| PyMOL              | removed (flat_sheets) | preserved (3D coil)   | iterated ±1 box average of guide Cα + normals |
+| VMD NewCartoon     | removed (Cα filtered) | preserved (3D coil)   | low-pass filter then Catmull-Rom; ribbon      |
+|                    |                       |                       | through Cα midpoints                          |
+| Mol\*              | removed (one          | preserved by default; | one `[1,2,1]/4` pass, then cardinal spline;   |
+|                    | `[1,2,1]/4` pass)     | axis in tube mode     | tube axis from 4-Cα bisectors                 |
+| ChimeraX           | removed (`[1,2,1]/4`, | preserved by default; | natural cubic spline; tube mode fits a        |
+|                    | ends extrapolated)    | fitted tube in tube   | straight or toroidal cylinder per helix       |
+|                    |                       | mode                  |                                               |
+| **MemProt2D (2D)** | **must be removed**   | **must be removed**   | see §3 — projection forces both               |
 
 The universal pattern: **every serious tool removes the β-pleat before
 drawing.** The difference for MemProt2D is that the 2D projection forces us to
@@ -379,6 +464,19 @@ line means a straight element, and every visible bend is a real bend.**
   representation](https://www.ks.uiuc.edu/Research/vmd/current/ug/node70.html);
   β-sheet Cα filtering described on the [VMD-L mailing
   list](https://www.ks.uiuc.edu/Research/vmd/mailing_list/vmd-l/12081.html).
+- Sehnal D, Bittrich S, Deshpande M, et al. (2021). Mol\* Viewer: modern web
+  app for 3D visualization and analysis of large biomolecular structures.
+  _Nucleic Acids Res._ 49(W1):W431–W437. https://doi.org/10.1093/nar/gkab314 ·
+  source: [`trace-iterator.ts`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/graphics/src/repr/structure/visual/util/polymer/trace-iterator.ts),
+  [`curve-segment.ts`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/graphics/src/repr/structure/visual/util/polymer/curve-segment.ts),
+  [`helix-orientation.ts`](https://github.com/molstar/molstar/blob/447b833374a22c91a0f62a97699c689afb364de2/packages/model/src/props/computed/helix-orientation/helix-orientation.ts).
+- Goddard TD, Huang CC, Meng EC, et al. (2018). UCSF ChimeraX: meeting modern
+  challenges in visualization and analysis. _Protein Sci._ 27(1):14–25.
+  https://doi.org/10.1002/pro.3235 · source:
+  [`ribbon.py`](https://github.com/RBVI/ChimeraX/blob/99ccebb6b6d4430a9d490746a612fa47eca9c41e/src/bundles/atomic/src/ribbon.py), [`sse.py`](https://github.com/RBVI/ChimeraX/blob/99ccebb6b6d4430a9d490746a612fa47eca9c41e/src/bundles/atomic/src/sse.py);
+  [`cartoon` command](https://www.cgl.ucsf.edu/chimerax/docs/user/commands/cartoon.html).
+- GROMACS [`gmx helixorient`](https://manual.gromacs.org/current/onlinehelp/gmx-helixorient.html):
+  local helix axis and centres from four consecutive Cα (used by Mol\*).
 
 **Simplification**
 

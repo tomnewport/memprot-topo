@@ -44,14 +44,13 @@ function drawSsPolygon(
   element: LayoutElement,
   data: ResidueStyle | undefined,
   residues: { resSeq: number; iCode?: string; sampleIndex: number }[],
+  pxPerA: number,
 ): SVGPolygonElement | null {
   const { type, faded, centreline: screen, start: startIdx, end: endIdx } = element;
   let sections = element.sections;
   if (sections.length === 0) return null;
   const toPoints = (verts: OutlinePoint[]): string =>
-    verts
-      .map(({ sx, sy }) => `${(sx / PLOT.arcPxPerA).toFixed(3)},${(-sy / PLOT.zPxPerA).toFixed(3)}`)
-      .join(' ');
+    verts.map(({ sx, sy }) => `${(sx / pxPerA).toFixed(3)},${(-sy / pxPerA).toFixed(3)}`).join(' ');
 
   // Per-residue width: scale the body by a smooth profile through the
   // residues' factors. Arrow wings keep their flare beyond the body, so a
@@ -134,7 +133,8 @@ function renderLoopCurve(
   points: LoopControlPoint[],
   discontinuous: boolean,
   showPoints: boolean,
-  faded = false,
+  faded: boolean,
+  pxPerA: number,
 ): SVGPathElement | null {
   if (points.length < 2) return null;
 
@@ -164,8 +164,8 @@ function renderLoopCurve(
     for (const p of points) {
       const dot = document.createElementNS(SVG_NS, 'circle');
       dot.setAttribute('class', 'loop-debug-point');
-      dot.setAttribute('cx', (p.arc * PLOT.arcPxPerA).toFixed(2));
-      dot.setAttribute('cy', (-p.z * PLOT.zPxPerA).toFixed(2));
+      dot.setAttribute('cx', (p.arc * pxPerA).toFixed(2));
+      dot.setAttribute('cy', (-p.z * pxPerA).toFixed(2));
       dot.setAttribute('r', '2.5');
       dot.setAttribute('fill', LOOP_DEBUG_FILL[p.kind]);
       paint(dot, { stroke: 'background' });
@@ -197,6 +197,7 @@ function drawLoopData(
   loopResidues: ResidueKey[],
   data: ResidueStyle,
   discontinuous: boolean,
+  pxPerA: number,
 ): boolean {
   const n = loopResidues.length;
   if (n === 0 || points.length < 2) return false;
@@ -220,7 +221,7 @@ function drawLoopData(
       loopResidues.map((key) => data.widths.get(key) ?? 1),
     );
     // Plot units are Å; the plot scale is uniform (1:1 aspect).
-    const rib = ribbon(poly, (d) => widthPx(profile(d)) / 2 / PLOT.arcPxPerA);
+    const rib = ribbon(poly, (d) => widthPx(profile(d)) / 2 / pxPerA);
     for (let k = 0; k < n; k++) {
       const key = loopResidues[k];
       const colour = data.colour?.(key);
@@ -373,7 +374,7 @@ export function render2d(
   const cy = frame.originY;
   plot.setAttribute(
     'transform',
-    `translate(${cx}, ${cy}) scale(${PLOT.arcPxPerA}, ${-PLOT.zPxPerA})`,
+    `translate(${cx}, ${cy}) scale(${frame.pxPerA}, ${-frame.pxPerA})`,
   );
   svg.appendChild(plot);
 
@@ -442,7 +443,7 @@ export function render2d(
   for (const item of items) {
     if ('type' in item) {
       const residues = segments[item.seg].residues.slice(item.residueStart, item.residueEnd + 1);
-      const poly = drawSsPolygon(plot, item, dataOf(item.seg), residues);
+      const poly = drawSsPolygon(plot, item, dataOf(item.seg), residues, frame.pxPerA);
       // Focal-chain elements act as buttons (see TopologyDisplay.bindElements).
       if (poly && item.selectable) {
         markSsElement(poly, item.type, item.selectable.start, item.selectable.end);
@@ -456,11 +457,16 @@ export function render2d(
       item.discontinuous,
       showLoopPoints,
       item.faded,
+      frame.pxPerA,
     );
     // Residue data is drawn over the curve, which stays as the hit area and the
     // selection halo (hidden otherwise; see `.loop.has-data`).
     const data = item.connector ? undefined : dataOf(item.seg);
-    if (path && data && drawLoopData(plot, item.points, item.residues, data, item.discontinuous)) {
+    if (
+      path &&
+      data &&
+      drawLoopData(plot, item.points, item.residues, data, item.discontinuous, frame.pxPerA)
+    ) {
       path.classList.add('has-data');
     }
     if (path && item.selectable) markLoop(path, item.selectable.start, item.selectable.end);

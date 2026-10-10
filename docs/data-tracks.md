@@ -194,7 +194,5 @@ The page's own `residueColours` / `residueWidths` win when set.
 - Tracks are drawn in the 1-D view only; `views: ["2d"]` tracks are skipped.
 - The `structure` source has one row per residue (its Cα). Per-atom data
   needs its own `pdb` source.
-- MemProtMD `at.pdb` files have blank chain IDs, which the loader can't yet
-  match to most structures (#77).
 - Gutter label widths are estimated from character counts, so unusual fonts
   can crowd them; long labels wrap at about 24 characters.

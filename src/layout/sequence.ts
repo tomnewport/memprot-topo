@@ -3,7 +3,7 @@ import { residueKey, type ResidueKey } from '../residue-key.js';
 import type { SeqElement, SeqResidue, SequenceSource, TracePoint } from '../sequence/types.js';
 import { oneLetter } from '../sequence/amino-acids.js';
 import { measure } from '../components/residue-data.js';
-import { PLOT, SS_BODY } from './constants.js';
+import { SS_BODY } from './constants.js';
 import { ssTypeAt } from './runs.js';
 import { flattenLoop } from './loops.js';
 import type { ChainLayout } from './chain-layout.js';
@@ -52,7 +52,7 @@ export function buildSequence(
     code: oneLetter(c.resName),
     ss: ssTypeAt(chain.segments, c.resSeq),
   }));
-  const px = PLOT.arcPxPerA;
+  const px = layout.frame.pxPerA;
   const toSvg = (arc: number, z: number): { x: number; y: number } => ({
     x: origin.x + arc * px,
     y: origin.y - z * px,

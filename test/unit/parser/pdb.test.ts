@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parsePdb } from '../../../src/parser/pdb.js';
+import MEMPROTMD_AT from '../../../examples/2omf_default_dppc-at.pdb?raw';
 
 const SAMPLE_PDB = `\
 ATOM      1  N   GLY A   1       0.000   0.000   0.000  1.00  0.00           N
@@ -128,5 +129,29 @@ ATOM      2  CA  ALA A 100A      1.000   2.000   3.000  1.00  0.00           C
       occupancy: 1,
       tempFactor: 0,
     });
+  });
+});
+
+describe('parsePdb with a blank chain column', () => {
+  it('reads a real MemProtMD at.pdb (2OMF): blank chain, simulation-box frame', () => {
+    const chains = parsePdb(MEMPROTMD_AT);
+    // The trimer runs together on one blank chain, numbered 1–1020.
+    expect(chains.map((c) => c.chainId)).toEqual(['A']);
+    const [chain] = chains;
+    expect(chain.calphas).toHaveLength(1020);
+    expect(chain.calphas[0]).toMatchObject({ resSeq: 1, resName: 'ALA', x: 65.94, y: 65.47 });
+    expect(chain.calphas[0].z).toBeCloseTo(38.93, 5);
+    expect(chain.calphas.at(-1)).toMatchObject({ resSeq: 1020, resName: 'PHE' });
+    // Box frame: every Cα is above z = 0 (30.6–85.3 Å).
+    expect(Math.min(...chain.calphas.map((c) => c.z))).toBeGreaterThan(30);
+  });
+
+  it('names a blank chain by the first letter no other chain uses', () => {
+    const text = [
+      'ATOM      1  CA  GLY A   1       0.000   0.000   0.000  1.00  0.00           C',
+      'ATOM      2  CA  GLY     1       0.000   0.000  10.000  1.00  0.00           C',
+      'ATOM      3  CA  GLY C   1       0.000   0.000  20.000  1.00  0.00           C',
+    ].join('\n');
+    expect(parsePdb(text).map((c) => c.chainId)).toEqual(['A', 'B', 'C']);
   });
 });
