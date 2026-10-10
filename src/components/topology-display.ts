@@ -7,6 +7,7 @@ import {
   resolveColouring,
   widthFactors,
   type ResidueColourValues,
+  type ResidueSeries,
   type ResidueWidthValues,
 } from './residue-data.js';
 import type { IconMembrane } from './chain-icon.js';
@@ -91,6 +92,11 @@ import {
   type TopologySelection,
 } from './selection.js';
 import { sequenceLanes, type SequenceTrack } from './sequence-lanes.js';
+import {
+  DataNumbering,
+  residueNumberingName,
+  type ResidueNumberingName,
+} from './data-numbering.js';
 
 export { DEFAULT_MIN_HELIX_LENGTH, DEFAULT_MIN_STRAND_LENGTH, effectiveSsSegments };
 export { DEFAULT_TRANSITION_MS, parseSelection };
@@ -219,6 +225,7 @@ export class TopologyDisplay extends HTMLElement {
     'selection',
     'residue-colours',
     'residue-widths',
+    'residue-numbering',
     'colour-scale',
     'colour-domain',
     'colour-label',
@@ -252,6 +259,8 @@ export class TopologyDisplay extends HTMLElement {
   } | null = null;
   private _residueColours: ResidueColourValues | null = null;
   private _residueWidths: ResidueWidthValues | null = null;
+  /** Moves residue data given in UniProt numbering onto the structure. */
+  private readonly _numbering = new DataNumbering(() => this.render({ keepView: true }));
   /** What the displayed chain's 3-D view is built from, until it is needed. */
   private _view3dSource: {
     scroll: HTMLElement;
@@ -460,6 +469,28 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
+   * The numbering residue data ({@link residueColours}, {@link residueWidths},
+   * {@link sequenceTracks}) is keyed by: `author`, the structure's own
+   * (default), or `uniprot`, mapped onto the structure with PDBe's SIFTS
+   * file for {@link proteinData}'s `pdbId`, fetched on first use. Unset or
+   * unknown values give `author`. See docs/residue-data.md.
+   */
+  get residueNumbering(): ResidueNumberingName {
+    return residueNumberingName(this.getAttribute('residue-numbering'));
+  }
+
+  /** Set the numbering; writes the `residue-numbering` attribute (null removes it). */
+  set residueNumbering(value: ResidueNumberingName | null) {
+    if (value === null) this.removeAttribute('residue-numbering');
+    else this.setAttribute('residue-numbering', value);
+  }
+
+  /** `series` in the structure's numbering; null while that is being looked up. */
+  private structureNumbered<T>(series: ResidueSeries<T> | null): ResidueSeries<T> | null {
+    return this._numbering.series(series, this.residueNumbering, this._data?.pdbId);
+  }
+
+  /**
    * A MemProtMD bilayer-distortions file for the loaded structure: its text,
    * or the result of {@link parseDistortions}. It sets the bulk leaflet
    * positions and, when the structure is in the same frame as the file (as
@@ -647,6 +678,11 @@ export class TopologyDisplay extends HTMLElement {
       if (name === 'residue-colours') this._residueColours = parseSeriesAttribute(value, name);
       else this._residueWidths = parseSeriesAttribute(value, name);
       this.render({ keepView: true });
+      return;
+    }
+    if (name === 'residue-numbering') {
+      if (residueNumberingName(value) !== residueNumberingName(old))
+        this.render({ keepView: true });
       return;
     }
     if (name === 'colour-scale' || name === 'colour-domain' || name === 'colour-label') {
@@ -1227,7 +1263,7 @@ export class TopologyDisplay extends HTMLElement {
       sequence.residues,
       this.chainDisplayData(selectedChain.chainId)?.style.colour,
       this.getAttribute('colour-label') || 'Colour',
-      this._sequenceTracks,
+      this.numberedTracks(),
       this._theme.dataScale,
     );
     const seq = new SequenceController(
@@ -1373,8 +1409,9 @@ export class TopologyDisplay extends HTMLElement {
 
   /** Residue data styling for `chainId`, or undefined when there is none. */
   private chainDisplayData(chainId: string): ChainDisplayData | undefined {
+    const colours = this.structureNumbered(this._residueColours);
     const colouring = resolveColouring(
-      this._residueColours,
+      colours,
       {
         scale: this.getAttribute('colour-scale'),
         domain: this.getAttribute('colour-domain'),
@@ -1385,8 +1422,8 @@ export class TopologyDisplay extends HTMLElement {
         categories: this._theme.dataCategories,
       }),
     );
-    const widths = widthFactors(this._residueWidths, chainId);
-    const chainColoured = !!this._residueColours?.[chainId] && colouring !== null;
+    const widths = widthFactors(this.structureNumbered(this._residueWidths), chainId);
+    const chainColoured = !!colours?.[chainId] && colouring !== null;
     if (!chainColoured && widths.size === 0) return undefined;
     return {
       style: {
@@ -1527,6 +1564,14 @@ export class TopologyDisplay extends HTMLElement {
   set sequenceTracks(tracks: SequenceTrack[] | null) {
     this._sequenceTracks = Array.isArray(tracks) ? tracks : [];
     this.render({ keepView: true });
+  }
+
+  /** {@link sequenceTracks} in the structure's numbering (see {@link residueNumbering}). */
+  private numberedTracks(): SequenceTrack[] {
+    return this._sequenceTracks.flatMap((track) => {
+      const values = this.structureNumbered(track.values);
+      return values ? [{ ...track, values }] : [];
+    });
   }
 }
 

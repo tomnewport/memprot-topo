@@ -365,6 +365,14 @@ export const DEMO_CONTROLS: DemoControl[] = [
     scope: 'each',
     description: 'Per-residue width factors (JSON: chain → residue → factor; 1 normal, 0 a line).',
   },
+  {
+    attribute: 'residue-numbering',
+    kind: 'select',
+    default: 'author',
+    options: ['author', 'uniprot'],
+    scope: 'all',
+    description: 'Numbering of the residue data: the structure’s own, or UniProt (via SIFTS).',
+  },
 ];
 
 /** The value an input shows when its display has `value` for the attribute. */
