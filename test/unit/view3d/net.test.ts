@@ -7,7 +7,7 @@ import {
   sameNetShape,
   type FishnetInput,
   type MembraneStyle,
-} from '../../../src/morph/net.js';
+} from '../../../src/view3d/net.js';
 
 const BULK = { upper: 20, lower: -20 };
 const CENTRE = { x: 10, y: -5 };

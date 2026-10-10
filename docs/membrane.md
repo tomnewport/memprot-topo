@@ -66,12 +66,12 @@ distortions file gives one (averaged over 6–12 Å; pores the drawn protein
 surrounds stay open, and gaps elsewhere, such as other subunits the view
 doesn't draw, are filled in smoothly from the lipid around), and otherwise
 holds the annular position next to the protein, easing to the bulk 4–14 Å
-away. Its spacing is `structure-grid-spacing` (see [morph-3d.md](morph-3d.md)). It
+away. Its spacing is `structure-grid-spacing` (see [view-3d.md](view-3d.md)). It
 eases to the bulk before the disc's rim, which shows at least 5 Å of flat
 bulk. The translucent leaflet sheets behind it stay at the bulk planes.
 `structure-membrane-style` draws the same heights as polar rings and spokes, or
 as a translucent surface coloured by how far each leaflet has risen above or
-dropped below its bulk plane (see [morph-3d.md](morph-3d.md)).
+dropped below its bulk plane (see [view-3d.md](view-3d.md)).
 
 ## Placing the membrane
 

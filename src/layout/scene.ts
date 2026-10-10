@@ -1,11 +1,11 @@
 import type { Theme } from '../theme/index.js';
-import type { MorphScene, MorphStyle } from '../morph/types.js';
+import type { View3DScene, View3DStyle } from '../view3d/types.js';
 import type { Membrane } from '../membrane/index.js';
 import { FADED_OPACITY, LABEL, LOOP, PLOT, SS_BODY } from './constants.js';
 import type { ChainLayout } from './chain-layout.js';
 
-export type MorphThemeStyle = Pick<
-  MorphStyle,
+export type View3DThemeStyle = Pick<
+  View3DStyle,
   | 'selectionWidthScale'
   | 'unselectedSaturation'
   | 'helixFill'
@@ -24,8 +24,8 @@ export type MorphThemeStyle = Pick<
   | 'labelFontFamily'
 >;
 
-/** The 3-D morph's colours from a theme: its shading is built from the same tokens. */
-export function morphColours(theme: Theme): MorphThemeStyle {
+/** The 3-D view's colours from a theme: its shading is built from the same tokens. */
+export function view3dColours(theme: Theme): View3DThemeStyle {
   return {
     helixFill: theme.helix,
     helixStroke: theme.helixEdge,
@@ -56,7 +56,7 @@ export function build3d(
   layout: ChainLayout,
   theme: Theme,
   surfaces: Membrane['surfaces'] = null,
-): MorphScene | null {
+): View3DScene | null {
   if (!layout.morphable) return null;
   const { profile, bulk, annular } = layout.membrane;
   return {
@@ -115,7 +115,7 @@ export function build3d(
     frame: { ...layout.frame },
     gapA: LOOP.elementGapPx / PLOT.arcPxPerA,
     style: {
-      ...morphColours(theme),
+      ...view3dColours(theme),
       labelFontSize: LABEL.fontSizePx,
       labelGap: LABEL.gapPx,
       labelTangentStep: LABEL.tangentStepSamples,

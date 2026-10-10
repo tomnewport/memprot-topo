@@ -1,4 +1,4 @@
-import type { MorphController } from '../morph/controller.js';
+import type { View3DController } from '../view3d/controller.js';
 import type { SequenceController } from '../sequence/controller.js';
 
 /** Default time (ms) to move one whole dimension (see `transition-time`). */
@@ -24,12 +24,12 @@ export interface DimensionHost {
   element: HTMLElement;
   /** The displayed chain's sequence ↔ topology transition. */
   seq(): SequenceController | null;
-  /** The displayed chain's morph, once loaded. */
-  morph(): MorphController | null;
+  /** The displayed chain's 3-D view, once loaded. */
+  view3d(): View3DController | null;
   /** Whether the displayed chain has a 3-D view. */
   has3d(): boolean;
-  /** Load the morph code and build the displayed chain's morph. */
-  loadMorph(): Promise<MorphController | null>;
+  /** Load the 3-D code and build the displayed chain's 3-D view. */
+  loadView3D(): Promise<View3DController | null>;
   /** Jump the morph to `tau`, loading it first if needed. */
   setTransitionProgress(tau: number): Promise<void>;
   /** The 2-D topology is being left: end any blend on it. */
@@ -63,7 +63,7 @@ export class DimensionController {
   /** Where the view stands now (0–2). */
   get position(): number {
     const u = this.host.seq()?.progress ?? 1;
-    return u < 1 ? u : 1 + (this.host.morph()?.progress ?? 0);
+    return u < 1 ? u : 1 + (this.host.view3d()?.progress ?? 0);
   }
 
   /** Time (ms) to move one whole dimension (`transition-time`; 0 = instant). */
@@ -84,15 +84,15 @@ export class DimensionController {
   apply(p: number): void {
     const seq = this.host.seq();
     if (!seq) return;
-    const morph = this.host.morph();
+    const view = this.host.view3d();
     // Leaving the 2-D topology: its picture is the first frame either way.
     if (p !== 1) this.host.leave2d();
     if (p < 1) {
-      if ((morph?.progress ?? 0) > 0) morph?.setProgress(0);
+      if ((view?.progress ?? 0) > 0) view?.setProgress(0);
       seq.setProgress(p);
     } else {
       seq.setProgress(1);
-      if (morph) morph.setProgress(p - 1);
+      if (view) view.setProgress(p - 1);
       else if (p > 1) void this.host.setTransitionProgress(p - 1);
     }
   }
@@ -130,7 +130,7 @@ export class DimensionController {
     };
     // Set the 3-D view up before the clock starts, so the first frames don't stall.
     if (Math.max(from, target) > 1) {
-      void this.host.loadMorph().then((m) => {
+      void this.host.loadView3D().then((m) => {
         m?.precompute();
         go();
       });
@@ -175,7 +175,7 @@ export function renderViewBar(
   extra: HTMLElement,
 ): HTMLDivElement {
   const bar = document.createElement('div');
-  bar.className = 'morph-bar';
+  bar.className = 'dimension-bar';
   const group = document.createElement('div');
   group.className = 'view-switch';
   group.setAttribute('role', 'group');
@@ -189,7 +189,7 @@ export function renderViewBar(
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'view-button';
-    if (k === 2) b.classList.add('morph-toggle');
+    if (k === 2) b.classList.add('dimension-toggle');
     b.dataset.dimension = String(k + 1);
     b.textContent = text;
     b.title = label;
@@ -200,7 +200,7 @@ export function renderViewBar(
     return b;
   });
   const hint = document.createElement('span');
-  hint.className = 'morph-hint';
+  hint.className = 'dimension-hint';
   hint.textContent = 'Drag to rotate';
   bar.append(group, hint, extra);
   if (!available) {

@@ -11,16 +11,16 @@ import {
 } from './residue-data.js';
 import type { IconMembrane } from './chain-icon.js';
 import { ScrollBox } from './scroll-box.js';
-import type { MorphScene } from '../morph/types.js';
-import type { MorphController, MorphView } from '../morph/controller.js';
-import type { MorphOptions } from '../morph/options.js';
-import type { Fishnet } from '../morph/net.js';
-import { PROJECTIONS } from '../morph/projections.js';
+import type { View3DScene } from '../view3d/types.js';
+import type { View3DController, View3DState } from '../view3d/controller.js';
+import type { View3DOptions } from '../view3d/options.js';
+import type { Fishnet } from '../view3d/net.js';
+import { PROJECTIONS } from '../view3d/projections.js';
 import {
   DEFAULT_MEMBRANE_STYLE,
   MEMBRANE_STYLES,
   type MembraneStyle,
-} from '../morph/membrane-style.js';
+} from '../view3d/membrane-style.js';
 import type { SequenceSource } from '../sequence/types.js';
 import { SequenceController } from '../sequence/controller.js';
 import { DEFAULT_SEQUENCE_OPTIONS, type SequenceOptions } from '../sequence/renderer.js';
@@ -58,7 +58,7 @@ import {
   buildSequence,
   effectiveSsSegments,
   layoutChain,
-  morphColours,
+  view3dColours,
   type ChainLayout,
   type AssemblyContext,
   type LoopRenderOptions,
@@ -115,7 +115,7 @@ function renderChainViews(
   display?: ChainDisplayData,
 ): {
   svg: SVGSVGElement;
-  scene: MorphScene | null;
+  scene: View3DScene | null;
   sequence: SequenceSource;
   decor2d: Element[];
 } {
@@ -140,9 +140,9 @@ interface MembraneSnapshot {
 }
 
 /** Default rolling-wave width for the 2-D → 3-D morph (see `transition-sweep`). */
-const DEFAULT_MORPH_SWEEP = 0.35;
+const DEFAULT_TRANSITION_SWEEP = 0.35;
 
-/** Default strand arrowhead width over ribbon width in the morph (4.65 / 2.85 Å). */
+/** Default strand arrowhead width over ribbon width in the 3-D view (4.65 / 2.85 Å). */
 const STRAND_ARROW_RATIO = 4.65 / 2.85;
 
 let _instanceCounter = 0;
@@ -252,17 +252,17 @@ export class TopologyDisplay extends HTMLElement {
   } | null = null;
   private _residueColours: ResidueColourValues | null = null;
   private _residueWidths: ResidueWidthValues | null = null;
-  /** What the displayed chain's 3-D morph is built from, until it is needed. */
-  private _morphSource: {
+  /** What the displayed chain's 3-D view is built from, until it is needed. */
+  private _view3dSource: {
     scroll: HTMLElement;
     svg: SVGSVGElement;
-    scene: MorphScene;
+    scene: View3DScene;
     /** The structure's other chains, shown around it in 3-D (built on first use). */
-    context: () => MorphScene[];
-    options: Partial<MorphOptions>;
+    context: () => View3DScene[];
+    options: Partial<View3DOptions>;
     bar: HTMLDivElement;
   } | null = null;
-  private _morph: MorphController | null = null;
+  private _view3d: View3DController | null = null;
   /** The displayed chain's sequence ↔ topology transition. */
   private _seq: SequenceController | null = null;
   /** Extra data lanes for the sequence view (see {@link sequenceTracks}). */
@@ -271,16 +271,16 @@ export class TopologyDisplay extends HTMLElement {
   private readonly _dimension = new DimensionController({
     element: this,
     seq: () => this._seq,
-    morph: () => this._morph,
-    has3d: () => this._morphSource !== null,
-    loadMorph: () => this.loadMorph(),
+    view3d: () => this._view3d,
+    has3d: () => this._view3dSource !== null,
+    loadView3D: () => this.loadView3D(),
     setTransitionProgress: (tau) => this.setTransitionProgress(tau),
     leave2d: () => this.finishBand(),
     onMove: () => this._scrollBox?.update(),
   });
-  private _morphLoad: Promise<MorphController | null> | null = null;
-  /** A view a redraw is restoring while the morph code loads. */
-  private _pendingView: MorphView | null = null;
+  private _view3dLoad: Promise<View3DController | null> | null = null;
+  /** A view a redraw is restoring while the 3-D code loads. */
+  private _pendingView: View3DState | null = null;
   /** Running blend of the 2-D membrane band after a `membrane-detail` change. */
   private readonly _band = new BandBlend();
   private _scrollBox: ScrollBox | null = null;
@@ -288,7 +288,7 @@ export class TopologyDisplay extends HTMLElement {
     element: this,
     box: () => this._scrollBox,
     svg: () => this._shown?.svg ?? null,
-    onFillHeight: (height) => this._morph?.setFillHeight(height),
+    onFillHeight: (height) => this._view3d?.setFillHeight(height),
   });
   private _selectedChainId: string | null = null;
   /** The chain picker, when the protein has more than one chain. */
@@ -408,9 +408,9 @@ export class TopologyDisplay extends HTMLElement {
     }
     repaint(this._shown.svg, theme);
     this._seq?.restyle(theme);
-    if (this._morphSource) {
-      Object.assign(this._morphSource.scene.style, morphColours(theme));
-      this._morph?.restyle();
+    if (this._view3dSource) {
+      Object.assign(this._view3dSource.scene.style, view3dColours(theme));
+      this._view3d?.restyle();
     }
     this.redrawPicker();
   }
@@ -609,10 +609,10 @@ export class TopologyDisplay extends HTMLElement {
       name === 'structure-grid-spacing' ||
       name === 'structure-membrane-style'
     ) {
-      // 3-D only: update the morph in place, keeping its view.
-      if (this._morphSource) {
-        this._morphSource.options = this.morphOptions;
-        this._morph?.setOptions(this._morphSource.options);
+      // 3-D only: update the 3-D view in place, keeping its view.
+      if (this._view3dSource) {
+        this._view3dSource.options = this.view3dOptions;
+        this._view3d?.setOptions(this._view3dSource.options);
       }
       return;
     }
@@ -712,16 +712,16 @@ export class TopologyDisplay extends HTMLElement {
    * chain (`transition-sweep`, default 0.35). 0 rolls the whole chain up at once;
    * larger values roll it up progressively from the N-terminal end.
    */
-  private get morphSweep(): number {
+  private get transitionSweep(): number {
     const v = Number.parseFloat(this.getAttribute('transition-sweep') ?? '');
-    return Number.isFinite(v) && v >= 0 ? v : DEFAULT_MORPH_SWEEP;
+    return Number.isFinite(v) && v >= 0 ? v : DEFAULT_TRANSITION_SWEEP;
   }
 
   /**
    * Projection of the finished 3-D view (`structure-projection`): `isometric`
    * (default, parallel) or `perspective` (35 mm-equivalent).
    */
-  private get morphProjection(): keyof typeof PROJECTIONS {
+  private get structureProjection(): keyof typeof PROJECTIONS {
     return this.getAttribute('structure-projection') === 'perspective'
       ? 'perspective'
       : 'isometric';
@@ -733,12 +733,12 @@ export class TopologyDisplay extends HTMLElement {
    * default proportion to the ribbon width. Invalid or non-positive values
    * fall back to the defaults.
    */
-  private get morphStrandOptions(): Partial<MorphOptions> {
+  private get structureStrandOptions(): Partial<View3DOptions> {
     const read = (name: string): number | null => {
       const v = Number.parseFloat(this.getAttribute(name) ?? '');
       return Number.isFinite(v) && v > 0 ? v : null;
     };
-    const opts: Partial<MorphOptions> = {};
+    const opts: Partial<View3DOptions> = {};
     const width = read('structure-strand-width');
     if (width !== null) {
       opts.strandWidth = width;
@@ -754,27 +754,27 @@ export class TopologyDisplay extends HTMLElement {
    * 2 Å; unset, `auto` or invalid gives 0, which sizes it from the membrane
    * disc (an eighth of its radius, 4–8 Å).
    */
-  private get morphGridSpacing(): number {
+  private get structureGridSpacing(): number {
     const v = Number.parseFloat(this.getAttribute('structure-grid-spacing') ?? '');
     return Number.isFinite(v) && v > 0 ? v : 0;
   }
 
   /** How the 3-D view draws the leaflets (`structure-membrane-style`); `grid` unless valid. */
-  private get morphMembraneStyle(): MembraneStyle {
+  private get structureMembraneStyle(): MembraneStyle {
     const v = this.getAttribute('structure-membrane-style');
     return (MEMBRANE_STYLES as readonly string[]).includes(v ?? '')
       ? (v as MembraneStyle)
       : DEFAULT_MEMBRANE_STYLE;
   }
 
-  /** Assemble the 3-D morph options from the component's attributes. */
-  private get morphOptions(): Partial<MorphOptions> {
+  /** Assemble the 3-D view options from the component's attributes. */
+  private get view3dOptions(): Partial<View3DOptions> {
     return {
-      sweep: this.morphSweep,
-      ...PROJECTIONS[this.morphProjection],
-      ...this.morphStrandOptions,
-      gridSpacing: this.morphGridSpacing,
-      membraneStyle: this.morphMembraneStyle,
+      sweep: this.transitionSweep,
+      ...PROJECTIONS[this.structureProjection],
+      ...this.structureStrandOptions,
+      gridSpacing: this.structureGridSpacing,
+      membraneStyle: this.structureMembraneStyle,
     };
   }
 
@@ -902,38 +902,38 @@ export class TopologyDisplay extends HTMLElement {
 
   /** 2-D ↔ 3-D morph progress of the displayed chain: 0 = 2-D, 1 = 3-D. */
   get transitionProgress(): number {
-    return this._morph?.progress ?? 0;
+    return this._view3d?.progress ?? 0;
   }
 
   /**
    * Jump the morph to `tau` ∈ [0, 1] without animating. Resolves once the
-   * frame is drawn (the morph code is loaded on first use).
+   * frame is drawn (the 3-D code is loaded on first use).
    */
   async setTransitionProgress(tau: number): Promise<void> {
     if (tau > 0) this.finishBand();
-    (await this.loadMorph())?.setProgress(tau);
+    (await this.loadView3D())?.setProgress(tau);
   }
 
   /** Animate between the 2-D topology and the 3-D view. */
   async toggle3d(): Promise<void> {
     this.dimension = this.dimension > 2.5 ? 2 : 3;
-    // Resolves once the morph code is loaded (and, with no animation, drawn).
-    await this.loadMorph();
+    // Resolves once the 3-D code is loaded (and, with no animation, drawn).
+    await this.loadView3D();
   }
 
   /**
-   * The displayed chain's morph controller. The morph code is loaded on
+   * The displayed chain's 3-D view controller. The 3-D code is loaded on
    * first use, so pages that never show the 3-D view don't pay for it.
    */
-  private loadMorph(): Promise<MorphController | null> {
-    const src = this._morphSource;
+  private loadView3D(): Promise<View3DController | null> {
+    const src = this._view3dSource;
     if (!src) return Promise.resolve(null);
-    if (this._morph) return Promise.resolve(this._morph);
-    this._morphLoad ??= import('../morph/controller.js')
-      .then(({ MorphController }) => {
+    if (this._view3d) return Promise.resolve(this._view3d);
+    this._view3dLoad ??= import('../view3d/controller.js')
+      .then(({ View3DController }) => {
         // Re-rendered (new chain or settings) while loading: stale.
-        if (this._morphSource !== src) return null;
-        const morph = new MorphController(
+        if (this._view3dSource !== src) return null;
+        const view = new View3DController(
           src.scroll,
           src.svg,
           src.scene,
@@ -941,18 +941,18 @@ export class TopologyDisplay extends HTMLElement {
           src.options,
           src.context(),
         );
-        this._morph = morph;
-        morph.setFillHeight(this._fs.fillHeight);
-        morph.setSelection(this.morphSelection());
-        morph.onChange = () => this._dimension.sync(src.bar);
-        return morph;
+        this._view3d = view;
+        view.setFillHeight(this._fs.fillHeight);
+        view.setSelection(this.view3dSelection());
+        view.onChange = () => this._dimension.sync(src.bar);
+        return view;
       })
       .catch((err: unknown) => {
         // Let a later click try again (e.g. after a network blip).
-        this._morphLoad = null;
+        this._view3dLoad = null;
         throw err;
       });
-    return this._morphLoad;
+    return this._view3dLoad;
   }
 
   /**
@@ -1009,9 +1009,9 @@ export class TopologyDisplay extends HTMLElement {
     membraneFrom = null,
   }: { keepView?: boolean; membraneFrom?: MembraneSnapshot | null } = {}) {
     this.finishBand();
-    const view: MorphView | null = !keepView
+    const view: View3DState | null = !keepView
       ? null
-      : (this._morph?.view ??
+      : (this._view3d?.view ??
         this._pendingView ??
         (this._scrollBox
           ? {
@@ -1026,10 +1026,10 @@ export class TopologyDisplay extends HTMLElement {
     const seqView = keepView && this._seq ? this._seq.progress : null;
     this._seq?.dispose();
     this._seq = null;
-    this._morph?.dispose();
-    this._morph = null;
-    this._morphSource = null;
-    this._morphLoad = null;
+    this._view3d?.dispose();
+    this._view3d = null;
+    this._view3dSource = null;
+    this._view3dLoad = null;
     this._scrollBox?.dispose();
     this._scrollBox = null;
     this._fs.button = null;
@@ -1242,7 +1242,7 @@ export class TopologyDisplay extends HTMLElement {
     const bar = renderViewBar(
       scene !== null,
       (dimension) => (this.dimension = dimension),
-      () => void this.loadMorph().then((m) => m?.precompute()),
+      () => void this.loadView3D().then((m) => m?.precompute()),
       this._fs.createButton(),
     );
     seq.onChange = () => this._dimension.sync(bar);
@@ -1255,7 +1255,7 @@ export class TopologyDisplay extends HTMLElement {
         (c) => c.chainId !== selectedChain.chainId && !drawn.has(c.chainId),
       );
       const theme = this._theme;
-      this._morphSource = {
+      this._view3dSource = {
         scroll,
         svg,
         scene,
@@ -1270,7 +1270,7 @@ export class TopologyDisplay extends HTMLElement {
             // Shared style, so theme changes reach the context chains too.
             return s ? [{ ...s, style: scene.style }] : [];
           }),
-        options: this.morphOptions,
+        options: this.view3dOptions,
         bar,
       };
     }
@@ -1292,18 +1292,18 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Put the re-rendered chain back in `view`, loading the morph only if
+   * Put the re-rendered chain back in `view`, loading the 3-D view only if
    * needed, and blend its 3-D membrane from `net` (the one drawn before).
    */
-  private restoreView(view: MorphView, net: Fishnet | null = null): void {
+  private restoreView(view: View3DState, net: Fishnet | null = null): void {
     this._scrollBox!.scroll.scrollLeft = view.scroll0;
     if (view.tau <= 0 && !view.animating) return;
-    const src = this._morphSource;
+    const src = this._view3dSource;
     if (!src) return;
-    // Until the morph is restored, a further redraw carries this view on.
+    // Until the 3-D view is restored, a further redraw carries this view on.
     this._pendingView = view;
-    void this.loadMorph().then((m) => {
-      if (this._morphSource !== src) return;
+    void this.loadView3D().then((m) => {
+      if (this._view3dSource !== src) return;
       this._pendingView = null;
       m?.restore(view);
       // Not while the view moves between dimensions: that redraws every frame.
@@ -1315,7 +1315,7 @@ export class TopologyDisplay extends HTMLElement {
   private membraneSnapshot(): MembraneSnapshot {
     return {
       band: this._shown?.svg.querySelector('path.membrane')?.getAttribute('d') ?? null,
-      net: this._morph?.membraneNet ?? null,
+      net: this._view3d?.membraneNet ?? null,
     };
   }
 
@@ -1481,11 +1481,11 @@ export class TopologyDisplay extends HTMLElement {
     const sel = this.selection;
     const hit = sel && sel.chainId === this._shown.chain.chainId ? sel : null;
     styleSelection(this._shown.svg, hit);
-    this._morph?.setSelection(this.morphSelection());
+    this._view3d?.setSelection(this.view3dSelection());
   }
 
   /** The selected residue range on the shown chain, for the 3-D view. */
-  private morphSelection(): { start: number; end: number } | null {
+  private view3dSelection(): { start: number; end: number } | null {
     const sel = this.selection;
     if (!sel || !this._shown || sel.chainId !== this._shown.chain.chainId) return null;
     return { start: sel.start, end: sel.end };

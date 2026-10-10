@@ -28,7 +28,7 @@ them, so every part of the component sees the same elements:
   drop strands from the sheet and so change the strand count, the shear
   number, or whether a barrel is detected at all.
 - the 2-D diagram, the helix and strand counts in the chain label, and the 3-D
-  morph;
+  view;
 - the chain-picker icons.
 
 On the gallery proteins (3K19, 2OMF, 2J1N, 5G53, 7AHL) raising the default

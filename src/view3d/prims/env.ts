@@ -1,6 +1,6 @@
 import type { RGB } from '../colour.js';
-import type { MorphModel } from '../model.js';
-import type { MorphOptions } from '../options.js';
+import type { View3DModel } from '../model.js';
+import type { View3DOptions } from '../options.js';
 
 /** Colours the element builders shade from, parsed from the scene's style. */
 export interface PrimColours {
@@ -13,8 +13,8 @@ export interface PrimColours {
 
 /** What the helix, strand and loop builders read from the renderer. */
 export interface PrimEnv {
-  readonly model: MorphModel;
-  readonly options: MorphOptions;
+  readonly model: View3DModel;
+  readonly options: View3DOptions;
   readonly colours: PrimColours;
   /** The background: fog and faded elements mix towards it. */
   readonly ground: RGB;

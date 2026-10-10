@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { TopologyDisplay } from '../../src/components/topology-display.js';
 import { DEMO_CONTROLS, mountDemoControls } from '../../src/demo-controls.js';
-import { DEFAULT_MORPH_OPTIONS } from '../../src/morph/options.js';
+import { DEFAULT_VIEW3D_OPTIONS } from '../../src/view3d/options.js';
 
 function setup(n = 2): { panel: HTMLElement; displays: HTMLElement[]; reset: () => void } {
   const panel = document.createElement('div');
@@ -61,7 +61,7 @@ describe('demo controls', () => {
     for (const d of displays) expect(d.getAttribute('loop-extremes')).toBe('off');
 
     const width = input(panel, 'structure-strand-width');
-    expect(width.value).toBe(String(DEFAULT_MORPH_OPTIONS.strandWidth));
+    expect(width.value).toBe(String(DEFAULT_VIEW3D_OPTIONS.strandWidth));
     width.value = '5';
     width.dispatchEvent(new Event('input'));
     for (const d of displays) expect(d.getAttribute('structure-strand-width')).toBe('5');
@@ -108,6 +108,6 @@ describe('demo controls', () => {
     expect(displays[0].getAttribute('transition-sweep')).toBe('0');
     reset();
     expect(displays[0].hasAttribute('transition-sweep')).toBe(false);
-    expect(sweep.value).toBe(String(DEFAULT_MORPH_OPTIONS.sweep));
+    expect(sweep.value).toBe(String(DEFAULT_VIEW3D_OPTIONS.sweep));
   });
 });

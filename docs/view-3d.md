@@ -1,4 +1,4 @@
-# 2-D → 3-D morph
+# 3-D view and the 2-D → 3-D morph
 
 The `3D` button (and the scrubber next to it) rolls the unrolled topology up
 into a 3-D Richardson-style diagram — helices as cylinders, strands as arrowed
@@ -173,7 +173,7 @@ perspective while the camera backs off to keep the scale at the target constant.
 Switching renderer mid-transition (SVG → canvas/WebGL) would make the first
 frame differ from the 2-D picture. Instead every frame is plain SVG built from
 the same primitives as the 2-D renderer, so frame 0 _is_ the 2-D picture: the
-static SVG is swapped for the morph SVG without a visible change, and the
+static SVG is swapped for the 3-D SVG without a visible change, and the
 finished 3-D view stays vector (and exportable).
 
 - Elements are cut into short sections and drawn back-to-front (painter's
@@ -206,7 +206,7 @@ finished 3-D view stays vector (and exportable).
   disc reaches 19 Å past the farthest membrane-spanning helix or strand
   sample (at least 29 Å from its centre): room for the annular leaflet to ease
   to the bulk (4 + 10 Å), then a flat ring of bulk 5 Å wide at the edge
-  (`BULK_MARGIN` in `src/morph/net.ts`). Inside that ring the net eases to
+  (`BULK_MARGIN` in `src/view3d/net.ts`). Inside that ring the net eases to
   the bulk over the outer fifth. It grows out of the flat planes as the sheets
   fade in. The tinted sheets stay at the bulk planes. With
   `structure-membrane-style="polar"` the lines are rings and spokes instead, and
@@ -272,7 +272,7 @@ finished 3-D view stays vector (and exportable).
 - Rendering cost scales with chain length. In headless Chromium without GPU
   rasterisation, a 340-residue barrel takes about 17–25 ms of script per frame
   (plus style, layout and paint), so it animates at about 30 fps there.
-- The morph code is a separate chunk loaded on first use, so pages that never
+- The 3-D code is a separate chunk loaded on first use, so pages that never
   show the 3-D view don't download or parse it. The first frame then builds
   the model and the steadying track (about 250–300 ms for the demo proteins in
   the setting above); pointing at or focusing the 3D bar does this ahead of the

@@ -7,7 +7,7 @@
 
 import { clamp01, fmt, lerp, type RGB } from './colour.js';
 import { rgbStr, saturate } from './colour.js';
-import type { MorphStyle } from './types.js';
+import type { View3DStyle } from './types.js';
 
 /** A drawable piece of the scene, depth-sorted as a unit. */
 export interface Prim {
@@ -507,7 +507,7 @@ export function mergeRuns(
 
 /** What {@link RunWriter.emit} needs to know about the frame besides its runs. */
 export interface RunLook {
-  style: Pick<MorphStyle, 'fadedOpacity' | 'unselectedSaturation' | 'selectionWidthScale'>;
+  style: Pick<View3DStyle, 'fadedOpacity' | 'unselectedSaturation' | 'selectionWidthScale'>;
   /** The background: faded runs are lightened towards it. */
   ground: RGB;
   /** Opacity of faded (neighbouring-chain) runs. */

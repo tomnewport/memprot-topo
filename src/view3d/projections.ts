@@ -1,6 +1,6 @@
 /**
  * Projection presets for the finished 3-D view. Kept in their own tiny module
- * so the component can offer them without loading the morph code.
+ * so the component can offer them without loading the 3-D code.
  */
 export const PROJECTIONS = {
   /** Parallel projection, looking down at atan(1/√2) ≈ 35.26°. */

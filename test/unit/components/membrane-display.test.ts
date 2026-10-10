@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
 import { MEMBRANE_OVERHANG_PX } from '../../../src/membrane/index.js';
 import type { ProteinData } from '../../../src/types.js';
-import type { MorphScene } from '../../../src/morph/types.js';
+import type { View3DScene } from '../../../src/view3d/types.js';
 import { syntheticDistortions, helixCalphas } from '../fixtures/distortions.js';
 
 /** Two TM helices joined by short loops, centred on (60, 60), midplane at z = mid. */
@@ -132,8 +132,8 @@ describe('TopologyDisplay membrane', () => {
     expect(Math.min(...under.map((p) => p.z))).toBeGreaterThan(12.5);
 
     // The 3-D view's fishnet gets the same local surface.
-    const slab = (el as unknown as { _morphSource: { scene: { slab: MorphScene['slab'] } } })
-      ._morphSource.scene.slab;
+    const slab = (el as unknown as { _view3dSource: { scene: { slab: View3DScene['slab'] } } })
+      ._view3dSource.scene.slab;
     expect(slab.annular).toEqual(m.annular);
     expect(slab.surface!.upper(60, 60, 6)).toBeLessThan(15);
     expect(slab.surface!.upper(95, 60, 6)).toBeCloseTo(19, 1);
@@ -316,7 +316,7 @@ describe('TopologyDisplay membrane', () => {
     expect(local.surfaces).not.toBeNull();
     expect(local.annular.upper).toBeLessThan(18);
     const slab = () =>
-      (el as unknown as { _morphSource: { scene: { slab: MorphScene['slab'] } } })._morphSource
+      (el as unknown as { _view3dSource: { scene: { slab: View3DScene['slab'] } } })._view3dSource
         .scene.slab;
 
     // annular: the file's annular leaflets along the protein, no local surface.

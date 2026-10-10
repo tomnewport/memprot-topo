@@ -15,8 +15,8 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | `src/unroll/`                        | AI-generated | Arc-length unroll, B-spline fit and helix/strand axis projection (not `barrel.ts`). |
 | `src/contacts/`                      | AI-generated | β-sheet partner detection and β-barrel geometry (n, shear, tilt). Human-reviewed.   |
 | `src/unroll/barrel.ts`               | AI-generated | Cylindrical unwrap so barrel strands render parallel (issue #12). Human-reviewed.   |
-| `src/morph/`                         | AI-generated | 2-D → 3-D morph into a Richardson-style diagram (issue #22). Human-reviewed.        |
-| `src/components/ss-outline.ts`       | AI-generated | Helix/strand outline geometry shared by the 2-D view and the morph.                 |
+| `src/view3d/`                        | AI-generated | 2-D → 3-D morph into a Richardson-style diagram (issue #22). Human-reviewed.        |
+| `src/components/ss-outline.ts`       | AI-generated | Helix/strand outline geometry shared by the 2-D view and the 3-D view.              |
 | `src/components/chain-icon.ts`       | AI-generated | Chain-picker icons on a 5 × 6 membrane grid (issue #20).                            |
 | `src/components/scroll-box.ts`       | AI-generated | Scrolling diagram box with edge gradients and arrows (issue #21).                   |
 | `src/components/residue-data.ts`     | AI-generated | Per-residue colour/width data series and colour legend (issue #23).                 |

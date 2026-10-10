@@ -21,7 +21,7 @@ off a flag that is on by default.
 | `dimension`                                                                                               | `2`         | `1` sequence, `2` topology, `3` structure; fractions are part-way.               |
 | `fit`                                                                                                     | `width`     | `width` or `content`. See [sizing.md](sizing.md).                                |
 | `transition-time`                                                                                         | 2500 ms     | Time to animate one whole dimension.                                             |
-| `transition-sweep`                                                                                        | `0.35`      | Rolling-wave width of the 2-D → 3-D transition. See [morph-3d.md](morph-3d.md).  |
+| `transition-sweep`                                                                                        | `0.35`      | Rolling-wave width of the 2-D → 3-D transition. See [view-3d.md](view-3d.md).    |
 | `structure-projection`                                                                                    | `isometric` | `isometric` or `perspective`.                                                    |
 | `structure-strand-width`, `structure-strand-thickness`                                                    | 2.85, 1.0 Å | Strand ribbon size in 3-D.                                                       |
 | `structure-grid-spacing`                                                                                  | auto        | Membrane grid spacing in 3-D, Å.                                                 |

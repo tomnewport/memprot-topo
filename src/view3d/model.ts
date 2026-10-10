@@ -1,5 +1,5 @@
 import { catmullRomBezier, type Vec } from '../unroll/index.js';
-import type { MorphScene } from './types.js';
+import type { View3DScene } from './types.js';
 
 /**
  * Pre-computed, frame-independent data for the 2-D → 3-D morph.
@@ -17,8 +17,8 @@ import type { MorphScene } from './types.js';
  * sample lies on it (nr = br = 0). For a β-barrel unwrap the curtain is the
  * barrel cylinder and the offsets carry each residue's departure from it.
  */
-export interface MorphModel {
-  scene: MorphScene;
+export interface View3DModel {
+  scene: View3DScene;
   /** Total samples across all segments. */
   n: number;
   /** Global index of each segment's first sample. */
@@ -306,7 +306,7 @@ function alignToRealAngle(
   for (let g = 0; g < n; g++) theta[g] += delta[g];
 }
 
-export interface MorphModelOptions {
+export interface View3DModelOptions {
   /**
    * Which sample stays put while the curtain rolls up around it.
    * `centre`: the middle of the 2-D picture — right for a uniform roll, which
@@ -318,7 +318,10 @@ export interface MorphModelOptions {
   anchor?: 'centre' | 'end';
 }
 
-export function buildMorphModel(scene: MorphScene, options: MorphModelOptions = {}): MorphModel {
+export function buildView3DModel(
+  scene: View3DScene,
+  options: View3DModelOptions = {},
+): View3DModel {
   const segStart: number[] = [];
   let n = 0;
   for (const seg of scene.segments) {

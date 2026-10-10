@@ -47,5 +47,5 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 - [docs/residue-data.md](docs/residue-data.md) — per-residue colours, widths and the colour legend
 - [docs/membrane.md](docs/membrane.md) — membrane leaflet positions and MemProtMD distortions files
 - [docs/theming.md](docs/theming.md) — light/dark and custom themes: `theme`, `theme-light`, `theme-dark`, `registerTheme`
-- [docs/morph-3d.md](docs/morph-3d.md) — the 3-D view and the 2-D → 3-D morph
+- [docs/view-3d.md](docs/view-3d.md) — the 3-D view and the 2-D → 3-D morph
 - [docs/sequence-view.md](docs/sequence-view.md) — the 1-D sequence view and the `dimension` attribute

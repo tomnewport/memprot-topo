@@ -6,17 +6,17 @@ import type { ResidueKey } from '../residue-key.js';
  * behind it, built from the chain's layout (`layout/scene.ts`). The morph rebuilds the same picture from this at t = 0
  * and rolls it up into a 3-D Richardson diagram at t = 1.
  */
-export interface MorphScene {
+export interface View3DScene {
   /**
    * `polyline`: the 2-D view is the arc-length unroll of the chain's xy path.
    * `cylinder`: the 2-D view is a cylindrical unwrap about a β-barrel axis.
    */
   mode: 'polyline' | 'cylinder';
-  segments: MorphSegment[];
-  elements: MorphElement[];
-  loops: MorphLoop[];
-  labels: MorphLabel[];
-  ties: MorphTie[];
+  segments: View3DSegment[];
+  elements: View3DElement[];
+  loops: View3DLoop[];
+  labels: View3DLabel[];
+  ties: View3DTie[];
   /**
    * Membrane as drawn in 2-D, in display Å: x from x0 to x1, bulk leaflets at
    * z = upper and lower. `profile`, when given, is the leaflet heights the
@@ -41,13 +41,13 @@ export interface MorphScene {
     };
   };
   /** How display Å map to SVG user units in the 2-D picture. */
-  frame: MorphFrame;
+  frame: View3DFrame;
   /** Fixed display gap between consecutive elements (Å). */
   gapA: number;
-  style: MorphStyle;
+  style: View3DStyle;
 }
 
-export interface MorphFrame {
+export interface View3DFrame {
   /** SVG user coordinates of display (arc 0, z 0). */
   originX: number;
   originY: number;
@@ -60,7 +60,7 @@ export interface MorphFrame {
   pxPerA: number;
 }
 
-export interface MorphSegment {
+export interface View3DSegment {
   /** Laid-out samples, (arc, z) in Å, exactly as drawn in 2-D. */
   display: { arc: number; z: number }[];
   /** Real 3-D membrane-frame position of each sample. */
@@ -76,7 +76,7 @@ export interface SampleRef {
   sample: number;
 }
 
-export interface MorphElement {
+export interface View3DElement {
   type: 'helix' | 'strand';
   seg: number;
   /** Inclusive sample range drawn as the element body. */
@@ -97,7 +97,7 @@ export interface ResidueSpan {
   end: number;
 }
 
-export interface MorphLoop {
+export interface View3DLoop {
   /** Control points of the 2-D loop curve (display Å). */
   points: { arc: number; z: number }[];
   discontinuous: boolean;
@@ -115,19 +115,19 @@ export interface MorphLoop {
   selectable?: ResidueSpan;
 }
 
-export interface MorphLabel {
+export interface View3DLabel {
   seg: number;
   sample: number;
   text: string;
   isStart: boolean;
 }
 
-export interface MorphTie {
+export interface View3DTie {
   a: SampleRef & { z: number };
   b: SampleRef & { z: number };
 }
 
-export interface MorphStyle {
+export interface View3DStyle {
   helixFill: string;
   helixStroke: string;
   strandFill: string;

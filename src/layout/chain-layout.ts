@@ -17,7 +17,7 @@ import {
   type MembraneProfile,
   type ProfileAnchor,
 } from '../membrane/index.js';
-import type { MorphFrame, ResidueSpan, SampleRef } from '../morph/types.js';
+import type { View3DFrame, ResidueSpan, SampleRef } from '../view3d/types.js';
 import { ssOutline, type OutlinePoint, type OutlineSection } from '../components/ss-outline.js';
 import { BARREL, PLOT, SS_BODY } from './constants.js';
 import { firstSsRunOf, isBetaBarrel, isSs, lastSsRunOf } from './runs.js';
@@ -131,7 +131,7 @@ export interface ChainLayout {
   ties: LayoutTie[] | null;
   membrane: { bulk: LeafletPair; annular: LeafletPair; profile: MembraneProfile };
   /** The picture's frame: plot origin and viewBox, before any legend. */
-  frame: MorphFrame;
+  frame: View3DFrame;
   /** Whether every sample has a 3-D position, so the chain can be shown in 3-D. */
   morphable: boolean;
 }

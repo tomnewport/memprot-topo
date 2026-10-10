@@ -115,6 +115,6 @@ override the theme's.
 `src/theme/index.ts` holds the registry and the built-in themes. Drawing code
 calls `paint(el, { fill: 'helix', … })`, which records the tokens on the
 element (`data-mp-paint`); `repaint(svg, theme)` re-applies them, which is how
-a theme change recolours the 2-D view without redrawing it. The 3-D morph
+a theme change recolours the 2-D view without redrawing it. The 3-D view
 takes its colours from the scene style built from the theme, and
-`MorphController.restyle()` rebuilds only its renderer.
+`View3DController.restyle()` rebuilds only its renderer.

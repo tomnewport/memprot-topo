@@ -6,8 +6,8 @@
  * `DEMO_CONTROLS` must cover every observed attribute except `protein-data`
  * (enforced by a unit test), so new attributes need an entry here.
  */
-import { DEFAULT_MORPH_OPTIONS } from './morph/options.js';
-import { DEFAULT_MEMBRANE_STYLE, MEMBRANE_STYLES } from './morph/membrane-style.js';
+import { DEFAULT_VIEW3D_OPTIONS } from './view3d/options.js';
+import { DEFAULT_MEMBRANE_STYLE, MEMBRANE_STYLES } from './view3d/membrane-style.js';
 import { DEFAULT_BULK, DEFAULT_MEMBRANE_DETAIL, MEMBRANE_DETAILS } from './membrane/model.js';
 import { registerTheme } from './theme/index.js';
 import {
@@ -172,7 +172,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
   {
     attribute: 'transition-sweep',
     kind: 'number',
-    default: DEFAULT_MORPH_OPTIONS.sweep,
+    default: DEFAULT_VIEW3D_OPTIONS.sweep,
     min: 0,
     max: 1,
     step: 0.05,
@@ -190,7 +190,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
   {
     attribute: 'structure-strand-width',
     kind: 'number',
-    default: DEFAULT_MORPH_OPTIONS.strandWidth,
+    default: DEFAULT_VIEW3D_OPTIONS.strandWidth,
     min: 0.5,
     max: 10,
     step: 0.1,
@@ -200,7 +200,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
   {
     attribute: 'structure-strand-thickness',
     kind: 'number',
-    default: DEFAULT_MORPH_OPTIONS.strandThickness,
+    default: DEFAULT_VIEW3D_OPTIONS.strandThickness,
     min: 0.1,
     max: 5,
     step: 0.1,

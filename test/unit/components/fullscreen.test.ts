@@ -24,7 +24,7 @@ describe('TopologyDisplay full screen (issue #73)', () => {
     const el = mount();
     const b = button(el);
     expect(b).not.toBeNull();
-    expect(b.closest('.morph-bar')).not.toBeNull();
+    expect(b.closest('.dimension-bar')).not.toBeNull();
     expect(b.textContent).toBe('Full screen');
     expect(el.fullscreen).toBe(false);
   });

@@ -104,13 +104,13 @@ All three views are SVG and are built from the same `ChainLayout`:
   ([residue-data.md](residue-data.md)).
 - **3-D view**: `build3d` ([`layout/scene.ts`](../src/layout/scene.ts))
   records the scene the 2-D view draws, with the real 3-D geometry behind it.
-  [`morph/`](../src/morph/) rolls that scene up into a 3-D Richardson-style
+  [`view3d/`](../src/view3d/) rolls that scene up into a 3-D Richardson-style
   diagram: `model.ts` puts every sample on a developable "curtain",
   `prims/` builds helices, strands and loops, `membrane-layer.ts` and `net.ts`
   draw the leaflets, and `engine.ts` depth-sorts the primitives and writes
   them as pooled SVG elements each frame. `controller.ts` runs the animation
-  and orbit. The morph code is loaded with a dynamic `import()` the first time
-  it is needed. See [morph-3d.md](morph-3d.md).
+  and orbit. The 3-D code is loaded with a dynamic `import()` the first time
+  it is needed. See [view-3d.md](view-3d.md).
 - **1-D sequence view**: `buildSequence` ([`layout/sequence.ts`](../src/layout/sequence.ts))
   gives each residue its position in the 2-D picture; [`sequence/`](../src/sequence/)
   word-wraps the sequence with its secondary-structure cartoon and data lanes,
@@ -145,7 +145,7 @@ The `dimension` attribute moves between the three (1 → 2 → 3).
 | [`src/unroll/`](../src/unroll/)                           | Arc-length unroll, barrel unwrap, splines and helix-axis projection.  |
 | [`src/layout/`](../src/layout/)                           | `layoutChain` → `ChainLayout`; `build3d` and `buildSequence` from it. |
 | [`src/components/`](../src/components/)                   | The web components, the 2-D painter, residue data and chrome.         |
-| [`src/morph/`](../src/morph/)                             | The 3-D view and the 2-D ↔ 3-D morph, drawn as SVG.                   |
+| [`src/view3d/`](../src/view3d/)                           | The 3-D view and the 2-D ↔ 3-D morph, drawn as SVG.                   |
 | [`src/sequence/`](../src/sequence/)                       | The 1-D sequence view and the 1-D ↔ 2-D transition.                   |
 | [`src/theme/`](../src/theme/)                             | Theme tokens, built-in themes, registry and in-place repaint.         |
 | [`src/secondary-structure/`](../src/secondary-structure/) | Reserved for in-browser DSSP (#79).                                   |
