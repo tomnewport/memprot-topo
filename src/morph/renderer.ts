@@ -1,56 +1,11 @@
 import { Camera } from './camera.js';
 import { computePose, type Pose, type Rigid } from './curtain.js';
 import type { MorphModel } from './model.js';
-import {
-  BULK_MARGIN,
-  blendFishnet,
-  buildFishnet,
-  discRadius,
-  fishnetSpacing,
-  fitRigid2d,
-  sameNetShape,
-  type Fishnet,
-  type HeightAt,
-  type Leaf,
-  type SurfaceMesh,
-} from './net.js';
-import {
-  clamp01,
-  FOG,
-  fogged,
-  hexRgb,
-  lerp,
-  mixRgb,
-  type RGB,
-  rgbStr,
-  sampleProfile,
-  smooth,
-} from './colour.js';
+import { blendFishnet, discRadius, sameNetShape, type Fishnet } from './net.js';
+import { clamp01, FOG, hexRgb, lerp, type RGB, smooth } from './colour.js';
 import { Pooled, type Prim } from './engine.js';
 import { DEFAULT_MORPH_OPTIONS, type MorphOptions } from './options.js';
-import {
-  clipHeight,
-  MIN_GRID_SPACING,
-  NET,
-  NET_ALPHA,
-  NET_DARKEN,
-  NET_FIT_RMS,
-  NET_SMOOTHING,
-  NET_SMOOTHING_MAX,
-  NET_WIDTH,
-  other,
-  RIM,
-  seenFromAbove,
-  SHEET_ALPHA,
-  sheetsIn,
-  SURFACE_ALPHA,
-  SURFACE_BANDS,
-  SURFACE_EDGES,
-  surfaceBand,
-  type SurfaceShading,
-  thicknessChange,
-  Veil,
-} from './membrane-layer.js';
+import { sheetsIn, SURFACE_BANDS, Veil } from './membrane-layer.js';
 import type { FrameCtx } from './prims/frame.js';
 import { helixPrims } from './prims/helix.js';
 import { loopPrims, tiePrims } from './prims/loop.js';
@@ -59,6 +14,17 @@ import type { PrimColours, PrimEnv } from './prims/env.js';
 import { findKink, fitLine, SPLIT_ANGLE } from './prims/kinks.js';
 import { CONTEXT_ID, mergeRuns, RunWriter } from './engine.js';
 import type { RunLook } from './engine.js';
+import {
+  type BackLayer,
+  buildNet,
+  drawBackRim,
+  drawDiscs,
+  type MembraneEnv,
+  netPrims,
+  rimPrims,
+  surfaceShading,
+} from './membrane-layer.js';
+import type { ContextChain } from './prims/frame.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -115,13 +81,6 @@ const ZOOM_MARGIN = 12;
 /** Progress over which the context chains fade in. */
 const CONTEXT_FADE: [number, number] = [0.5, 0.95];
 
-/** A context chain: shown, rolled up, in its real place around the morphing one. */
-interface ContextChain {
-  model: MorphModel;
-  /** Fixed pose in the finished view's frame (set by precompute). */
-  pose: Pose | null;
-}
-
 /**
  * Renders the morph between the 2-D topology view (τ = 0) and a 3-D
  * Richardson-style diagram (τ = 1) as plain SVG, so the first frame is the
@@ -130,14 +89,7 @@ interface ContextChain {
 export class MorphRenderer {
   readonly svg: SVGSVGElement;
   private readonly defs: SVGDefsElement;
-  private readonly back: {
-    rim: Pooled<SVGPathElement>;
-    mid: Pooled<SVGPathElement>;
-    /** Leaflet surfaces, far one first. */
-    discs: [Pooled<SVGPathElement>, Pooled<SVGPathElement>];
-    /** The surface style's leaflets, far one first: one path per colour band. */
-    surface: [Pooled<SVGPathElement>[], Pooled<SVGPathElement>[]];
-  };
+  private readonly back: BackLayer;
   private readonly runsG: SVGGElement;
   /** Writes each frame's runs into the runs group, reusing its elements. */
   private readonly writer: RunWriter;
@@ -176,6 +128,8 @@ export class MorphRenderer {
   private contextOpacity = 0;
   /** What the helix, strand and loop builders read from this renderer. */
   private readonly prim: PrimEnv;
+  /** What the membrane layer reads from this renderer. */
+  private readonly membrane: MembraneEnv;
 
   constructor(
     readonly model: MorphModel,
@@ -248,6 +202,17 @@ export class MorphRenderer {
       },
       sharpKinks: this.sharpKinks,
       precompute: () => this.precompute(),
+    };
+    this.membrane = {
+      model,
+      options,
+      ground: this.ground,
+      tmp: this.tmp,
+      back: this.back,
+      context: this.context,
+      get drawnNet() {
+        return self.drawnNet;
+      },
     };
   }
 
@@ -521,7 +486,7 @@ export class MorphRenderer {
     };
     this.framing.zoomTrack = this.fitZoomTrack();
     // The pose and disc don't depend on the width, so a refit keeps the net.
-    this.net ??= this.buildNet(pose, dcx, dcy, dr);
+    this.net ??= buildNet(this.membrane, pose, dcx, dcy, dr);
   }
 
   /**
@@ -751,7 +716,14 @@ export class MorphRenderer {
     const planesOn = eDisc > 0.001 && Math.abs(cam.p.el) > 1e-3;
     const mesh = this.drawnNet?.mesh;
     const surface = mesh
-      ? this.surfaceShading(this.drawnNet!.heightAt, mesh, discR / F.disc1.r, upper, lower)
+      ? surfaceShading(
+          this.membrane,
+          this.drawnNet!.heightAt,
+          mesh,
+          discR / F.disc1.r,
+          upper,
+          lower,
+        )
       : null;
     const veil = new Veil(
       cam,
@@ -767,8 +739,8 @@ export class MorphRenderer {
     // The 2-D membrane's local rises and drops flatten onto the bulk planes
     // early on, before the leaflet sheets appear.
     const keepProfile = 1 - smooth(0, 0.3, tau);
-    this.drawBackRim(cam, discX, discY, discR, upper, lower, sigma, keepProfile);
-    this.drawDiscs(cam, discX, discY, discR, upper, lower, planesOn ? eDisc : 0, surface);
+    drawBackRim(this.membrane, cam, discX, discY, discR, upper, lower, sigma, keepProfile);
+    drawDiscs(this.membrane, cam, discX, discY, discR, upper, lower, planesOn ? eDisc : 0, surface);
 
     const prims: Prim[] = [];
     const ctx: FrameCtx = {
@@ -813,8 +785,8 @@ export class MorphRenderer {
     }
     if (tieAlpha > 0.001) tiePrims(this.prim, ctx, tieAlpha * 0.5);
     if (planesOn) {
-      this.rimPrims(ctx, discX, discY, discR, upper, lower, eDisc);
-      this.netPrims(ctx, discX, discY, discR / F.disc1.r, upper, lower, eDisc);
+      rimPrims(this.membrane, ctx, discX, discY, discR, upper, lower, eDisc);
+      netPrims(this.membrane, ctx, discX, discY, discR / F.disc1.r, upper, lower, eDisc);
     }
 
     // Near t = 0 everything is (almost) level, so depths are snapped to keep
@@ -845,499 +817,6 @@ export class MorphRenderer {
   // ── Primitive builders ────────────────────────────────────────────────
 
   // ── Helpers ───────────────────────────────────────────────────────────
-
-  /**
-   * Far half of the membrane's rim, with the midplane on it. `keepProfile`
-   * (1 at t = 0) is how much of the 2-D membrane's local rises and drops the
-   * rim still shows; at 0 it is the flat bulk band.
-   */
-  private drawBackRim(
-    cam: Camera,
-    cxw: number,
-    cyw: number,
-    r: number,
-    upper: number,
-    lower: number,
-    sigma: number,
-    keepProfile: number,
-  ): void {
-    const st = this.model.scene.style;
-    const slab = this.model.scene.slab;
-    const profile = keepProfile > 1e-3 ? slab.profile : undefined;
-    // Angle (about the disc centre) of the eye, and the half-angle to the
-    // silhouette tangents; the far arc lies between them, round the back.
-    let ex: number;
-    let ey: number;
-    let beta = Math.PI / 2;
-    if (Number.isFinite(cam.dist)) {
-      ex = cam.eye[0] - cxw;
-      ey = cam.eye[1] - cyw;
-      const d = Math.hypot(ex, ey);
-      if (d > r) beta = Math.acos(r / d);
-    } else {
-      ex = -cam.v[0];
-      ey = -cam.v[1];
-    }
-    if (Math.hypot(ex, ey) < 1e-9) {
-      ex = 0;
-      ey = -1;
-    }
-    const dirE = Math.atan2(ey, ex);
-    const a0 = dirE + beta;
-    const a1 = dirE + 2 * Math.PI - beta;
-    // While the 2-D profile shows, sample the arc as densely as the profile
-    // and evenly in x at t = 0 (when the arc is seen edge-on), so the first
-    // frame matches the 2-D path.
-    const N = profile ? Math.max(48, Math.min(profile.x.length, 1200)) : 48;
-    const top: number[] = [];
-    const bot: number[] = [];
-    const midPts: number[] = [];
-    for (let i = 0; i <= N; i++) {
-      const a = profile
-        ? a0 + ((a1 - a0) * Math.acos(1 - (2 * i) / N)) / Math.PI
-        : a0 + ((a1 - a0) * i) / N;
-      const c = Math.cos(a);
-      const x = cxw + r * c;
-      const y = cyw + r * Math.sin(a);
-      let zTop = upper;
-      let zBot = lower;
-      if (profile) {
-        // Edge-on, the arc spans the 2-D membrane from x0 to x1.
-        const xd = slab.x0 + ((c + 1) / 2) * (slab.x1 - slab.x0);
-        zTop += keepProfile * (sampleProfile(profile.x, profile.upper, xd) - upper);
-        zBot += keepProfile * (sampleProfile(profile.x, profile.lower, xd) - lower);
-      }
-      cam.project(x, y, zTop, this.tmp);
-      top.push(this.tmp[0], this.tmp[1]);
-      cam.project(x, y, zBot, this.tmp);
-      bot.push(this.tmp[0], this.tmp[1]);
-      // Midplane runs the other way round, so at t = 0 its dashes start at
-      // the left end like the 2-D line.
-      const am = a1 - ((a1 - a0) * i) / N;
-      cam.project(cxw + r * Math.cos(am), cyw + r * Math.sin(am), 0, this.tmp);
-      midPts.push(this.tmp[0], this.tmp[1]);
-    }
-    let d = `M${top[0].toFixed(2)},${top[1].toFixed(2)}`;
-    for (let i = 2; i < top.length; i += 2) d += `L${top[i].toFixed(2)},${top[i + 1].toFixed(2)}`;
-    for (let i = bot.length - 2; i >= 0; i -= 2)
-      d += `L${bot[i].toFixed(2)},${bot[i + 1].toFixed(2)}`;
-    d += 'Z';
-    const rim = this.back.rim;
-    rim.set('d', d);
-    rim.set('fill', st.membraneFill);
-    rim.set('fill-opacity', (0.55 - 0.15 * sigma).toFixed(3));
-    rim.set('stroke', st.membraneEdge);
-    rim.set('stroke-width', '1');
-    rim.set('stroke-linejoin', 'round');
-    let md = `M${midPts[0].toFixed(2)},${midPts[1].toFixed(2)}`;
-    for (let i = 2; i < midPts.length; i += 2)
-      md += `L${midPts[i].toFixed(2)},${midPts[i + 1].toFixed(2)}`;
-    const mid = this.back.mid;
-    mid.set('d', md);
-    mid.set('fill', 'none');
-    mid.set('stroke', st.midplane);
-    mid.set('stroke-width', '1');
-    mid.set('stroke-dasharray', '4 4');
-  }
-
-  /**
-   * Fills of the two leaflet sheets, far one first, behind the protein. The
-   * upper sheet reads as translucent; the lower one is kept faint so the
-   * cytoplasmic side stays legible. In the surface style each leaflet is its
-   * mesh instead, at its own heights and coloured by them.
-   */
-  private drawDiscs(
-    cam: Camera,
-    cxw: number,
-    cyw: number,
-    r: number,
-    upper: number,
-    lower: number,
-    eDisc: number,
-    surface: SurfaceShading | null,
-  ): void {
-    const st = this.model.scene.style;
-    const [far, near] = this.back.discs;
-    const hideBands = () => {
-      for (const bands of this.back.surface) for (const b of bands) b.set('display', 'none');
-    };
-    if (eDisc <= 0 || surface) {
-      far.set('display', 'none');
-      near.set('display', 'none');
-    }
-    if (eDisc <= 0 || !surface) hideBands();
-    if (eDisc <= 0) return;
-    // Seen from above, the lower leaflet is the far one.
-    const fromAbove = seenFromAbove(cam);
-    if (surface) {
-      for (const leaf of ['upper', 'lower'] as const) {
-        const bands = this.back.surface[(leaf === 'upper') === fromAbove ? 1 : 0];
-        const d = this.surfacePaths(
-          cam,
-          cxw,
-          cyw,
-          leaf,
-          leaf === 'upper' ? upper : lower,
-          eDisc,
-          surface,
-        );
-        d.forEach((path, i) => {
-          const band = bands[i];
-          if (!path) {
-            band.set('display', 'none');
-            return;
-          }
-          band.set('display', null);
-          band.set('d', path);
-          band.set('fill', rgbStr(surface.colours[i]));
-          band.set('fill-opacity', (SURFACE_ALPHA[leaf] * eDisc).toFixed(3));
-        });
-      }
-      return;
-    }
-    for (const which of ['top', 'bottom'] as const) {
-      const zp = which === 'top' ? upper : lower;
-      let d = '';
-      for (let a = 0; a < 64; a++) {
-        const th = (a / 64) * 2 * Math.PI;
-        cam.project(cxw + r * Math.cos(th), cyw + r * Math.sin(th), zp, this.tmp);
-        d += (a === 0 ? 'M' : 'L') + this.tmp[0].toFixed(2) + ',' + this.tmp[1].toFixed(2);
-      }
-      const path = (which === 'top') === fromAbove ? near : far;
-      path.set('display', null);
-      path.set('d', d + 'Z');
-      path.set('fill', st.membraneFill);
-      path.set('fill-opacity', (SHEET_ALPHA[which === 'top' ? 0 : 1] * eDisc).toFixed(3));
-    }
-  }
-
-  /**
-   * One leaflet's mesh as a path per colour band, growing out of the bulk
-   * plane with `grow`. Each quad is split into two triangles and each
-   * triangle cut where the thickness change crosses a band edge (it varies
-   * linearly across it), so the bands meet along smooth contours. Every piece is wound
-   * the same way on screen, so pieces that meet or overlap within a band fill
-   * once, with no seams.
-   */
-  private surfacePaths(
-    cam: Camera,
-    cxw: number,
-    cyw: number,
-    leaf: Leaf,
-    bulk: number,
-    grow: number,
-    surface: SurfaceShading,
-  ): string[] {
-    const { k, mesh } = surface;
-    const zs = mesh[leaf];
-    const dt = surface.change[leaf];
-    const nv = zs.length;
-    const p = new Float64Array(nv * 2);
-    for (let v = 0; v < nv; v++) {
-      if (Number.isNaN(zs[v])) continue;
-      cam.project(
-        cxw + k * mesh.xy[v * 2],
-        cyw + k * mesh.xy[v * 2 + 1],
-        bulk + grow * (zs[v] - bulk),
-        this.tmp,
-      );
-      p[v * 2] = this.tmp[0];
-      p[v * 2 + 1] = this.tmp[1];
-    }
-    const out: string[] = new Array<string>(SURFACE_BANDS).fill('');
-    const emit = (band: number, poly: number[]) => {
-      const m = poly.length / 3;
-      if (m < 3) return;
-      let area = 0;
-      for (let i = 0; i < m; i++) {
-        const j = (i + 1) % m;
-        area += poly[i * 3] * poly[j * 3 + 1] - poly[j * 3] * poly[i * 3 + 1];
-      }
-      let d = '';
-      for (let q = 0; q < m; q++) {
-        const i = area >= 0 ? q : m - 1 - q;
-        d += (q === 0 ? 'M' : 'L') + poly[i * 3].toFixed(1) + ',' + poly[i * 3 + 1].toFixed(1);
-      }
-      out[band] += d + 'Z';
-    };
-    // A triangle as flat (screen x, screen y, thickness change) triples.
-    const triangle = (poly: number[]) => {
-      const lo = surfaceBand(Math.min(poly[2], poly[5], poly[8]));
-      const hi = surfaceBand(Math.max(poly[2], poly[5], poly[8]));
-      for (let band = lo; band <= hi; band++) {
-        let piece = poly;
-        if (band > lo) piece = clipHeight(piece, SURFACE_EDGES[band - 1], 1);
-        if (band < hi) piece = clipHeight(piece, SURFACE_EDGES[band], -1);
-        emit(band, piece);
-      }
-    };
-    const vertex = (v: number) => [p[v * 2], p[v * 2 + 1], dt[v]];
-    // A point of a quad at final (ox, oy), height h and thickness change c, as a triple.
-    const point = (ox: number, oy: number, h: number, c: number) => {
-      cam.project(cxw + k * ox, cyw + k * oy, bulk + grow * (h - bulk), this.tmp);
-      return [this.tmp[0], this.tmp[1], c];
-    };
-    const q = mesh.quads;
-    const xy = mesh.xy;
-    for (let i = 0; i < q.length; i += 4) {
-      const corners = [q[i], q[i + 1], q[i + 2], q[i + 3]];
-      const open = corners.map((v) => Number.isNaN(zs[v]));
-      if (!open.includes(true)) {
-        const [a, b, c, e] = corners.map(vertex);
-        triangle([...a, ...b, ...c]);
-        triangle([...a, ...c, ...e]);
-        continue;
-      }
-      // Next to a pore, the quarter of the quad nearest each lipid corner,
-      // with heights as the sampler gives them (open corners left out of the
-      // bilinear mean), so the hole matches where the tint stops.
-      const finite = corners.filter((_, j) => !open[j]);
-      if (!finite.length) continue;
-      const mx = corners.reduce((sum, v) => sum + xy[v * 2], 0) / 4;
-      const my = corners.reduce((sum, v) => sum + xy[v * 2 + 1], 0) / 4;
-      const mean = (a: Float64Array) => finite.reduce((sum, v) => sum + a[v], 0) / finite.length;
-      const centre = point(mx, my, mean(zs), mean(dt));
-      const half = (v: number, w: number) => {
-        const pore = Number.isNaN(zs[w]);
-        return point(
-          (xy[v * 2] + xy[w * 2]) / 2,
-          (xy[v * 2 + 1] + xy[w * 2 + 1]) / 2,
-          pore ? zs[v] : (zs[v] + zs[w]) / 2,
-          pore ? dt[v] : (dt[v] + dt[w]) / 2,
-        );
-      };
-      corners.forEach((v, j) => {
-        if (open[j]) return;
-        const c = vertex(v);
-        const toNext = half(v, corners[(j + 1) % 4]);
-        const toPrev = half(v, corners[(j + 3) % 4]);
-        triangle([...c, ...toNext, ...centre]);
-        triangle([...c, ...centre, ...toPrev]);
-      });
-    }
-    return out;
-  }
-
-  /** The surface style's colours and heights, for the sheets and the veil. */
-  private surfaceShading(
-    heightAt: Fishnet['heightAt'],
-    mesh: SurfaceMesh,
-    k: number,
-    upper: number,
-    lower: number,
-  ): SurfaceShading {
-    const st = this.model.scene.style;
-    const fill = hexRgb(st.membraneFill);
-    const thinned = hexRgb(st.membraneThinned);
-    const thickened = hexRgb(st.membraneThickened);
-    const half = (SURFACE_BANDS - 1) / 2;
-    const colours = Array.from({ length: SURFACE_BANDS }, (_, i) => {
-      const t = (i - half) / half;
-      return t >= 0 ? mixRgb(fill, thickened, t) : mixRgb(fill, thinned, -t);
-    });
-    const bulk = { upper, lower };
-    const changeAt = (leaf: Leaf, ox: number, oy: number) =>
-      thicknessChange(leaf, heightAt(leaf, ox, oy), heightAt(other(leaf), ox, oy), bulk);
-    const change = (leaf: Leaf) =>
-      mesh[leaf].map((z, v) => thicknessChange(leaf, z, mesh[other(leaf)][v], bulk));
-    const range = (zs: Float64Array): [number, number] => {
-      let lo = Infinity;
-      let hi = -Infinity;
-      for (const z of zs) {
-        if (z < lo) lo = z;
-        if (z > hi) hi = z;
-      }
-      return lo <= hi ? [lo, hi] : [0, 0];
-    };
-    return {
-      heightAt,
-      mesh,
-      range: { upper: range(mesh.upper), lower: range(mesh.lower) },
-      change: { upper: change('upper'), lower: change('lower') },
-      changeAt,
-      k,
-      colours,
-    };
-  }
-
-  /** Rims of the leaflet sheets, depth-sorted with the protein. */
-  private rimPrims(
-    ctx: FrameCtx,
-    cxw: number,
-    cyw: number,
-    r: number,
-    upper: number,
-    lower: number,
-    alpha: number,
-  ): void {
-    const { cam, prims } = ctx;
-    const edge = hexRgb(this.model.scene.style.membraneEdge);
-    const N = 64;
-    for (const [k, zp] of [
-      [0, upper],
-      [1, lower],
-    ]) {
-      const ring = new Float64Array((N + 1) * 3);
-      for (let a = 0; a <= N; a++) {
-        const th = (a / N) * 2 * Math.PI;
-        cam.project(cxw + r * Math.cos(th), cyw + r * Math.sin(th), zp, this.tmp);
-        ring[a * 3] = this.tmp[0];
-        ring[a * 3 + 1] = this.tmp[1];
-        ring[a * 3 + 2] = this.tmp[2];
-      }
-      for (let a = 0; a < N; a++) {
-        const pts = [ring[a * 3], ring[a * 3 + 1], ring[a * 3 + 3], ring[a * 3 + 4]];
-        prims.push({
-          id: -11 - k,
-          order: -1,
-          sub: a,
-          depth: (ring[a * 3 + 2] + ring[a * 3 + 5]) / 2,
-          x0: Math.min(pts[0], pts[2]) - 1,
-          y0: Math.min(pts[1], pts[3]) - 1,
-          x1: Math.max(pts[0], pts[2]) + 1,
-          y1: Math.max(pts[1], pts[3]) + 1,
-          faded: false,
-          pts,
-          pad: 0.5,
-          emit: (run) => run.stroke(RIM, pts, edge, 1, alpha),
-        });
-      }
-    }
-  }
-
-  /**
-   * The leaflets' fishnets for the finished view (see net.ts). Local heights
-   * are looked up in the frame of the scene's sample positions, which the
-   * finished pose holds up to a turn about z and a shift; that motion is
-   * fitted from the helix and strand samples.
-   */
-  private buildNet(pose: Pose, dcx: number, dcy: number, dr: number): Fishnet {
-    const { model } = this;
-    const slab = model.scene.slab;
-    const segOf: number[] = [];
-    const sampleOf: number[] = [];
-    model.scene.segments.forEach((seg, s) => {
-      for (let i = 0; i < seg.display.length; i++) {
-        segOf.push(s);
-        sampleOf.push(i);
-      }
-    });
-    const protein: number[] = [];
-    const real: number[] = [];
-    const world: number[] = [];
-    for (const el of model.elements) {
-      for (let k = el.g0; k <= el.g1; k++) {
-        const x = pose.w[k * 4];
-        const y = pose.w[k * 4 + 1];
-        const z = pose.w[k * 4 + 2];
-        if (z <= slab.upper + 2 && z >= slab.lower - 2) protein.push(x, y);
-        const p = model.scene.segments[segOf[k]]?.positions[sampleOf[k]];
-        if (!p) continue;
-        real.push(p.x, p.y);
-        world.push(x, y);
-      }
-    }
-    const spacing =
-      this.options.gridSpacing > 0
-        ? Math.min(dr, Math.max(MIN_GRID_SPACING, this.options.gridSpacing))
-        : fishnetSpacing(dr);
-    let local: { upper: HeightAt; lower: HeightAt; radius: number } | undefined;
-    const surface = slab.surface;
-    const fit = surface ? fitRigid2d(real, world) : null;
-    // A misfit means the sample positions aren't the structure's own frame.
-    if (surface && fit && fit.rms < NET_FIT_RMS) {
-      // Averaged over about a grid cell, so single-frame noise doesn't
-      // show as spikes, but not so wide that the shape is lost.
-      local = {
-        upper: (x, y, radius) => surface.upper(...fit.invert(x, y), radius),
-        lower: (x, y, radius) => surface.lower(...fit.invert(x, y), radius),
-        radius: Math.min(NET_SMOOTHING_MAX, Math.max(NET_SMOOTHING, 1.5 * spacing)),
-      };
-    }
-    // The context chains hold the membrane back too.
-    for (const c of this.context) {
-      if (!c.pose) continue;
-      for (const el of c.model.elements) {
-        for (let k = el.g0; k <= el.g1; k++) {
-          const z = c.pose.w[k * 4 + 2];
-          if (z <= slab.upper + 2 && z >= slab.lower - 2)
-            protein.push(c.pose.w[k * 4], c.pose.w[k * 4 + 1]);
-        }
-      }
-    }
-    return buildFishnet({
-      centre: { x: dcx, y: dcy },
-      radius: dr,
-      bulk: { upper: slab.upper, lower: slab.lower },
-      annular: slab.annular ?? { upper: slab.upper, lower: slab.lower },
-      protein,
-      local,
-      spacing,
-      margin: BULK_MARGIN,
-      style: this.options.membraneStyle,
-    });
-  }
-
-  /**
-   * The leaflets' fishnets, depth-sorted with the protein. They grow out of
-   * the bulk planes as the sheets fade in (`alpha`); `k` scales the final
-   * disc onto the current one.
-   */
-  private netPrims(
-    ctx: FrameCtx,
-    cxw: number,
-    cyw: number,
-    k: number,
-    upper: number,
-    lower: number,
-    alpha: number,
-  ): void {
-    const net = this.drawnNet;
-    if (!net) return;
-    const { cam, prims, fogAt } = ctx;
-    const st = this.model.scene.style;
-    const edge = mixRgb(hexRgb(st.membraneEdge), hexRgb(st.midplane), NET_DARKEN);
-    const ground = this.ground;
-    let sub = 0;
-    for (const [leaf, bulk, id] of [
-      ['upper', upper, -13],
-      ['lower', lower, -14],
-    ] as const) {
-      const opacity = NET_ALPHA[leaf] * alpha;
-      for (const line of net[leaf]) {
-        const m = line.length / 3;
-        const p = new Float64Array(m * 3);
-        for (let i = 0; i < m; i++) {
-          const z = bulk + alpha * (line[i * 3 + 2] - bulk);
-          cam.project(cxw + k * line[i * 3], cyw + k * line[i * 3 + 1], z, this.tmp);
-          p[i * 3] = this.tmp[0];
-          p[i * 3 + 1] = this.tmp[1];
-          p[i * 3 + 2] = this.tmp[2];
-        }
-        for (let i = 0; i < m - 1; i++) {
-          // Open over pores.
-          if (Number.isNaN(line[i * 3 + 2] + line[i * 3 + 5])) continue;
-          const pts = [p[i * 3], p[i * 3 + 1], p[i * 3 + 3], p[i * 3 + 4]];
-          const depth = (p[i * 3 + 2] + p[i * 3 + 5]) / 2;
-          const c = fogged(edge, fogAt(depth), ground);
-          prims.push({
-            id,
-            order: -1,
-            sub: sub++,
-            depth,
-            x0: Math.min(pts[0], pts[2]) - 1,
-            y0: Math.min(pts[1], pts[3]) - 1,
-            x1: Math.max(pts[0], pts[2]) + 1,
-            y1: Math.max(pts[1], pts[3]) + 1,
-            faded: false,
-            pts,
-            pad: 0.5,
-            emit: (run) => run.stroke(NET, pts, c, NET_WIDTH, opacity),
-          });
-        }
-      }
-    }
-  }
 
   private drawLabels(ctx: FrameCtx, alpha: number): void {
     const { model, proj } = ctx;

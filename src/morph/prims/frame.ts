@@ -23,3 +23,10 @@ export interface FrameCtx {
    */
   endShift: Map<number, [number, number, number]>;
 }
+
+/** A context chain: shown, rolled up, in its real place around the morphing one. */
+export interface ContextChain {
+  model: MorphModel;
+  /** Fixed pose in the finished view's frame (set by precompute). */
+  pose: Pose | null;
+}
