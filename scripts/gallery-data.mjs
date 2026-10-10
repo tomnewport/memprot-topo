@@ -178,6 +178,24 @@ function withCalphas(protein) {
   };
 }
 
+/**
+ * Hand-curated segments for proteins whose OPM PDB file has no HELIX/SHEET
+ * records. `prebuild-gallery.mjs` applies them to every chain of the real
+ * structure; the synthetic entries below use them when there is no prebuilt
+ * data, so both paths draw the same strands.
+ */
+export const FALLBACK_SEGMENTS = {
+  // α-hemolysin (7ahl): each protomer contributes a membrane-spanning
+  // β-hairpin to the shared 14-stranded stem barrel. Strand 1 descends
+  // (119–128) to the membrane-distal tip (turn ~129) and strand 2 ascends
+  // (130–141) back to the cap. In OPM's frame Cα 119 and 140 sit at the
+  // hydrophobic boundary (z ≈ ±12 Å). The cap β-sandwich is left as coil.
+  '7ahl': [
+    { start: 119, end: 128, type: 'strand' },
+    { start: 130, end: 141, type: 'strand' },
+  ],
+};
+
 export const PROTEINS = [
   {
     pdbId: '3k19',
@@ -321,17 +339,8 @@ export const PROTEINS = [
       chains: [
         {
           chainId: 'A',
-          // α-hemolysin's β-stem hairpin: 2 strands per protomer crossing the
-          // membrane. (The 7-residue ranges in published topology figures only
-          // cover the core; the synthetic TM ranges below are extended to span
-          // the full bilayer.)
           residueCount: 293,
-          segments: [
-            { start: 106, end: 116, type: 'strand' },
-            { start: 124, end: 134, type: 'strand' },
-            { start: 256, end: 266, type: 'strand' },
-            { start: 274, end: 284, type: 'strand' },
-          ],
+          segments: FALLBACK_SEGMENTS['7ahl'],
         },
       ],
     },
