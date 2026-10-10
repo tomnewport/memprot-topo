@@ -1,9 +1,10 @@
 import type { Calpha, ChainData } from '../types.js';
+import { MEMBRANE_CORE_HALF } from '../membrane/model.js';
 
 export interface TransmembraneOptions {
   /**
    * Minimum |z| (Å) that must be reached on each side of the bilayer for a
-   * chain to count as transmembrane. Defaults to 12 — comfortably inside the
+   * chain to count as transmembrane. Defaults to `MEMBRANE_CORE_HALF` (12 Å) — comfortably inside the
    * hydrophobic core for a DPPC bilayer (half-width ≈ 15 Å).
    */
   threshold?: number;
@@ -15,7 +16,7 @@ export interface TransmembraneOptions {
  * is the bilayer midplane).
  */
 export function isTransmembrane(calphas: Calpha[], options: TransmembraneOptions = {}): boolean {
-  const threshold = options.threshold ?? 12;
+  const threshold = options.threshold ?? MEMBRANE_CORE_HALF;
   let above = false;
   let below = false;
   for (const ca of calphas) {

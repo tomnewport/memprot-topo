@@ -12,8 +12,8 @@ export const DEFAULT_BULK: Readonly<LeafletPair> = { upper: 20, lower: -20 };
 /**
  * |z| (Å) from the bulk midplane within which a Cα counts as membrane core:
  * when lining a structure up with a distortions file, and as part of the
- * transmembrane segments the annular leaflets follow. Matches the
- * transmembrane test's default threshold.
+ * transmembrane segments the annular leaflets follow. Also the transmembrane
+ * test's default threshold (`isTransmembrane`).
  */
 export const MEMBRANE_CORE_HALF = 12;
 
