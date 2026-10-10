@@ -1,3 +1,5 @@
+import type { StructureMembrane } from './membrane/structure.js';
+
 export type SecondaryStructureType = 'helix' | 'strand' | 'coil';
 
 export interface SecondaryStructureSegment {
@@ -29,4 +31,10 @@ export interface ChainData {
 export interface ProteinData {
   pdbId: string;
   chains: ChainData[];
+  /**
+   * What the structure file says about its membrane (`parseStructureMembrane`):
+   * the bilayer from its lipids (MemProtMD's `at.pdb`), placing a
+   * simulation-box structure on its midplane, and OPM's half-thickness.
+   */
+  membrane?: StructureMembrane;
 }
