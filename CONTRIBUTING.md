@@ -49,9 +49,12 @@ npm test
 # Run with coverage report
 npm run test:coverage
 
-# Run end-to-end tests (requires Playwright browsers installed)
-npx playwright install --with-deps chromium
+# Run end-to-end tests in Chromium, Firefox and WebKit against the demo page,
+# with the example proteins in examples/ (no network needed)
+npx playwright install --with-deps chromium firefox webkit
 npm run test:e2e
+# One browser only
+npm run test:e2e -- --project=firefox
 ```
 
 ## Running Linting and Formatting

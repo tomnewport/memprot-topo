@@ -1,0 +1,1036 @@
+data_pdb_00007ahl
+_entry.id   pdb_00007ahl
+#
+loop_
+_audit_conform.dict_name
+_audit_conform.dict_version
+_audit_conform.dict_location
+mmcif_pdbx.dic     5.387 http://mmcif.pdb.org/dictionaries/ascii/mmcif_pdbx.dic
+dssp-extension.dic 1.1.1 https://pdb-redo.eu/dssp/dssp-extension.dic
+#
+loop_
+_struct_sheet.id
+_struct_sheet.number_strands
+A   2
+B   2
+C   7
+D   7
+E  10
+F  15
+G   2
+H   2
+I   2
+J   7
+K   8
+L   2
+M   2
+N   2
+O   7
+P   8
+Q   2
+R   2
+S   2
+T   7
+U   9
+V   2
+W   2
+X   2
+Y   7
+Z   9
+AA  2
+AB  2
+AC  2
+AD  7
+AE  9
+AF  2
+AG  2
+AH  9
+AI  2
+AJ  2
+#
+loop_
+_struct_conf_type.id
+_struct_conf_type.criteria
+_struct_conf_type.reference
+OTHER        DSSP .
+HELX_RH_3T_P DSSP .
+TURN_TY1_P   DSSP .
+STRN         DSSP .
+HELX_LH_PP_P DSSP .
+BEND         DSSP .
+HELX_RH_AL_P DSSP .
+#
+loop_
+_dssp_struct_ladder.id
+_dssp_struct_ladder.sheet_id
+_dssp_struct_ladder.range_id_1
+_dssp_struct_ladder.range_id_2
+_dssp_struct_ladder.type
+_dssp_struct_ladder.beg_1_label_comp_id
+_dssp_struct_ladder.beg_1_label_asym_id
+_dssp_struct_ladder.beg_1_label_seq_id
+_dssp_struct_ladder.pdbx_beg_1_PDB_ins_code
+_dssp_struct_ladder.end_1_label_comp_id
+_dssp_struct_ladder.end_1_label_asym_id
+_dssp_struct_ladder.end_1_label_seq_id
+_dssp_struct_ladder.pdbx_end_1_PDB_ins_code
+_dssp_struct_ladder.beg_1_auth_comp_id
+_dssp_struct_ladder.beg_1_auth_asym_id
+_dssp_struct_ladder.beg_1_auth_seq_id
+_dssp_struct_ladder.end_1_auth_comp_id
+_dssp_struct_ladder.end_1_auth_asym_id
+_dssp_struct_ladder.end_1_auth_seq_id
+_dssp_struct_ladder.beg_2_label_comp_id
+_dssp_struct_ladder.beg_2_label_asym_id
+_dssp_struct_ladder.beg_2_label_seq_id
+_dssp_struct_ladder.pdbx_beg_2_PDB_ins_code
+_dssp_struct_ladder.end_2_label_comp_id
+_dssp_struct_ladder.end_2_label_asym_id
+_dssp_struct_ladder.end_2_label_seq_id
+_dssp_struct_ladder.pdbx_end_2_PDB_ins_code
+_dssp_struct_ladder.beg_2_auth_comp_id
+_dssp_struct_ladder.beg_2_auth_asym_id
+_dssp_struct_ladder.beg_2_auth_seq_id
+_dssp_struct_ladder.end_2_auth_comp_id
+_dssp_struct_ladder.end_2_auth_asym_id
+_dssp_struct_ladder.end_2_auth_seq_id
+A  A  A  B  parallel      ILE A   7 ? ILE A   7 ? ILE A   7 ILE A   7 ILE B  14 ? ILE B  14 ? ILE B  14 ILE B  14
+B  B  C  D  parallel      ILE A  14 ? ILE A  14 ? ILE A  14 ILE A  14 ILE G   7 ? ILE G   7 ? ILE G   7 ILE G   7
+C  C  E  F  anti-parallel LYS A  21 ? ASP A  29 ? LYS A  21 ASP A  29 PHE A  42 ? MET A  34 ? PHE A  42 MET A  34
+D  C  E  K  parallel      THR A  22 ? THR A  22 ? THR A  22 THR A  22 HIS G  48 ? HIS G  48 ? HIS G  48 HIS G  48
+E  C  F  G  anti-parallel MET A  34 ? ILE A  43 ? MET A  34 ILE A  43 ILE A  61 ? LEU A  52 ? ILE A  61 LEU A  52
+F  C  G  J  anti-parallel LYS A  51 ? THR A  57 ? LYS A  51 THR A  57 MET A 234 ? PHE A 228 ? MET A 234 PHE A 228
+G  C  G  I  anti-parallel ILE A  61 ? ILE A  61 ? ILE A  61 ILE A  61 PHE A 224 ? PHE A 224 ? PHE A 224 PHE A 224
+H  C  H  J  anti-parallel GLN A  97 ? TYR A 102 ? GLN A  97 TYR A 102 THR A 233 ? ALA A 229 ? THR A 233 ALA A 229
+I  D  L  M  parallel      HIS A  48 ? HIS A  48 ? HIS A  48 HIS A  48 THR B  22 ? THR B  22 ? THR B  22 THR B  22
+J  D  M  N  anti-parallel LYS B  21 ? ASP B  29 ? LYS B  21 ASP B  29 PHE B  42 ? MET B  34 ? PHE B  42 MET B  34
+K  D  N  O  anti-parallel MET B  34 ? ILE B  43 ? MET B  34 ILE B  43 ILE B  61 ? LEU B  52 ? ILE B  61 LEU B  52
+L  D  O  R  anti-parallel LYS B  51 ? THR B  57 ? LYS B  51 THR B  57 MET B 234 ? PHE B 228 ? MET B 234 PHE B 228
+M  D  O  Q  anti-parallel ILE B  61 ? ILE B  61 ? ILE B  61 ILE B  61 PHE B 224 ? PHE B 224 ? PHE B 224 PHE B 224
+N  D  P  R  anti-parallel GLN B  97 ? TYR B 102 ? GLN B  97 TYR B 102 THR B 233 ? ALA B 229 ? THR B 233 ALA B 229
+O  E  S  U  anti-parallel ARG A  66 ? ARG A  66 ? ARG A  66 ARG A  66 ALA A  79 ? ALA A  79 ? ALA A  79 ALA A  79
+P  E  T  U  anti-parallel GLU A  70 ? GLU A  70 ? GLU A  70 GLU A  70 SER A  76 ? SER A  76 ? SER A  76 SER A  76
+Q  E  U  Z  anti-parallel LYS A  75 ? GLN A  89 ? LYS A  75 GLN A  89 HIS A 259 ? ASP A 246 ? HIS A 259 ASP A 246
+R  E  U  W  anti-parallel ALA A  83 ? GLN A  89 ? ALA A  83 GLN A  89 ILE A 170 ? LYS A 164 ? ILE A 170 LYS A 164
+S  E  V  W  anti-parallel PHE A 153 ? GLU A 158 ? PHE A 153 GLU A 158 PHE A 171 ? GLY A 166 ? PHE A 171 GLY A 166
+T  E  X  Y  anti-parallel ASN A 188 ? ASN A 188 ? ASN A 188 ASN A 188 GLY A 192 ? GLY A 192 ? GLY A 192 GLY A 192
+U  E  Y  AA parallel      GLY A 192 ? GLY A 192 ? GLY A 192 GLY A 192 GLY A 267 ? GLY A 267 ? GLY A 267 GLY A 267
+V  E  Z  AA anti-parallel GLN A 242 ? TRP A 260 ? GLN A 242 TRP A 260 ASP A 285 ? TRP A 265 ? ASP A 285 TRP A 265
+W  E  AA AB anti-parallel LYS A 283 ? ASP A 285 ? LYS A 283 ASP A 285 THR A 292 ? GLU A 290 ? THR A 292 GLU A 290
+X  F  AC AF anti-parallel THR A 109 ? LEU A 116 ? THR A 109 LEU A 116 PRO B 151 ? HIS B 144 ? PRO B 151 HIS B 144
+Y  F  AC AD anti-parallel GLU A 111 ? GLY A 122 ? GLU A 111 GLY A 122 LYS A 147 ? ILE A 136 ? LYS A 147 ILE A 136
+Z  F  AC AF anti-parallel GLY A 119 ? ASP A 127 ? GLY A 119 ASP A 127 SER B 141 ? GLY B 133 ? SER B 141 GLY B 133
+AA F  AC AD anti-parallel THR A 125 ? GLY A 126 ? THR A 125 GLY A 126 GLY A 133 ? ILE A 132 ? GLY A 133 ILE A 132
+AB F  AD AP anti-parallel GLY A 133 ? PRO A 151 ? GLY A 133 PRO A 151 ASP G 127 ? THR G 109 ? ASP G 127 THR G 109
+AC F  AE AF anti-parallel GLU B 111 ? GLY B 126 ? GLU B 111 GLY B 126 LYS B 147 ? ILE B 132 ? LYS B 147 ILE B 132
+AD F  AE AH anti-parallel GLU B 111 ? ASP B 127 ? GLU B 111 ASP B 127 VAL C 149 ? GLY C 133 ? VAL C 149 GLY C 133
+AE F  AG AJ anti-parallel THR C 109 ? LEU C 116 ? THR C 109 LEU C 116 PRO D 151 ? HIS D 144 ? PRO D 151 HIS D 144
+AF F  AG AH anti-parallel GLU C 111 ? ASN C 123 ? GLU C 111 ASN C 123 LYS C 147 ? LEU C 135 ? LYS C 147 LEU C 135
+AG F  AG AJ anti-parallel GLY C 119 ? ASP C 127 ? GLY C 119 ASP C 127 SER D 141 ? GLY D 133 ? SER D 141 GLY D 133
+AH F  AG AH anti-parallel GLY C 126 ? GLY C 126 ? GLY C 126 GLY C 126 ILE C 132 ? ILE C 132 ? ILE C 132 ILE C 132
+AI F  AI AM anti-parallel THR D 109 ? THR D 125 ? THR D 109 THR D 125 PRO E 151 ? LEU E 135 ? PRO E 151 LEU E 135
+AJ F  AI AJ anti-parallel GLU D 111 ? GLY D 122 ? GLU D 111 GLY D 122 LYS D 147 ? ILE D 136 ? LYS D 147 ILE D 136
+AK F  AI AJ anti-parallel THR D 125 ? GLY D 126 ? THR D 125 GLY D 126 GLY D 133 ? ILE D 132 ? GLY D 133 ILE D 132
+AL F  AK AO anti-parallel THR E 109 ? ASP E 127 ? THR E 109 ASP E 127 PRO F 151 ? GLY F 133 ? PRO F 151 GLY F 133
+AM F  AK AM anti-parallel GLU E 111 ? GLY E 122 ? GLU E 111 GLY E 122 LYS E 147 ? ILE E 136 ? LYS E 147 ILE E 136
+AN F  AK AL anti-parallel GLY E 126 ? GLY E 126 ? GLY E 126 GLY E 126 ILE E 132 ? ILE E 132 ? ILE E 132 ILE E 132
+AO F  AN AQ anti-parallel THR F 109 ? ASP F 127 ? THR F 109 ASP F 127 PRO G 151 ? GLY G 133 ? PRO G 151 GLY G 133
+AP F  AN AO anti-parallel GLU F 111 ? GLY F 126 ? GLU F 111 GLY F 126 LYS F 147 ? ILE F 132 ? LYS F 147 ILE F 132
+AQ F  AP AQ anti-parallel GLU G 111 ? GLY G 126 ? GLU G 111 GLY G 126 LYS G 147 ? ILE G 132 ? LYS G 147 ILE G 132
+AR G  AR AS anti-parallel MET A 174 ? ASN A 176 ? MET A 174 ASN A 176 TYR A 182 ? TRP A 179 ? TYR A 182 TRP A 179
+AS H  AT AU anti-parallel MET A 197 ? MET A 197 ? MET A 197 MET A 197 PHE A 210 ? PHE A 210 ? PHE A 210 PHE A 210
+AT I  AV AW parallel      ILE B   7 ? ILE B   7 ? ILE B   7 ILE B   7 ILE C  14 ? ILE C  14 ? ILE C  14 ILE C  14
+AU J  AX AY parallel      HIS B  48 ? HIS B  48 ? HIS B  48 HIS B  48 THR C  22 ? THR C  22 ? THR C  22 THR C  22
+AV J  AY AZ anti-parallel LYS C  21 ? ASP C  29 ? LYS C  21 ASP C  29 PHE C  42 ? MET C  34 ? PHE C  42 MET C  34
+AW J  AZ BA anti-parallel MET C  34 ? ILE C  43 ? MET C  34 ILE C  43 ILE C  61 ? LEU C  52 ? ILE C  61 LEU C  52
+AX J  BA BD anti-parallel LYS C  51 ? THR C  57 ? LYS C  51 THR C  57 MET C 234 ? PHE C 228 ? MET C 234 PHE C 228
+AY J  BA BC anti-parallel ILE C  61 ? ILE C  61 ? ILE C  61 ILE C  61 PHE C 224 ? PHE C 224 ? PHE C 224 PHE C 224
+AZ J  BB BD anti-parallel GLN C  97 ? TYR C 102 ? GLN C  97 TYR C 102 THR C 233 ? ALA C 229 ? THR C 233 ALA C 229
+BA K  BE BF anti-parallel ARG B  66 ? GLU B  71 ? ARG B  66 GLU B  71 ALA B  79 ? LYS B  75 ? ALA B  79 LYS B  75
+BB K  BF BJ anti-parallel LYS B  75 ? GLN B  89 ? LYS B  75 GLN B  89 HIS B 259 ? ASP B 246 ? HIS B 259 ASP B 246
+BC K  BF BH anti-parallel ALA B  83 ? GLN B  89 ? ALA B  83 GLN B  89 ILE B 170 ? LYS B 164 ? ILE B 170 LYS B 164
+BD K  BG BH anti-parallel PHE B 153 ? GLU B 158 ? PHE B 153 GLU B 158 PHE B 171 ? GLY B 166 ? PHE B 171 GLY B 166
+BE K  BI BK parallel      GLY B 192 ? GLY B 192 ? GLY B 192 GLY B 192 GLY B 267 ? GLY B 267 ? GLY B 267 GLY B 267
+BF K  BJ BK anti-parallel GLN B 242 ? TRP B 260 ? GLN B 242 TRP B 260 ASP B 285 ? TRP B 265 ? ASP B 285 TRP B 265
+BG K  BK BL anti-parallel LYS B 283 ? ASP B 285 ? LYS B 283 ASP B 285 THR B 292 ? GLU B 290 ? THR B 292 GLU B 290
+BH L  BM BN anti-parallel MET B 174 ? ASN B 176 ? MET B 174 ASN B 176 TYR B 182 ? TRP B 179 ? TYR B 182 TRP B 179
+BI M  BO BP anti-parallel MET B 197 ? MET B 197 ? MET B 197 MET B 197 PHE B 210 ? PHE B 210 ? PHE B 210 PHE B 210
+BJ N  BQ BR parallel      ILE C   7 ? ILE C   7 ? ILE C   7 ILE C   7 ILE D  14 ? ILE D  14 ? ILE D  14 ILE D  14
+BK O  BS BT parallel      HIS C  48 ? HIS C  48 ? HIS C  48 HIS C  48 THR D  22 ? THR D  22 ? THR D  22 THR D  22
+BL O  BT BU anti-parallel LYS D  21 ? ASP D  29 ? LYS D  21 ASP D  29 PHE D  42 ? MET D  34 ? PHE D  42 MET D  34
+BM O  BU BV anti-parallel MET D  34 ? ILE D  43 ? MET D  34 ILE D  43 ILE D  61 ? LEU D  52 ? ILE D  61 LEU D  52
+BN O  BV BY anti-parallel LYS D  51 ? THR D  57 ? LYS D  51 THR D  57 MET D 234 ? PHE D 228 ? MET D 234 PHE D 228
+BO O  BV BX anti-parallel ILE D  61 ? ILE D  61 ? ILE D  61 ILE D  61 PHE D 224 ? PHE D 224 ? PHE D 224 PHE D 224
+BP O  BW BY anti-parallel GLN D  97 ? TYR D 102 ? GLN D  97 TYR D 102 THR D 233 ? ALA D 229 ? THR D 233 ALA D 229
+BQ P  BZ CA anti-parallel ARG C  66 ? GLU C  70 ? ARG C  66 GLU C  70 ALA C  79 ? SER C  76 ? ALA C  79 SER C  76
+BR P  CA CE anti-parallel LYS C  75 ? GLN C  89 ? LYS C  75 GLN C  89 HIS C 259 ? ASP C 246 ? HIS C 259 ASP C 246
+BS P  CA CC anti-parallel ALA C  83 ? GLN C  89 ? ALA C  83 GLN C  89 ILE C 170 ? LYS C 164 ? ILE C 170 LYS C 164
+BT P  CB CC anti-parallel PHE C 153 ? GLU C 158 ? PHE C 153 GLU C 158 PHE C 171 ? GLY C 166 ? PHE C 171 GLY C 166
+BU P  CD CF parallel      GLY C 192 ? GLY C 192 ? GLY C 192 GLY C 192 GLY C 267 ? GLY C 267 ? GLY C 267 GLY C 267
+BV P  CE CF anti-parallel GLN C 242 ? TRP C 260 ? GLN C 242 TRP C 260 ASP C 285 ? TRP C 265 ? ASP C 285 TRP C 265
+BW P  CF CG anti-parallel LYS C 283 ? ASP C 285 ? LYS C 283 ASP C 285 THR C 292 ? GLU C 290 ? THR C 292 GLU C 290
+BX Q  CH CI anti-parallel MET C 174 ? MET C 174 ? MET C 174 MET C 174 TYR C 182 ? TYR C 182 ? TYR C 182 TYR C 182
+BY R  CJ CK anti-parallel MET C 197 ? MET C 197 ? MET C 197 MET C 197 PHE C 210 ? PHE C 210 ? PHE C 210 PHE C 210
+BZ S  CL CM parallel      ILE D   7 ? ILE D   7 ? ILE D   7 ILE D   7 ILE E  14 ? ILE E  14 ? ILE E  14 ILE E  14
+CA T  CN CO parallel      HIS D  48 ? HIS D  48 ? HIS D  48 HIS D  48 THR E  22 ? THR E  22 ? THR E  22 THR E  22
+CB T  CO CP anti-parallel LYS E  21 ? ASP E  29 ? LYS E  21 ASP E  29 PHE E  42 ? MET E  34 ? PHE E  42 MET E  34
+CC T  CP CQ anti-parallel MET E  34 ? ILE E  43 ? MET E  34 ILE E  43 ILE E  61 ? LEU E  52 ? ILE E  61 LEU E  52
+CD T  CQ CT anti-parallel LYS E  51 ? THR E  57 ? LYS E  51 THR E  57 MET E 234 ? PHE E 228 ? MET E 234 PHE E 228
+CE T  CQ CS anti-parallel ILE E  61 ? ILE E  61 ? ILE E  61 ILE E  61 PHE E 224 ? PHE E 224 ? PHE E 224 PHE E 224
+CF T  CR CT anti-parallel GLN E  97 ? TYR E 102 ? GLN E  97 TYR E 102 THR E 233 ? ALA E 229 ? THR E 233 ALA E 229
+CG U  CU CV anti-parallel ARG D  66 ? SER D  69 ? ARG D  66 SER D  69 ALA D  79 ? GLY D  77 ? ALA D  79 GLY D  77
+CH U  CV DA anti-parallel LYS D  75 ? GLN D  89 ? LYS D  75 GLN D  89 HIS D 259 ? ASP D 246 ? HIS D 259 ASP D 246
+CI U  CV CX anti-parallel ALA D  83 ? GLN D  89 ? ALA D  83 GLN D  89 ILE D 170 ? LYS D 164 ? ILE D 170 LYS D 164
+CJ U  CW CX anti-parallel PHE D 153 ? GLU D 158 ? PHE D 153 GLU D 158 PHE D 171 ? GLY D 166 ? PHE D 171 GLY D 166
+CK U  CY CZ anti-parallel ASN D 188 ? ASN D 188 ? ASN D 188 ASN D 188 GLY D 192 ? GLY D 192 ? GLY D 192 GLY D 192
+CL U  CZ DB parallel      GLY D 192 ? GLY D 192 ? GLY D 192 GLY D 192 GLY D 267 ? GLY D 267 ? GLY D 267 GLY D 267
+CM U  DA DB anti-parallel GLN D 242 ? THR D 261 ? GLN D 242 THR D 261 ASP D 285 ? ASN D 264 ? ASP D 285 ASN D 264
+CN U  DA DB parallel      SER D 262 ? SER D 262 ? SER D 262 SER D 262 ASN D 264 ? ASN D 264 ? ASN D 264 ASN D 264
+CO U  DB DC anti-parallel LYS D 283 ? ASP D 285 ? LYS D 283 ASP D 285 THR D 292 ? GLU D 290 ? THR D 292 GLU D 290
+CP V  DD DE anti-parallel MET D 174 ? ASN D 176 ? MET D 174 ASN D 176 TYR D 182 ? TRP D 179 ? TYR D 182 TRP D 179
+CQ W  DF DG anti-parallel MET D 197 ? MET D 197 ? MET D 197 MET D 197 PHE D 210 ? PHE D 210 ? PHE D 210 PHE D 210
+CR X  DH DI parallel      ILE E   7 ? ILE E   7 ? ILE E   7 ILE E   7 ILE F  14 ? ILE F  14 ? ILE F  14 ILE F  14
+CS Y  DJ DK parallel      HIS E  48 ? HIS E  48 ? HIS E  48 HIS E  48 THR F  22 ? THR F  22 ? THR F  22 THR F  22
+CT Y  DK DL anti-parallel LYS F  21 ? ASP F  29 ? LYS F  21 ASP F  29 PHE F  42 ? MET F  34 ? PHE F  42 MET F  34
+CU Y  DL DM anti-parallel MET F  34 ? ILE F  43 ? MET F  34 ILE F  43 ILE F  61 ? LEU F  52 ? ILE F  61 LEU F  52
+CV Y  DM DP anti-parallel LYS F  51 ? THR F  57 ? LYS F  51 THR F  57 MET F 234 ? PHE F 228 ? MET F 234 PHE F 228
+CW Y  DM DO anti-parallel ILE F  61 ? ILE F  61 ? ILE F  61 ILE F  61 PHE F 224 ? PHE F 224 ? PHE F 224 PHE F 224
+CX Y  DN DP anti-parallel GLN F  97 ? TYR F 102 ? GLN F  97 TYR F 102 THR F 233 ? ALA F 229 ? THR F 233 ALA F 229
+CY Z  DQ DR anti-parallel ARG E  66 ? GLU E  70 ? ARG E  66 GLU E  70 ALA E  79 ? SER E  76 ? ALA E  79 SER E  76
+CZ Z  DR DW anti-parallel LYS E  75 ? GLN E  89 ? LYS E  75 GLN E  89 HIS E 259 ? ASP E 246 ? HIS E 259 ASP E 246
+DA Z  DR DT anti-parallel ALA E  83 ? GLN E  89 ? ALA E  83 GLN E  89 ILE E 170 ? LYS E 164 ? ILE E 170 LYS E 164
+DB Z  DS DT anti-parallel PHE E 153 ? GLU E 158 ? PHE E 153 GLU E 158 PHE E 171 ? GLY E 166 ? PHE E 171 GLY E 166
+DC Z  DU DV anti-parallel ASN E 188 ? ASN E 188 ? ASN E 188 ASN E 188 GLY E 192 ? GLY E 192 ? GLY E 192 GLY E 192
+DD Z  DV DX parallel      GLY E 192 ? GLY E 192 ? GLY E 192 GLY E 192 GLY E 267 ? GLY E 267 ? GLY E 267 GLY E 267
+DE Z  DW DX anti-parallel GLN E 242 ? TRP E 260 ? GLN E 242 TRP E 260 ASP E 285 ? TRP E 265 ? ASP E 285 TRP E 265
+DF Z  DX DY anti-parallel LYS E 283 ? ASP E 285 ? LYS E 283 ASP E 285 THR E 292 ? GLU E 290 ? THR E 292 GLU E 290
+DG AA DZ EA anti-parallel MET E 174 ? ASN E 176 ? MET E 174 ASN E 176 TYR E 182 ? TRP E 179 ? TYR E 182 TRP E 179
+DH AB EB EC anti-parallel MET E 197 ? MET E 197 ? MET E 197 MET E 197 PHE E 210 ? PHE E 210 ? PHE E 210 PHE E 210
+DI AC ED EE parallel      ILE F   7 ? ILE F   7 ? ILE F   7 ILE F   7 ILE G  14 ? ILE G  14 ? ILE G  14 ILE G  14
+DJ AD EF EG parallel      HIS F  48 ? HIS F  48 ? HIS F  48 HIS F  48 THR G  22 ? THR G  22 ? THR G  22 THR G  22
+DK AD EG EH anti-parallel LYS G  21 ? ASP G  29 ? LYS G  21 ASP G  29 PHE G  42 ? MET G  34 ? PHE G  42 MET G  34
+DL AD EH EI anti-parallel MET G  34 ? ILE G  43 ? MET G  34 ILE G  43 ILE G  61 ? LEU G  52 ? ILE G  61 LEU G  52
+DM AD EI EL anti-parallel LYS G  51 ? THR G  57 ? LYS G  51 THR G  57 MET G 234 ? PHE G 228 ? MET G 234 PHE G 228
+DN AD EI EK anti-parallel ILE G  61 ? ILE G  61 ? ILE G  61 ILE G  61 PHE G 224 ? PHE G 224 ? PHE G 224 PHE G 224
+DO AD EJ EL anti-parallel GLN G  97 ? TYR G 102 ? GLN G  97 TYR G 102 THR G 233 ? ALA G 229 ? THR G 233 ALA G 229
+DP AE EM EN anti-parallel ARG F  66 ? GLU F  70 ? ARG F  66 GLU F  70 ALA F  79 ? SER F  76 ? ALA F  79 SER F  76
+DQ AE EN ES anti-parallel LYS F  75 ? GLN F  89 ? LYS F  75 GLN F  89 HIS F 259 ? ASP F 246 ? HIS F 259 ASP F 246
+DR AE EN EP anti-parallel ALA F  83 ? GLN F  89 ? ALA F  83 GLN F  89 ILE F 170 ? LYS F 164 ? ILE F 170 LYS F 164
+DS AE EO EP anti-parallel PHE F 153 ? GLU F 158 ? PHE F 153 GLU F 158 PHE F 171 ? GLY F 166 ? PHE F 171 GLY F 166
+DT AE EQ ER anti-parallel ASN F 188 ? ASN F 188 ? ASN F 188 ASN F 188 GLY F 192 ? GLY F 192 ? GLY F 192 GLY F 192
+DU AE ER ET parallel      GLY F 192 ? GLY F 192 ? GLY F 192 GLY F 192 GLY F 267 ? GLY F 267 ? GLY F 267 GLY F 267
+DV AE ES ET anti-parallel GLN F 242 ? TRP F 260 ? GLN F 242 TRP F 260 ASP F 285 ? TRP F 265 ? ASP F 285 TRP F 265
+DW AE ET EU anti-parallel LYS F 283 ? ASP F 285 ? LYS F 283 ASP F 285 THR F 292 ? GLU F 290 ? THR F 292 GLU F 290
+DX AF EV EW anti-parallel MET F 174 ? ASN F 176 ? MET F 174 ASN F 176 TYR F 182 ? TRP F 179 ? TYR F 182 TRP F 179
+DY AG EX EY anti-parallel MET F 197 ? MET F 197 ? MET F 197 MET F 197 PHE F 210 ? PHE F 210 ? PHE F 210 PHE F 210
+DZ AH EZ FA anti-parallel ARG G  66 ? GLU G  70 ? ARG G  66 GLU G  70 ALA G  79 ? SER G  76 ? ALA G  79 SER G  76
+EA AH FA FF anti-parallel LYS G  75 ? GLN G  89 ? LYS G  75 GLN G  89 HIS G 259 ? ASP G 246 ? HIS G 259 ASP G 246
+EB AH FA FC anti-parallel ALA G  83 ? GLN G  89 ? ALA G  83 GLN G  89 ILE G 170 ? LYS G 164 ? ILE G 170 LYS G 164
+EC AH FB FC anti-parallel PHE G 153 ? GLU G 158 ? PHE G 153 GLU G 158 PHE G 171 ? GLY G 166 ? PHE G 171 GLY G 166
+ED AH FD FE anti-parallel ASN G 188 ? ASN G 188 ? ASN G 188 ASN G 188 GLY G 192 ? GLY G 192 ? GLY G 192 GLY G 192
+EE AH FE FG parallel      GLY G 192 ? GLY G 192 ? GLY G 192 GLY G 192 GLY G 267 ? GLY G 267 ? GLY G 267 GLY G 267
+EF AH FF FG anti-parallel GLN G 242 ? TRP G 260 ? GLN G 242 TRP G 260 ASP G 285 ? TRP G 265 ? ASP G 285 TRP G 265
+EG AH FG FH anti-parallel LYS G 283 ? ASP G 285 ? LYS G 283 ASP G 285 THR G 292 ? GLU G 290 ? THR G 292 GLU G 290
+EH AI FI FJ anti-parallel MET G 174 ? ASN G 176 ? MET G 174 ASN G 176 TYR G 182 ? TRP G 179 ? TYR G 182 TRP G 179
+EI AJ FK FL anti-parallel MET G 197 ? MET G 197 ? MET G 197 MET G 197 PHE G 210 ? PHE G 210 ? PHE G 210 PHE G 210
+#
+loop_
+_struct_sheet_range.sheet_id
+_struct_sheet_range.id
+_struct_sheet_range.beg_label_comp_id
+_struct_sheet_range.beg_label_asym_id
+_struct_sheet_range.beg_label_seq_id
+_struct_sheet_range.pdbx_beg_PDB_ins_code
+_struct_sheet_range.end_label_comp_id
+_struct_sheet_range.end_label_asym_id
+_struct_sheet_range.end_label_seq_id
+_struct_sheet_range.pdbx_end_PDB_ins_code
+_struct_sheet_range.beg_auth_comp_id
+_struct_sheet_range.beg_auth_asym_id
+_struct_sheet_range.beg_auth_seq_id
+_struct_sheet_range.end_auth_comp_id
+_struct_sheet_range.end_auth_asym_id
+_struct_sheet_range.end_auth_seq_id
+A  A  ILE A   7 ? ILE A   7 ? ILE A 7   ILE A 7
+A  B  ILE B  14 ? ILE B  14 ? ILE B 14  ILE B 14
+B  C  ILE A  14 ? ILE A  14 ? ILE A 14  ILE A 14
+B  D  ILE G   7 ? ILE G   7 ? ILE G 7   ILE G 7
+C  E  LYS A  21 ? ASP A  29 ? LYS A 21  ASP A 29
+C  F  MET A  34 ? ILE A  43 ? MET A 34  ILE A 43
+C  G  LYS A  51 ? ILE A  61 ? LYS A 51  ILE A 61
+C  H  GLN A  97 ? TYR A 102 ? GLN A 97  TYR A 102
+C  I  PHE A 224 ? PHE A 224 ? PHE A 224 PHE A 224
+C  J  PHE A 228 ? MET A 234 ? PHE A 228 MET A 234
+C  K  HIS G  48 ? HIS G  48 ? HIS G 48  HIS G 48
+D  L  HIS A  48 ? HIS A  48 ? HIS A 48  HIS A 48
+D  M  LYS B  21 ? ASP B  29 ? LYS B 21  ASP B 29
+D  N  MET B  34 ? ILE B  43 ? MET B 34  ILE B 43
+D  O  LYS B  51 ? ILE B  61 ? LYS B 51  ILE B 61
+D  P  GLN B  97 ? TYR B 102 ? GLN B 97  TYR B 102
+D  Q  PHE B 224 ? PHE B 224 ? PHE B 224 PHE B 224
+D  R  PHE B 228 ? MET B 234 ? PHE B 228 MET B 234
+E  S  ARG A  66 ? ARG A  66 ? ARG A 66  ARG A 66
+E  T  GLU A  70 ? GLU A  70 ? GLU A 70  GLU A 70
+E  U  LYS A  75 ? GLN A  89 ? LYS A 75  GLN A 89
+E  V  PHE A 153 ? GLU A 158 ? PHE A 153 GLU A 158
+E  W  LYS A 164 ? PHE A 171 ? LYS A 164 PHE A 171
+E  X  ASN A 188 ? ASN A 188 ? ASN A 188 ASN A 188
+E  Y  GLY A 192 ? GLY A 192 ? GLY A 192 GLY A 192
+E  Z  GLN A 242 ? TRP A 260 ? GLN A 242 TRP A 260
+E  AA TRP A 265 ? ASP A 285 ? TRP A 265 ASP A 285
+E  AB GLU A 290 ? THR A 292 ? GLU A 290 THR A 292
+F  AC THR A 109 ? ASP A 127 ? THR A 109 ASP A 127
+F  AD ILE A 132 ? PRO A 151 ? ILE A 132 PRO A 151
+F  AE GLU B 111 ? ASP B 127 ? GLU B 111 ASP B 127
+F  AF ILE B 132 ? PRO B 151 ? ILE B 132 PRO B 151
+F  AG THR C 109 ? ASP C 127 ? THR C 109 ASP C 127
+F  AH ILE C 132 ? VAL C 149 ? ILE C 132 VAL C 149
+F  AI THR D 109 ? GLY D 126 ? THR D 109 GLY D 126
+F  AJ ILE D 132 ? PRO D 151 ? ILE D 132 PRO D 151
+F  AK THR E 109 ? ASP E 127 ? THR E 109 ASP E 127
+F  AL ILE E 132 ? ILE E 132 ? ILE E 132 ILE E 132
+F  AM LEU E 135 ? PRO E 151 ? LEU E 135 PRO E 151
+F  AN THR F 109 ? ASP F 127 ? THR F 109 ASP F 127
+F  AO ILE F 132 ? PRO F 151 ? ILE F 132 PRO F 151
+F  AP THR G 109 ? ASP G 127 ? THR G 109 ASP G 127
+F  AQ ILE G 132 ? PRO G 151 ? ILE G 132 PRO G 151
+G  AR MET A 174 ? ASN A 176 ? MET A 174 ASN A 176
+G  AS TRP A 179 ? TYR A 182 ? TRP A 179 TYR A 182
+H  AT MET A 197 ? MET A 197 ? MET A 197 MET A 197
+H  AU PHE A 210 ? PHE A 210 ? PHE A 210 PHE A 210
+I  AV ILE B   7 ? ILE B   7 ? ILE B 7   ILE B 7
+I  AW ILE C  14 ? ILE C  14 ? ILE C 14  ILE C 14
+J  AX HIS B  48 ? HIS B  48 ? HIS B 48  HIS B 48
+J  AY LYS C  21 ? ASP C  29 ? LYS C 21  ASP C 29
+J  AZ MET C  34 ? ILE C  43 ? MET C 34  ILE C 43
+J  BA LYS C  51 ? ILE C  61 ? LYS C 51  ILE C 61
+J  BB GLN C  97 ? TYR C 102 ? GLN C 97  TYR C 102
+J  BC PHE C 224 ? PHE C 224 ? PHE C 224 PHE C 224
+J  BD PHE C 228 ? MET C 234 ? PHE C 228 MET C 234
+K  BE ARG B  66 ? GLU B  71 ? ARG B 66  GLU B 71
+K  BF LYS B  75 ? GLN B  89 ? LYS B 75  GLN B 89
+K  BG PHE B 153 ? GLU B 158 ? PHE B 153 GLU B 158
+K  BH LYS B 164 ? PHE B 171 ? LYS B 164 PHE B 171
+K  BI GLY B 192 ? GLY B 192 ? GLY B 192 GLY B 192
+K  BJ GLN B 242 ? TRP B 260 ? GLN B 242 TRP B 260
+K  BK TRP B 265 ? ASP B 285 ? TRP B 265 ASP B 285
+K  BL GLU B 290 ? THR B 292 ? GLU B 290 THR B 292
+L  BM MET B 174 ? ASN B 176 ? MET B 174 ASN B 176
+L  BN TRP B 179 ? TYR B 182 ? TRP B 179 TYR B 182
+M  BO MET B 197 ? MET B 197 ? MET B 197 MET B 197
+M  BP PHE B 210 ? PHE B 210 ? PHE B 210 PHE B 210
+N  BQ ILE C   7 ? ILE C   7 ? ILE C 7   ILE C 7
+N  BR ILE D  14 ? ILE D  14 ? ILE D 14  ILE D 14
+O  BS HIS C  48 ? HIS C  48 ? HIS C 48  HIS C 48
+O  BT LYS D  21 ? ASP D  29 ? LYS D 21  ASP D 29
+O  BU MET D  34 ? ILE D  43 ? MET D 34  ILE D 43
+O  BV LYS D  51 ? ILE D  61 ? LYS D 51  ILE D 61
+O  BW GLN D  97 ? TYR D 102 ? GLN D 97  TYR D 102
+O  BX PHE D 224 ? PHE D 224 ? PHE D 224 PHE D 224
+O  BY PHE D 228 ? MET D 234 ? PHE D 228 MET D 234
+P  BZ ARG C  66 ? GLU C  70 ? ARG C 66  GLU C 70
+P  CA LYS C  75 ? GLN C  89 ? LYS C 75  GLN C 89
+P  CB PHE C 153 ? GLU C 158 ? PHE C 153 GLU C 158
+P  CC LYS C 164 ? PHE C 171 ? LYS C 164 PHE C 171
+P  CD GLY C 192 ? GLY C 192 ? GLY C 192 GLY C 192
+P  CE GLN C 242 ? TRP C 260 ? GLN C 242 TRP C 260
+P  CF TRP C 265 ? ASP C 285 ? TRP C 265 ASP C 285
+P  CG GLU C 290 ? THR C 292 ? GLU C 290 THR C 292
+Q  CH MET C 174 ? MET C 174 ? MET C 174 MET C 174
+Q  CI TYR C 182 ? TYR C 182 ? TYR C 182 TYR C 182
+R  CJ MET C 197 ? MET C 197 ? MET C 197 MET C 197
+R  CK PHE C 210 ? PHE C 210 ? PHE C 210 PHE C 210
+S  CL ILE D   7 ? ILE D   7 ? ILE D 7   ILE D 7
+S  CM ILE E  14 ? ILE E  14 ? ILE E 14  ILE E 14
+T  CN HIS D  48 ? HIS D  48 ? HIS D 48  HIS D 48
+T  CO LYS E  21 ? ASP E  29 ? LYS E 21  ASP E 29
+T  CP MET E  34 ? ILE E  43 ? MET E 34  ILE E 43
+T  CQ LYS E  51 ? ILE E  61 ? LYS E 51  ILE E 61
+T  CR GLN E  97 ? TYR E 102 ? GLN E 97  TYR E 102
+T  CS PHE E 224 ? PHE E 224 ? PHE E 224 PHE E 224
+T  CT PHE E 228 ? MET E 234 ? PHE E 228 MET E 234
+U  CU ARG D  66 ? SER D  69 ? ARG D 66  SER D 69
+U  CV LYS D  75 ? GLN D  89 ? LYS D 75  GLN D 89
+U  CW PHE D 153 ? GLU D 158 ? PHE D 153 GLU D 158
+U  CX LYS D 164 ? PHE D 171 ? LYS D 164 PHE D 171
+U  CY ASN D 188 ? ASN D 188 ? ASN D 188 ASN D 188
+U  CZ GLY D 192 ? GLY D 192 ? GLY D 192 GLY D 192
+U  DA GLN D 242 ? SER D 262 ? GLN D 242 SER D 262
+U  DB ASN D 264 ? ASP D 285 ? ASN D 264 ASP D 285
+U  DC GLU D 290 ? THR D 292 ? GLU D 290 THR D 292
+V  DD MET D 174 ? ASN D 176 ? MET D 174 ASN D 176
+V  DE TRP D 179 ? TYR D 182 ? TRP D 179 TYR D 182
+W  DF MET D 197 ? MET D 197 ? MET D 197 MET D 197
+W  DG PHE D 210 ? PHE D 210 ? PHE D 210 PHE D 210
+X  DH ILE E   7 ? ILE E   7 ? ILE E 7   ILE E 7
+X  DI ILE F  14 ? ILE F  14 ? ILE F 14  ILE F 14
+Y  DJ HIS E  48 ? HIS E  48 ? HIS E 48  HIS E 48
+Y  DK LYS F  21 ? ASP F  29 ? LYS F 21  ASP F 29
+Y  DL MET F  34 ? ILE F  43 ? MET F 34  ILE F 43
+Y  DM LYS F  51 ? ILE F  61 ? LYS F 51  ILE F 61
+Y  DN GLN F  97 ? TYR F 102 ? GLN F 97  TYR F 102
+Y  DO PHE F 224 ? PHE F 224 ? PHE F 224 PHE F 224
+Y  DP PHE F 228 ? MET F 234 ? PHE F 228 MET F 234
+Z  DQ ARG E  66 ? GLU E  70 ? ARG E 66  GLU E 70
+Z  DR LYS E  75 ? GLN E  89 ? LYS E 75  GLN E 89
+Z  DS PHE E 153 ? GLU E 158 ? PHE E 153 GLU E 158
+Z  DT LYS E 164 ? PHE E 171 ? LYS E 164 PHE E 171
+Z  DU ASN E 188 ? ASN E 188 ? ASN E 188 ASN E 188
+Z  DV GLY E 192 ? GLY E 192 ? GLY E 192 GLY E 192
+Z  DW GLN E 242 ? TRP E 260 ? GLN E 242 TRP E 260
+Z  DX TRP E 265 ? ASP E 285 ? TRP E 265 ASP E 285
+Z  DY GLU E 290 ? THR E 292 ? GLU E 290 THR E 292
+AA DZ MET E 174 ? ASN E 176 ? MET E 174 ASN E 176
+AA EA TRP E 179 ? TYR E 182 ? TRP E 179 TYR E 182
+AB EB MET E 197 ? MET E 197 ? MET E 197 MET E 197
+AB EC PHE E 210 ? PHE E 210 ? PHE E 210 PHE E 210
+AC ED ILE F   7 ? ILE F   7 ? ILE F 7   ILE F 7
+AC EE ILE G  14 ? ILE G  14 ? ILE G 14  ILE G 14
+AD EF HIS F  48 ? HIS F  48 ? HIS F 48  HIS F 48
+AD EG LYS G  21 ? ASP G  29 ? LYS G 21  ASP G 29
+AD EH MET G  34 ? ILE G  43 ? MET G 34  ILE G 43
+AD EI LYS G  51 ? ILE G  61 ? LYS G 51  ILE G 61
+AD EJ GLN G  97 ? TYR G 102 ? GLN G 97  TYR G 102
+AD EK PHE G 224 ? PHE G 224 ? PHE G 224 PHE G 224
+AD EL PHE G 228 ? MET G 234 ? PHE G 228 MET G 234
+AE EM ARG F  66 ? GLU F  70 ? ARG F 66  GLU F 70
+AE EN LYS F  75 ? GLN F  89 ? LYS F 75  GLN F 89
+AE EO PHE F 153 ? GLU F 158 ? PHE F 153 GLU F 158
+AE EP LYS F 164 ? PHE F 171 ? LYS F 164 PHE F 171
+AE EQ ASN F 188 ? ASN F 188 ? ASN F 188 ASN F 188
+AE ER GLY F 192 ? GLY F 192 ? GLY F 192 GLY F 192
+AE ES GLN F 242 ? TRP F 260 ? GLN F 242 TRP F 260
+AE ET TRP F 265 ? ASP F 285 ? TRP F 265 ASP F 285
+AE EU GLU F 290 ? THR F 292 ? GLU F 290 THR F 292
+AF EV MET F 174 ? ASN F 176 ? MET F 174 ASN F 176
+AF EW TRP F 179 ? TYR F 182 ? TRP F 179 TYR F 182
+AG EX MET F 197 ? MET F 197 ? MET F 197 MET F 197
+AG EY PHE F 210 ? PHE F 210 ? PHE F 210 PHE F 210
+AH EZ ARG G  66 ? GLU G  70 ? ARG G 66  GLU G 70
+AH FA LYS G  75 ? GLN G  89 ? LYS G 75  GLN G 89
+AH FB PHE G 153 ? GLU G 158 ? PHE G 153 GLU G 158
+AH FC LYS G 164 ? PHE G 171 ? LYS G 164 PHE G 171
+AH FD ASN G 188 ? ASN G 188 ? ASN G 188 ASN G 188
+AH FE GLY G 192 ? GLY G 192 ? GLY G 192 GLY G 192
+AH FF GLN G 242 ? TRP G 260 ? GLN G 242 TRP G 260
+AH FG TRP G 265 ? ASP G 285 ? TRP G 265 ASP G 285
+AH FH GLU G 290 ? THR G 292 ? GLU G 290 THR G 292
+AI FI MET G 174 ? ASN G 176 ? MET G 174 ASN G 176
+AI FJ TRP G 179 ? TYR G 182 ? TRP G 179 TYR G 182
+AJ FK MET G 197 ? MET G 197 ? MET G 197 MET G 197
+AJ FL PHE G 210 ? PHE G 210 ? PHE G 210 PHE G 210
+#
+loop_
+_struct_conf.conf_type_id
+_struct_conf.id
+_struct_conf.pdbx_PDB_helix_id
+_struct_conf.beg_label_comp_id
+_struct_conf.beg_label_asym_id
+_struct_conf.beg_label_seq_id
+_struct_conf.pdbx_beg_PDB_ins_code
+_struct_conf.end_label_comp_id
+_struct_conf.end_label_asym_id
+_struct_conf.end_label_seq_id
+_struct_conf.pdbx_end_PDB_ins_code
+_struct_conf.beg_auth_comp_id
+_struct_conf.beg_auth_asym_id
+_struct_conf.beg_auth_seq_id
+_struct_conf.end_auth_comp_id
+_struct_conf.end_auth_asym_id
+_struct_conf.end_auth_seq_id
+_struct_conf.pdbx_PDB_helix_class
+_struct_conf.details
+_struct_conf.pdbx_PDB_helix_length
+OTHER        OTHER1         . ALA A   1 ? ALA A   1 ? ALA A 1   ALA A 1   . . .
+HELX_RH_3T_P HELX_RH_3T_P1  . ASP A   2 ? ILE A   5 ? ASP A 2   ILE A 5   . . .
+TURN_TY1_P   TURN_TY1_P1    . ASN A   6 ? ASN A   6 ? ASN A 6   ASN A 6   . . .
+STRN         STRN1          . ILE A   7 ? ILE A   7 ? ILE A 7   ILE A 7   . . .
+OTHER        OTHER2         . LYS A   8 ? LYS A   8 ? LYS A 8   LYS A 8   . . .
+TURN_TY1_P   TURN_TY1_P2    . THR A   9 ? THR A  12 ? THR A 9   THR A 12  . . .
+OTHER        OTHER3         . ASP A  13 ? ASP A  13 ? ASP A 13  ASP A 13  . . .
+STRN         STRN2          . ILE A  14 ? ILE A  14 ? ILE A 14  ILE A 14  . . .
+OTHER        OTHER4         . GLY A  15 ? GLY A  15 ? GLY A 15  GLY A 15  . . .
+TURN_TY1_P   TURN_TY1_P3    . SER A  16 ? ASN A  17 ? SER A 16  ASN A 17  . . .
+OTHER        OTHER5         . THR A  18 ? THR A  18 ? THR A 18  THR A 18  . . .
+HELX_LH_PP_P HELX_LH_PP_P1  . THR A  19 ? VAL A  20 ? THR A 19  VAL A 20  . . .
+STRN         STRN3          . LYS A  21 ? ASP A  29 ? LYS A 21  ASP A 29  . . .
+TURN_TY1_P   TURN_TY1_P4    . LYS A  30 ? GLY A  33 ? LYS A 30  GLY A 33  . . .
+STRN         STRN4          . MET A  34 ? ILE A  43 ? MET A 34  ILE A 43  . . .
+OTHER        OTHER6         . ASP A  44 ? ASP A  45 ? ASP A 44  ASP A 45  . . .
+TURN_TY1_P   TURN_TY1_P5    . LYS A  46 ? ASN A  47 ? LYS A 46  ASN A 47  . . .
+STRN         STRN5          . HIS A  48 ? HIS A  48 ? HIS A 48  HIS A 48  . . .
+BEND         BEND1          . ASN A  49 ? LYS A  50 ? ASN A 49  LYS A 50  . . .
+STRN         STRN6          . LYS A  51 ? ILE A  61 ? LYS A 51  ILE A 61  . . .
+OTHER        OTHER7         . ALA A  62 ? TYR A  65 ? ALA A 62  TYR A 65  . . .
+STRN         STRN7          . ARG A  66 ? ARG A  66 ? ARG A 66  ARG A 66  . . .
+OTHER        OTHER8         . VAL A  67 ? SER A  69 ? VAL A 67  SER A 69  . . .
+STRN         STRN8          . GLU A  70 ? GLU A  70 ? GLU A 70  GLU A 70  . . .
+OTHER        OTHER9         . GLU A  71 ? GLU A  71 ? GLU A 71  GLU A 71  . . .
+BEND         BEND2          . GLY A  72 ? GLY A  72 ? GLY A 72  GLY A 72  . . .
+TURN_TY1_P   TURN_TY1_P6    . ALA A  73 ? ASN A  74 ? ALA A 73  ASN A 74  . . .
+STRN         STRN9          . LYS A  75 ? GLN A  89 ? LYS A 75  GLN A 89  . . .
+OTHER        OTHER10        . LEU A  90 ? PRO A  91 ? LEU A 90  PRO A 91  . . .
+TURN_TY1_P   TURN_TY1_P7    . ASP A  92 ? ASN A  93 ? ASP A 92  ASN A 93  . . .
+OTHER        OTHER11        . GLU A  94 ? ALA A  96 ? GLU A 94  ALA A 96  . . .
+STRN         STRN10         . GLN A  97 ? TYR A 102 ? GLN A 97  TYR A 102 . . .
+BEND         BEND3          . PRO A 103 ? PRO A 103 ? PRO A 103 PRO A 103 . . .
+OTHER        OTHER12        . ARG A 104 ? ASP A 108 ? ARG A 104 ASP A 108 . . .
+STRN         STRN11         . THR A 109 ? ASP A 127 ? THR A 109 ASP A 127 . . .
+TURN_TY1_P   TURN_TY1_P8    . ASP A 128 ? THR A 129 ? ASP A 128 THR A 129 . . .
+OTHER        OTHER13        . GLY A 130 ? LYS A 131 ? GLY A 130 LYS A 131 . . .
+STRN         STRN12         . ILE A 132 ? PRO A 151 ? ILE A 132 PRO A 151 . . .
+BEND         BEND4          . ASP A 152 ? ASP A 152 ? ASP A 152 ASP A 152 . . .
+STRN         STRN13         . PHE A 153 ? GLU A 158 ? PHE A 153 GLU A 158 . . .
+OTHER        OTHER14        . SER A 159 ? THR A 161 ? SER A 159 THR A 161 . . .
+BEND         BEND5          . ASP A 162 ? LYS A 163 ? ASP A 162 LYS A 163 . . .
+STRN         STRN14         . LYS A 164 ? PHE A 171 ? LYS A 164 PHE A 171 . . .
+OTHER        OTHER15        . ASN A 172 ? ASN A 173 ? ASN A 172 ASN A 173 . . .
+STRN         STRN15         . MET A 174 ? ASN A 176 ? MET A 174 ASN A 176 . . .
+TURN_TY1_P   TURN_TY1_P9    . GLN A 177 ? ASN A 178 ? GLN A 177 ASN A 178 . . .
+STRN         STRN16         . TRP A 179 ? TYR A 182 ? TRP A 179 TYR A 182 . . .
+OTHER        OTHER16        . ASP A 183 ? ASP A 183 ? ASP A 183 ASP A 183 . . .
+TURN_TY1_P   TURN_TY1_P10   . ARG A 184 ? ASP A 185 ? ARG A 184 ASP A 185 . . .
+OTHER        OTHER17        . SER A 186 ? TRP A 187 ? SER A 186 TRP A 187 . . .
+STRN         STRN17         . ASN A 188 ? ASN A 188 ? ASN A 188 ASN A 188 . . .
+TURN_TY1_P   TURN_TY1_P11   . PRO A 189 ? TYR A 191 ? PRO A 189 TYR A 191 . . .
+STRN         STRN18         . GLY A 192 ? GLY A 192 ? GLY A 192 GLY A 192 . . .
+OTHER        OTHER18        . ASN A 193 ? GLN A 194 ? ASN A 193 GLN A 194 . . .
+TURN_TY1_P   TURN_TY1_P12   . LEU A 195 ? PHE A 196 ? LEU A 195 PHE A 196 . . .
+STRN         STRN19         . MET A 197 ? MET A 197 ? MET A 197 MET A 197 . . .
+BEND         BEND6          . LYS A 198 ? LYS A 198 ? LYS A 198 LYS A 198 . . .
+OTHER        OTHER19        . THR A 199 ? THR A 199 ? THR A 199 THR A 199 . . .
+BEND         BEND7          . ARG A 200 ? ASN A 201 ? ARG A 200 ASN A 201 . . .
+OTHER        OTHER20        . GLY A 202 ? SER A 203 ? GLY A 202 SER A 203 . . .
+BEND         BEND8          . MET A 204 ? MET A 204 ? MET A 204 MET A 204 . . .
+OTHER        OTHER21        . LYS A 205 ? LYS A 205 ? LYS A 205 LYS A 205 . . .
+HELX_RH_3T_P HELX_RH_3T_P2  . ALA A 206 ? ASP A 208 ? ALA A 206 ASP A 208 . . .
+BEND         BEND9          . ASN A 209 ? ASN A 209 ? ASN A 209 ASN A 209 . . .
+STRN         STRN20         . PHE A 210 ? PHE A 210 ? PHE A 210 PHE A 210 . . .
+HELX_LH_PP_P HELX_LH_PP_P2  . LEU A 211 ? ASP A 212 ? LEU A 211 ASP A 212 . . .
+HELX_RH_3T_P HELX_RH_3T_P3  . PRO A 213 ? LYS A 215 ? PRO A 213 LYS A 215 . . .
+BEND         BEND10         . ALA A 216 ? ALA A 216 ? ALA A 216 ALA A 216 . . .
+OTHER        OTHER22        . SER A 217 ? SER A 217 ? SER A 217 SER A 217 . . .
+HELX_RH_AL_P HELX_RH_AL_P1  . SER A 218 ? SER A 221 ? SER A 218 SER A 221 . . .
+TURN_TY1_P   TURN_TY1_P13   . SER A 222 ? SER A 222 ? SER A 222 SER A 222 . . .
+OTHER        OTHER23        . GLY A 223 ? GLY A 223 ? GLY A 223 GLY A 223 . . .
+STRN         STRN21         . PHE A 224 ? PHE A 224 ? PHE A 224 PHE A 224 . . .
+OTHER        OTHER24        . SER A 225 ? ASP A 227 ? SER A 225 ASP A 227 . . .
+STRN         STRN22         . PHE A 228 ? MET A 234 ? PHE A 228 MET A 234 . . .
+OTHER        OTHER25        . ASP A 235 ? ASP A 235 ? ASP A 235 ASP A 235 . . .
+TURN_TY1_P   TURN_TY1_P14   . ARG A 236 ? LYS A 237 ? ARG A 236 LYS A 237 . . .
+OTHER        OTHER26        . ALA A 238 ? ALA A 238 ? ALA A 238 ALA A 238 . . .
+BEND         BEND11         . SER A 239 ? SER A 239 ? SER A 239 SER A 239 . . .
+OTHER        OTHER27        . LYS A 240 ? GLN A 241 ? LYS A 240 GLN A 241 . . .
+STRN         STRN23         . GLN A 242 ? TRP A 260 ? GLN A 242 TRP A 260 . . .
+OTHER        OTHER28        . THR A 261 ? THR A 261 ? THR A 261 THR A 261 . . .
+BEND         BEND12         . SER A 262 ? ASN A 264 ? SER A 262 ASN A 264 . . .
+STRN         STRN24         . TRP A 265 ? ASP A 285 ? TRP A 265 ASP A 285 . . .
+TURN_TY1_P   TURN_TY1_P15   . TRP A 286 ? GLU A 289 ? TRP A 286 GLU A 289 . . .
+STRN         STRN25         . GLU A 290 ? THR A 292 ? GLU A 290 THR A 292 . . .
+OTHER        OTHER29        . ASN A 293 ? ALA B   1 ? ASN A 293 ALA B 1   . . .
+TURN_TY1_P   TURN_TY1_P16   . ASP B   2 ? ASP B   2 ? ASP B 2   ASP B 2   . . .
+HELX_RH_3T_P HELX_RH_3T_P4  . SER B   3 ? ILE B   5 ? SER B 3   ILE B 5   . . .
+TURN_TY1_P   TURN_TY1_P17   . ASN B   6 ? ASN B   6 ? ASN B 6   ASN B 6   . . .
+STRN         STRN26         . ILE B   7 ? ILE B   7 ? ILE B 7   ILE B 7   . . .
+OTHER        OTHER30        . LYS B   8 ? LYS B   8 ? LYS B 8   LYS B 8   . . .
+TURN_TY1_P   TURN_TY1_P18   . THR B   9 ? THR B  12 ? THR B 9   THR B 12  . . .
+OTHER        OTHER31        . ASP B  13 ? ASP B  13 ? ASP B 13  ASP B 13  . . .
+STRN         STRN27         . ILE B  14 ? ILE B  14 ? ILE B 14  ILE B 14  . . .
+OTHER        OTHER32        . GLY B  15 ? GLY B  15 ? GLY B 15  GLY B 15  . . .
+TURN_TY1_P   TURN_TY1_P19   . SER B  16 ? ASN B  17 ? SER B 16  ASN B 17  . . .
+OTHER        OTHER33        . THR B  18 ? VAL B  20 ? THR B 18  VAL B 20  . . .
+STRN         STRN28         . LYS B  21 ? ASP B  29 ? LYS B 21  ASP B 29  . . .
+TURN_TY1_P   TURN_TY1_P20   . LYS B  30 ? GLY B  33 ? LYS B 30  GLY B 33  . . .
+STRN         STRN29         . MET B  34 ? ILE B  43 ? MET B 34  ILE B 43  . . .
+OTHER        OTHER34        . ASP B  44 ? ASP B  45 ? ASP B 44  ASP B 45  . . .
+TURN_TY1_P   TURN_TY1_P21   . LYS B  46 ? ASN B  47 ? LYS B 46  ASN B 47  . . .
+STRN         STRN30         . HIS B  48 ? HIS B  48 ? HIS B 48  HIS B 48  . . .
+BEND         BEND13         . ASN B  49 ? LYS B  50 ? ASN B 49  LYS B 50  . . .
+STRN         STRN31         . LYS B  51 ? ILE B  61 ? LYS B 51  ILE B 61  . . .
+OTHER        OTHER35        . ALA B  62 ? TYR B  65 ? ALA B 62  TYR B 65  . . .
+STRN         STRN32         . ARG B  66 ? GLU B  71 ? ARG B 66  GLU B 71  . . .
+TURN_TY1_P   TURN_TY1_P22   . GLY B  72 ? ASN B  74 ? GLY B 72  ASN B 74  . . .
+STRN         STRN33         . LYS B  75 ? GLN B  89 ? LYS B 75  GLN B 89  . . .
+OTHER        OTHER36        . LEU B  90 ? PRO B  91 ? LEU B 90  PRO B 91  . . .
+TURN_TY1_P   TURN_TY1_P23   . ASP B  92 ? ASN B  93 ? ASP B 92  ASN B 93  . . .
+OTHER        OTHER37        . GLU B  94 ? ALA B  96 ? GLU B 94  ALA B 96  . . .
+STRN         STRN34         . GLN B  97 ? TYR B 102 ? GLN B 97  TYR B 102 . . .
+BEND         BEND14         . PRO B 103 ? PRO B 103 ? PRO B 103 PRO B 103 . . .
+OTHER        OTHER38        . ARG B 104 ? ARG B 104 ? ARG B 104 ARG B 104 . . .
+HELX_LH_PP_P HELX_LH_PP_P3  . ASN B 105 ? ASP B 108 ? ASN B 105 ASP B 108 . . .
+OTHER        OTHER39        . THR B 109 ? LYS B 110 ? THR B 109 LYS B 110 . . .
+STRN         STRN35         . GLU B 111 ? ASP B 127 ? GLU B 111 ASP B 127 . . .
+TURN_TY1_P   TURN_TY1_P24   . ASP B 128 ? THR B 129 ? ASP B 128 THR B 129 . . .
+OTHER        OTHER40        . GLY B 130 ? LYS B 131 ? GLY B 130 LYS B 131 . . .
+STRN         STRN36         . ILE B 132 ? PRO B 151 ? ILE B 132 PRO B 151 . . .
+BEND         BEND15         . ASP B 152 ? ASP B 152 ? ASP B 152 ASP B 152 . . .
+STRN         STRN37         . PHE B 153 ? GLU B 158 ? PHE B 153 GLU B 158 . . .
+OTHER        OTHER41        . SER B 159 ? THR B 161 ? SER B 159 THR B 161 . . .
+BEND         BEND16         . ASP B 162 ? LYS B 163 ? ASP B 162 LYS B 163 . . .
+STRN         STRN38         . LYS B 164 ? PHE B 171 ? LYS B 164 PHE B 171 . . .
+OTHER        OTHER42        . ASN B 172 ? ASN B 173 ? ASN B 172 ASN B 173 . . .
+STRN         STRN39         . MET B 174 ? ASN B 176 ? MET B 174 ASN B 176 . . .
+TURN_TY1_P   TURN_TY1_P25   . GLN B 177 ? ASN B 178 ? GLN B 177 ASN B 178 . . .
+STRN         STRN40         . TRP B 179 ? TYR B 182 ? TRP B 179 TYR B 182 . . .
+OTHER        OTHER43        . ASP B 183 ? ASP B 183 ? ASP B 183 ASP B 183 . . .
+TURN_TY1_P   TURN_TY1_P26   . ARG B 184 ? ASP B 185 ? ARG B 184 ASP B 185 . . .
+OTHER        OTHER44        . SER B 186 ? ASN B 188 ? SER B 186 ASN B 188 . . .
+TURN_TY1_P   TURN_TY1_P27   . PRO B 189 ? TYR B 191 ? PRO B 189 TYR B 191 . . .
+STRN         STRN41         . GLY B 192 ? GLY B 192 ? GLY B 192 GLY B 192 . . .
+OTHER        OTHER45        . ASN B 193 ? GLN B 194 ? ASN B 193 GLN B 194 . . .
+TURN_TY1_P   TURN_TY1_P28   . LEU B 195 ? PHE B 196 ? LEU B 195 PHE B 196 . . .
+STRN         STRN42         . MET B 197 ? MET B 197 ? MET B 197 MET B 197 . . .
+BEND         BEND17         . LYS B 198 ? LYS B 198 ? LYS B 198 LYS B 198 . . .
+OTHER        OTHER46        . THR B 199 ? THR B 199 ? THR B 199 THR B 199 . . .
+BEND         BEND18         . ARG B 200 ? ASN B 201 ? ARG B 200 ASN B 201 . . .
+OTHER        OTHER47        . GLY B 202 ? SER B 203 ? GLY B 202 SER B 203 . . .
+BEND         BEND19         . MET B 204 ? MET B 204 ? MET B 204 MET B 204 . . .
+OTHER        OTHER48        . LYS B 205 ? LYS B 205 ? LYS B 205 LYS B 205 . . .
+HELX_RH_3T_P HELX_RH_3T_P5  . ALA B 206 ? ASP B 208 ? ALA B 206 ASP B 208 . . .
+BEND         BEND20         . ASN B 209 ? ASN B 209 ? ASN B 209 ASN B 209 . . .
+STRN         STRN43         . PHE B 210 ? PHE B 210 ? PHE B 210 PHE B 210 . . .
+HELX_LH_PP_P HELX_LH_PP_P4  . LEU B 211 ? ASP B 212 ? LEU B 211 ASP B 212 . . .
+HELX_RH_3T_P HELX_RH_3T_P6  . PRO B 213 ? LYS B 215 ? PRO B 213 LYS B 215 . . .
+BEND         BEND21         . ALA B 216 ? ALA B 216 ? ALA B 216 ALA B 216 . . .
+OTHER        OTHER49        . SER B 217 ? SER B 217 ? SER B 217 SER B 217 . . .
+HELX_RH_AL_P HELX_RH_AL_P2  . SER B 218 ? SER B 221 ? SER B 218 SER B 221 . . .
+TURN_TY1_P   TURN_TY1_P29   . SER B 222 ? SER B 222 ? SER B 222 SER B 222 . . .
+OTHER        OTHER50        . GLY B 223 ? GLY B 223 ? GLY B 223 GLY B 223 . . .
+STRN         STRN44         . PHE B 224 ? PHE B 224 ? PHE B 224 PHE B 224 . . .
+OTHER        OTHER51        . SER B 225 ? ASP B 227 ? SER B 225 ASP B 227 . . .
+STRN         STRN45         . PHE B 228 ? MET B 234 ? PHE B 228 MET B 234 . . .
+OTHER        OTHER52        . ASP B 235 ? ASP B 235 ? ASP B 235 ASP B 235 . . .
+TURN_TY1_P   TURN_TY1_P30   . ARG B 236 ? LYS B 237 ? ARG B 236 LYS B 237 . . .
+OTHER        OTHER53        . ALA B 238 ? ALA B 238 ? ALA B 238 ALA B 238 . . .
+BEND         BEND22         . SER B 239 ? SER B 239 ? SER B 239 SER B 239 . . .
+OTHER        OTHER54        . LYS B 240 ? GLN B 241 ? LYS B 240 GLN B 241 . . .
+STRN         STRN46         . GLN B 242 ? TRP B 260 ? GLN B 242 TRP B 260 . . .
+OTHER        OTHER55        . THR B 261 ? THR B 261 ? THR B 261 THR B 261 . . .
+BEND         BEND23         . SER B 262 ? ASN B 264 ? SER B 262 ASN B 264 . . .
+STRN         STRN47         . TRP B 265 ? ASP B 285 ? TRP B 265 ASP B 285 . . .
+TURN_TY1_P   TURN_TY1_P31   . TRP B 286 ? GLU B 289 ? TRP B 286 GLU B 289 . . .
+STRN         STRN48         . GLU B 290 ? THR B 292 ? GLU B 290 THR B 292 . . .
+OTHER        OTHER56        . ASN B 293 ? ALA C   1 ? ASN B 293 ALA C 1   . . .
+TURN_TY1_P   TURN_TY1_P32   . ASP C   2 ? ASP C   2 ? ASP C 2   ASP C 2   . . .
+HELX_RH_3T_P HELX_RH_3T_P7  . SER C   3 ? ILE C   5 ? SER C 3   ILE C 5   . . .
+TURN_TY1_P   TURN_TY1_P33   . ASN C   6 ? ASN C   6 ? ASN C 6   ASN C 6   . . .
+STRN         STRN49         . ILE C   7 ? ILE C   7 ? ILE C 7   ILE C 7   . . .
+OTHER        OTHER57        . LYS C   8 ? LYS C   8 ? LYS C 8   LYS C 8   . . .
+TURN_TY1_P   TURN_TY1_P34   . THR C   9 ? THR C  12 ? THR C 9   THR C 12  . . .
+OTHER        OTHER58        . ASP C  13 ? ASP C  13 ? ASP C 13  ASP C 13  . . .
+STRN         STRN50         . ILE C  14 ? ILE C  14 ? ILE C 14  ILE C 14  . . .
+OTHER        OTHER59        . GLY C  15 ? GLY C  15 ? GLY C 15  GLY C 15  . . .
+TURN_TY1_P   TURN_TY1_P35   . SER C  16 ? ASN C  17 ? SER C 16  ASN C 17  . . .
+OTHER        OTHER60        . THR C  18 ? VAL C  20 ? THR C 18  VAL C 20  . . .
+STRN         STRN51         . LYS C  21 ? ASP C  29 ? LYS C 21  ASP C 29  . . .
+TURN_TY1_P   TURN_TY1_P36   . LYS C  30 ? GLY C  33 ? LYS C 30  GLY C 33  . . .
+STRN         STRN52         . MET C  34 ? ILE C  43 ? MET C 34  ILE C 43  . . .
+OTHER        OTHER61        . ASP C  44 ? ASP C  45 ? ASP C 44  ASP C 45  . . .
+TURN_TY1_P   TURN_TY1_P37   . LYS C  46 ? ASN C  47 ? LYS C 46  ASN C 47  . . .
+STRN         STRN53         . HIS C  48 ? HIS C  48 ? HIS C 48  HIS C 48  . . .
+BEND         BEND24         . ASN C  49 ? LYS C  50 ? ASN C 49  LYS C 50  . . .
+STRN         STRN54         . LYS C  51 ? ILE C  61 ? LYS C 51  ILE C 61  . . .
+OTHER        OTHER62        . ALA C  62 ? TYR C  65 ? ALA C 62  TYR C 65  . . .
+STRN         STRN55         . ARG C  66 ? GLU C  70 ? ARG C 66  GLU C 70  . . .
+OTHER        OTHER63        . GLU C  71 ? GLU C  71 ? GLU C 71  GLU C 71  . . .
+BEND         BEND25         . GLY C  72 ? GLY C  72 ? GLY C 72  GLY C 72  . . .
+TURN_TY1_P   TURN_TY1_P38   . ALA C  73 ? ASN C  74 ? ALA C 73  ASN C 74  . . .
+STRN         STRN56         . LYS C  75 ? GLN C  89 ? LYS C 75  GLN C 89  . . .
+OTHER        OTHER64        . LEU C  90 ? PRO C  91 ? LEU C 90  PRO C 91  . . .
+TURN_TY1_P   TURN_TY1_P39   . ASP C  92 ? ASN C  93 ? ASP C 92  ASN C 93  . . .
+OTHER        OTHER65        . GLU C  94 ? ALA C  96 ? GLU C 94  ALA C 96  . . .
+STRN         STRN57         . GLN C  97 ? TYR C 102 ? GLN C 97  TYR C 102 . . .
+BEND         BEND26         . PRO C 103 ? PRO C 103 ? PRO C 103 PRO C 103 . . .
+OTHER        OTHER66        . ARG C 104 ? ASP C 108 ? ARG C 104 ASP C 108 . . .
+STRN         STRN58         . THR C 109 ? ASP C 127 ? THR C 109 ASP C 127 . . .
+TURN_TY1_P   TURN_TY1_P40   . ASP C 128 ? THR C 129 ? ASP C 128 THR C 129 . . .
+OTHER        OTHER67        . GLY C 130 ? LYS C 131 ? GLY C 130 LYS C 131 . . .
+STRN         STRN59         . ILE C 132 ? ILE C 132 ? ILE C 132 ILE C 132 . . .
+STRN         STRN60         . GLY C 133 ? VAL C 149 ? GLY C 133 VAL C 149 . . .
+OTHER        OTHER68        . GLN C 150 ? PRO C 151 ? GLN C 150 PRO C 151 . . .
+BEND         BEND27         . ASP C 152 ? ASP C 152 ? ASP C 152 ASP C 152 . . .
+STRN         STRN61         . PHE C 153 ? GLU C 158 ? PHE C 153 GLU C 158 . . .
+OTHER        OTHER69        . SER C 159 ? THR C 161 ? SER C 159 THR C 161 . . .
+BEND         BEND28         . ASP C 162 ? LYS C 163 ? ASP C 162 LYS C 163 . . .
+STRN         STRN62         . LYS C 164 ? PHE C 171 ? LYS C 164 PHE C 171 . . .
+OTHER        OTHER70        . ASN C 172 ? ASN C 173 ? ASN C 172 ASN C 173 . . .
+STRN         STRN63         . MET C 174 ? MET C 174 ? MET C 174 MET C 174 . . .
+OTHER        OTHER71        . VAL C 175 ? VAL C 175 ? VAL C 175 VAL C 175 . . .
+BEND         BEND29         . ASN C 176 ? ASN C 176 ? ASN C 176 ASN C 176 . . .
+TURN_TY1_P   TURN_TY1_P41   . GLN C 177 ? ASN C 178 ? GLN C 177 ASN C 178 . . .
+BEND         BEND30         . TRP C 179 ? TRP C 179 ? TRP C 179 TRP C 179 . . .
+OTHER        OTHER72        . GLY C 180 ? PRO C 181 ? GLY C 180 PRO C 181 . . .
+STRN         STRN64         . TYR C 182 ? TYR C 182 ? TYR C 182 TYR C 182 . . .
+OTHER        OTHER73        . ASP C 183 ? ASP C 183 ? ASP C 183 ASP C 183 . . .
+TURN_TY1_P   TURN_TY1_P42   . ARG C 184 ? ASP C 185 ? ARG C 184 ASP C 185 . . .
+OTHER        OTHER74        . SER C 186 ? ASN C 188 ? SER C 186 ASN C 188 . . .
+TURN_TY1_P   TURN_TY1_P43   . PRO C 189 ? TYR C 191 ? PRO C 189 TYR C 191 . . .
+STRN         STRN65         . GLY C 192 ? GLY C 192 ? GLY C 192 GLY C 192 . . .
+OTHER        OTHER75        . ASN C 193 ? GLN C 194 ? ASN C 193 GLN C 194 . . .
+TURN_TY1_P   TURN_TY1_P44   . LEU C 195 ? PHE C 196 ? LEU C 195 PHE C 196 . . .
+STRN         STRN66         . MET C 197 ? MET C 197 ? MET C 197 MET C 197 . . .
+BEND         BEND31         . LYS C 198 ? LYS C 198 ? LYS C 198 LYS C 198 . . .
+OTHER        OTHER76        . THR C 199 ? THR C 199 ? THR C 199 THR C 199 . . .
+BEND         BEND32         . ARG C 200 ? ASN C 201 ? ARG C 200 ASN C 201 . . .
+OTHER        OTHER77        . GLY C 202 ? GLY C 202 ? GLY C 202 GLY C 202 . . .
+BEND         BEND33         . SER C 203 ? MET C 204 ? SER C 203 MET C 204 . . .
+OTHER        OTHER78        . LYS C 205 ? LYS C 205 ? LYS C 205 LYS C 205 . . .
+HELX_RH_3T_P HELX_RH_3T_P8  . ALA C 206 ? ASP C 208 ? ALA C 206 ASP C 208 . . .
+BEND         BEND34         . ASN C 209 ? ASN C 209 ? ASN C 209 ASN C 209 . . .
+STRN         STRN67         . PHE C 210 ? PHE C 210 ? PHE C 210 PHE C 210 . . .
+HELX_LH_PP_P HELX_LH_PP_P5  . LEU C 211 ? ASP C 212 ? LEU C 211 ASP C 212 . . .
+HELX_RH_3T_P HELX_RH_3T_P9  . PRO C 213 ? LYS C 215 ? PRO C 213 LYS C 215 . . .
+BEND         BEND35         . ALA C 216 ? ALA C 216 ? ALA C 216 ALA C 216 . . .
+OTHER        OTHER79        . SER C 217 ? SER C 217 ? SER C 217 SER C 217 . . .
+TURN_TY1_P   TURN_TY1_P45   . SER C 218 ? SER C 222 ? SER C 218 SER C 222 . . .
+OTHER        OTHER80        . GLY C 223 ? GLY C 223 ? GLY C 223 GLY C 223 . . .
+STRN         STRN68         . PHE C 224 ? PHE C 224 ? PHE C 224 PHE C 224 . . .
+OTHER        OTHER81        . SER C 225 ? ASP C 227 ? SER C 225 ASP C 227 . . .
+STRN         STRN69         . PHE C 228 ? MET C 234 ? PHE C 228 MET C 234 . . .
+OTHER        OTHER82        . ASP C 235 ? ASP C 235 ? ASP C 235 ASP C 235 . . .
+TURN_TY1_P   TURN_TY1_P46   . ARG C 236 ? LYS C 237 ? ARG C 236 LYS C 237 . . .
+OTHER        OTHER83        . ALA C 238 ? ALA C 238 ? ALA C 238 ALA C 238 . . .
+BEND         BEND36         . SER C 239 ? SER C 239 ? SER C 239 SER C 239 . . .
+OTHER        OTHER84        . LYS C 240 ? GLN C 241 ? LYS C 240 GLN C 241 . . .
+STRN         STRN70         . GLN C 242 ? TRP C 260 ? GLN C 242 TRP C 260 . . .
+OTHER        OTHER85        . THR C 261 ? THR C 261 ? THR C 261 THR C 261 . . .
+BEND         BEND37         . SER C 262 ? ASN C 264 ? SER C 262 ASN C 264 . . .
+STRN         STRN71         . TRP C 265 ? ASP C 285 ? TRP C 265 ASP C 285 . . .
+TURN_TY1_P   TURN_TY1_P47   . TRP C 286 ? GLU C 289 ? TRP C 286 GLU C 289 . . .
+STRN         STRN72         . GLU C 290 ? THR C 292 ? GLU C 290 THR C 292 . . .
+OTHER        OTHER86        . ASN C 293 ? ALA D   1 ? ASN C 293 ALA D 1   . . .
+HELX_RH_3T_P HELX_RH_3T_P10 . ASP D   2 ? ILE D   5 ? ASP D 2   ILE D 5   . . .
+TURN_TY1_P   TURN_TY1_P48   . ASN D   6 ? ASN D   6 ? ASN D 6   ASN D 6   . . .
+STRN         STRN73         . ILE D   7 ? ILE D   7 ? ILE D 7   ILE D 7   . . .
+OTHER        OTHER87        . LYS D   8 ? LYS D   8 ? LYS D 8   LYS D 8   . . .
+TURN_TY1_P   TURN_TY1_P49   . THR D   9 ? THR D  12 ? THR D 9   THR D 12  . . .
+OTHER        OTHER88        . ASP D  13 ? ASP D  13 ? ASP D 13  ASP D 13  . . .
+STRN         STRN74         . ILE D  14 ? ILE D  14 ? ILE D 14  ILE D 14  . . .
+OTHER        OTHER89        . GLY D  15 ? GLY D  15 ? GLY D 15  GLY D 15  . . .
+TURN_TY1_P   TURN_TY1_P50   . SER D  16 ? ASN D  17 ? SER D 16  ASN D 17  . . .
+OTHER        OTHER90        . THR D  18 ? VAL D  20 ? THR D 18  VAL D 20  . . .
+STRN         STRN75         . LYS D  21 ? ASP D  29 ? LYS D 21  ASP D 29  . . .
+TURN_TY1_P   TURN_TY1_P51   . LYS D  30 ? GLY D  33 ? LYS D 30  GLY D 33  . . .
+STRN         STRN76         . MET D  34 ? ILE D  43 ? MET D 34  ILE D 43  . . .
+OTHER        OTHER91        . ASP D  44 ? ASP D  45 ? ASP D 44  ASP D 45  . . .
+TURN_TY1_P   TURN_TY1_P52   . LYS D  46 ? ASN D  47 ? LYS D 46  ASN D 47  . . .
+STRN         STRN77         . HIS D  48 ? HIS D  48 ? HIS D 48  HIS D 48  . . .
+BEND         BEND38         . ASN D  49 ? LYS D  50 ? ASN D 49  LYS D 50  . . .
+STRN         STRN78         . LYS D  51 ? ILE D  61 ? LYS D 51  ILE D 61  . . .
+OTHER        OTHER92        . ALA D  62 ? TYR D  65 ? ALA D 62  TYR D 65  . . .
+STRN         STRN79         . ARG D  66 ? SER D  69 ? ARG D 66  SER D 69  . . .
+OTHER        OTHER93        . GLU D  70 ? GLU D  71 ? GLU D 70  GLU D 71  . . .
+BEND         BEND39         . GLY D  72 ? ASN D  74 ? GLY D 72  ASN D 74  . . .
+STRN         STRN80         . LYS D  75 ? GLN D  89 ? LYS D 75  GLN D 89  . . .
+OTHER        OTHER94        . LEU D  90 ? PRO D  91 ? LEU D 90  PRO D 91  . . .
+TURN_TY1_P   TURN_TY1_P53   . ASP D  92 ? ASN D  93 ? ASP D 92  ASN D 93  . . .
+OTHER        OTHER95        . GLU D  94 ? ALA D  96 ? GLU D 94  ALA D 96  . . .
+STRN         STRN81         . GLN D  97 ? TYR D 102 ? GLN D 97  TYR D 102 . . .
+BEND         BEND40         . PRO D 103 ? PRO D 103 ? PRO D 103 PRO D 103 . . .
+OTHER        OTHER96        . ARG D 104 ? ARG D 104 ? ARG D 104 ARG D 104 . . .
+HELX_LH_PP_P HELX_LH_PP_P6  . ASN D 105 ? ASP D 108 ? ASN D 105 ASP D 108 . . .
+STRN         STRN82         . THR D 109 ? GLY D 126 ? THR D 109 GLY D 126 . . .
+OTHER        OTHER97        . ASP D 127 ? ASP D 127 ? ASP D 127 ASP D 127 . . .
+TURN_TY1_P   TURN_TY1_P54   . ASP D 128 ? THR D 129 ? ASP D 128 THR D 129 . . .
+BEND         BEND41         . GLY D 130 ? GLY D 130 ? GLY D 130 GLY D 130 . . .
+OTHER        OTHER98        . LYS D 131 ? LYS D 131 ? LYS D 131 LYS D 131 . . .
+STRN         STRN83         . ILE D 132 ? PRO D 151 ? ILE D 132 PRO D 151 . . .
+BEND         BEND42         . ASP D 152 ? ASP D 152 ? ASP D 152 ASP D 152 . . .
+STRN         STRN84         . PHE D 153 ? GLU D 158 ? PHE D 153 GLU D 158 . . .
+OTHER        OTHER99        . SER D 159 ? THR D 161 ? SER D 159 THR D 161 . . .
+BEND         BEND43         . ASP D 162 ? LYS D 163 ? ASP D 162 LYS D 163 . . .
+STRN         STRN85         . LYS D 164 ? PHE D 171 ? LYS D 164 PHE D 171 . . .
+OTHER        OTHER100       . ASN D 172 ? ASN D 173 ? ASN D 172 ASN D 173 . . .
+STRN         STRN86         . MET D 174 ? ASN D 176 ? MET D 174 ASN D 176 . . .
+TURN_TY1_P   TURN_TY1_P55   . GLN D 177 ? ASN D 178 ? GLN D 177 ASN D 178 . . .
+STRN         STRN87         . TRP D 179 ? TYR D 182 ? TRP D 179 TYR D 182 . . .
+OTHER        OTHER101       . ASP D 183 ? ASP D 183 ? ASP D 183 ASP D 183 . . .
+TURN_TY1_P   TURN_TY1_P56   . ARG D 184 ? ASP D 185 ? ARG D 184 ASP D 185 . . .
+OTHER        OTHER102       . SER D 186 ? TRP D 187 ? SER D 186 TRP D 187 . . .
+STRN         STRN88         . ASN D 188 ? ASN D 188 ? ASN D 188 ASN D 188 . . .
+TURN_TY1_P   TURN_TY1_P57   . PRO D 189 ? TYR D 191 ? PRO D 189 TYR D 191 . . .
+STRN         STRN89         . GLY D 192 ? GLY D 192 ? GLY D 192 GLY D 192 . . .
+OTHER        OTHER103       . ASN D 193 ? GLN D 194 ? ASN D 193 GLN D 194 . . .
+TURN_TY1_P   TURN_TY1_P58   . LEU D 195 ? PHE D 196 ? LEU D 195 PHE D 196 . . .
+STRN         STRN90         . MET D 197 ? MET D 197 ? MET D 197 MET D 197 . . .
+BEND         BEND44         . LYS D 198 ? LYS D 198 ? LYS D 198 LYS D 198 . . .
+OTHER        OTHER104       . THR D 199 ? THR D 199 ? THR D 199 THR D 199 . . .
+BEND         BEND45         . ARG D 200 ? ASN D 201 ? ARG D 200 ASN D 201 . . .
+OTHER        OTHER105       . GLY D 202 ? SER D 203 ? GLY D 202 SER D 203 . . .
+BEND         BEND46         . MET D 204 ? MET D 204 ? MET D 204 MET D 204 . . .
+OTHER        OTHER106       . LYS D 205 ? LYS D 205 ? LYS D 205 LYS D 205 . . .
+HELX_RH_3T_P HELX_RH_3T_P11 . ALA D 206 ? ASP D 208 ? ALA D 206 ASP D 208 . . .
+BEND         BEND47         . ASN D 209 ? ASN D 209 ? ASN D 209 ASN D 209 . . .
+STRN         STRN91         . PHE D 210 ? PHE D 210 ? PHE D 210 PHE D 210 . . .
+HELX_LH_PP_P HELX_LH_PP_P7  . LEU D 211 ? ASP D 212 ? LEU D 211 ASP D 212 . . .
+HELX_RH_3T_P HELX_RH_3T_P12 . PRO D 213 ? LYS D 215 ? PRO D 213 LYS D 215 . . .
+BEND         BEND48         . ALA D 216 ? ALA D 216 ? ALA D 216 ALA D 216 . . .
+OTHER        OTHER107       . SER D 217 ? SER D 217 ? SER D 217 SER D 217 . . .
+HELX_RH_AL_P HELX_RH_AL_P3  . SER D 218 ? SER D 221 ? SER D 218 SER D 221 . . .
+TURN_TY1_P   TURN_TY1_P59   . SER D 222 ? SER D 222 ? SER D 222 SER D 222 . . .
+OTHER        OTHER108       . GLY D 223 ? GLY D 223 ? GLY D 223 GLY D 223 . . .
+STRN         STRN92         . PHE D 224 ? PHE D 224 ? PHE D 224 PHE D 224 . . .
+OTHER        OTHER109       . SER D 225 ? ASP D 227 ? SER D 225 ASP D 227 . . .
+STRN         STRN93         . PHE D 228 ? MET D 234 ? PHE D 228 MET D 234 . . .
+OTHER        OTHER110       . ASP D 235 ? ASP D 235 ? ASP D 235 ASP D 235 . . .
+TURN_TY1_P   TURN_TY1_P60   . ARG D 236 ? LYS D 237 ? ARG D 236 LYS D 237 . . .
+OTHER        OTHER111       . ALA D 238 ? ALA D 238 ? ALA D 238 ALA D 238 . . .
+BEND         BEND49         . SER D 239 ? SER D 239 ? SER D 239 SER D 239 . . .
+OTHER        OTHER112       . LYS D 240 ? GLN D 241 ? LYS D 240 GLN D 241 . . .
+STRN         STRN94         . GLN D 242 ? THR D 261 ? GLN D 242 THR D 261 . . .
+STRN         STRN95         . SER D 262 ? SER D 262 ? SER D 262 SER D 262 . . .
+TURN_TY1_P   TURN_TY1_P61   . THR D 263 ? THR D 263 ? THR D 263 THR D 263 . . .
+STRN         STRN96         . ASN D 264 ? ASP D 285 ? ASN D 264 ASP D 285 . . .
+TURN_TY1_P   TURN_TY1_P62   . TRP D 286 ? GLU D 289 ? TRP D 286 GLU D 289 . . .
+STRN         STRN97         . GLU D 290 ? THR D 292 ? GLU D 290 THR D 292 . . .
+OTHER        OTHER113       . ASN D 293 ? ALA E   1 ? ASN D 293 ALA E 1   . . .
+HELX_RH_3T_P HELX_RH_3T_P13 . ASP E   2 ? ILE E   5 ? ASP E 2   ILE E 5   . . .
+TURN_TY1_P   TURN_TY1_P63   . ASN E   6 ? ASN E   6 ? ASN E 6   ASN E 6   . . .
+STRN         STRN98         . ILE E   7 ? ILE E   7 ? ILE E 7   ILE E 7   . . .
+OTHER        OTHER114       . LYS E   8 ? LYS E   8 ? LYS E 8   LYS E 8   . . .
+TURN_TY1_P   TURN_TY1_P64   . THR E   9 ? THR E  12 ? THR E 9   THR E 12  . . .
+OTHER        OTHER115       . ASP E  13 ? ASP E  13 ? ASP E 13  ASP E 13  . . .
+STRN         STRN99         . ILE E  14 ? ILE E  14 ? ILE E 14  ILE E 14  . . .
+OTHER        OTHER116       . GLY E  15 ? GLY E  15 ? GLY E 15  GLY E 15  . . .
+TURN_TY1_P   TURN_TY1_P65   . SER E  16 ? ASN E  17 ? SER E 16  ASN E 17  . . .
+OTHER        OTHER117       . THR E  18 ? VAL E  20 ? THR E 18  VAL E 20  . . .
+STRN         STRN100        . LYS E  21 ? ASP E  29 ? LYS E 21  ASP E 29  . . .
+TURN_TY1_P   TURN_TY1_P66   . LYS E  30 ? GLY E  33 ? LYS E 30  GLY E 33  . . .
+STRN         STRN101        . MET E  34 ? ILE E  43 ? MET E 34  ILE E 43  . . .
+OTHER        OTHER118       . ASP E  44 ? ASP E  45 ? ASP E 44  ASP E 45  . . .
+TURN_TY1_P   TURN_TY1_P67   . LYS E  46 ? ASN E  47 ? LYS E 46  ASN E 47  . . .
+STRN         STRN102        . HIS E  48 ? HIS E  48 ? HIS E 48  HIS E 48  . . .
+BEND         BEND50         . ASN E  49 ? LYS E  50 ? ASN E 49  LYS E 50  . . .
+STRN         STRN103        . LYS E  51 ? ILE E  61 ? LYS E 51  ILE E 61  . . .
+OTHER        OTHER119       . ALA E  62 ? TYR E  65 ? ALA E 62  TYR E 65  . . .
+STRN         STRN104        . ARG E  66 ? GLU E  70 ? ARG E 66  GLU E 70  . . .
+OTHER        OTHER120       . GLU E  71 ? GLU E  71 ? GLU E 71  GLU E 71  . . .
+HELX_RH_3T_P HELX_RH_3T_P14 . GLY E  72 ? ASN E  74 ? GLY E 72  ASN E 74  . . .
+STRN         STRN105        . LYS E  75 ? GLN E  89 ? LYS E 75  GLN E 89  . . .
+OTHER        OTHER121       . LEU E  90 ? PRO E  91 ? LEU E 90  PRO E 91  . . .
+TURN_TY1_P   TURN_TY1_P68   . ASP E  92 ? ASN E  93 ? ASP E 92  ASN E 93  . . .
+OTHER        OTHER122       . GLU E  94 ? ALA E  96 ? GLU E 94  ALA E 96  . . .
+STRN         STRN106        . GLN E  97 ? TYR E 102 ? GLN E 97  TYR E 102 . . .
+BEND         BEND51         . PRO E 103 ? PRO E 103 ? PRO E 103 PRO E 103 . . .
+OTHER        OTHER123       . ARG E 104 ? ARG E 104 ? ARG E 104 ARG E 104 . . .
+HELX_LH_PP_P HELX_LH_PP_P8  . ASN E 105 ? ASP E 108 ? ASN E 105 ASP E 108 . . .
+STRN         STRN107        . THR E 109 ? ASP E 127 ? THR E 109 ASP E 127 . . .
+TURN_TY1_P   TURN_TY1_P69   . ASP E 128 ? THR E 129 ? ASP E 128 THR E 129 . . .
+OTHER        OTHER124       . GLY E 130 ? LYS E 131 ? GLY E 130 LYS E 131 . . .
+STRN         STRN108        . ILE E 132 ? ILE E 132 ? ILE E 132 ILE E 132 . . .
+OTHER        OTHER125       . GLY E 133 ? GLY E 134 ? GLY E 133 GLY E 134 . . .
+STRN         STRN109        . LEU E 135 ? PRO E 151 ? LEU E 135 PRO E 151 . . .
+BEND         BEND52         . ASP E 152 ? ASP E 152 ? ASP E 152 ASP E 152 . . .
+STRN         STRN110        . PHE E 153 ? GLU E 158 ? PHE E 153 GLU E 158 . . .
+OTHER        OTHER126       . SER E 159 ? THR E 161 ? SER E 159 THR E 161 . . .
+BEND         BEND53         . ASP E 162 ? LYS E 163 ? ASP E 162 LYS E 163 . . .
+STRN         STRN111        . LYS E 164 ? PHE E 171 ? LYS E 164 PHE E 171 . . .
+OTHER        OTHER127       . ASN E 172 ? ASN E 173 ? ASN E 172 ASN E 173 . . .
+STRN         STRN112        . MET E 174 ? ASN E 176 ? MET E 174 ASN E 176 . . .
+TURN_TY1_P   TURN_TY1_P70   . GLN E 177 ? ASN E 178 ? GLN E 177 ASN E 178 . . .
+STRN         STRN113        . TRP E 179 ? TYR E 182 ? TRP E 179 TYR E 182 . . .
+OTHER        OTHER128       . ASP E 183 ? ASP E 183 ? ASP E 183 ASP E 183 . . .
+TURN_TY1_P   TURN_TY1_P71   . ARG E 184 ? ASP E 185 ? ARG E 184 ASP E 185 . . .
+OTHER        OTHER129       . SER E 186 ? TRP E 187 ? SER E 186 TRP E 187 . . .
+STRN         STRN114        . ASN E 188 ? ASN E 188 ? ASN E 188 ASN E 188 . . .
+TURN_TY1_P   TURN_TY1_P72   . PRO E 189 ? TYR E 191 ? PRO E 189 TYR E 191 . . .
+STRN         STRN115        . GLY E 192 ? GLY E 192 ? GLY E 192 GLY E 192 . . .
+OTHER        OTHER130       . ASN E 193 ? GLN E 194 ? ASN E 193 GLN E 194 . . .
+TURN_TY1_P   TURN_TY1_P73   . LEU E 195 ? PHE E 196 ? LEU E 195 PHE E 196 . . .
+STRN         STRN116        . MET E 197 ? MET E 197 ? MET E 197 MET E 197 . . .
+BEND         BEND54         . LYS E 198 ? LYS E 198 ? LYS E 198 LYS E 198 . . .
+OTHER        OTHER131       . THR E 199 ? THR E 199 ? THR E 199 THR E 199 . . .
+BEND         BEND55         . ARG E 200 ? ASN E 201 ? ARG E 200 ASN E 201 . . .
+OTHER        OTHER132       . GLY E 202 ? GLY E 202 ? GLY E 202 GLY E 202 . . .
+BEND         BEND56         . SER E 203 ? MET E 204 ? SER E 203 MET E 204 . . .
+OTHER        OTHER133       . LYS E 205 ? LYS E 205 ? LYS E 205 LYS E 205 . . .
+HELX_RH_3T_P HELX_RH_3T_P15 . ALA E 206 ? ASP E 208 ? ALA E 206 ASP E 208 . . .
+OTHER        OTHER134       . ASN E 209 ? ASN E 209 ? ASN E 209 ASN E 209 . . .
+STRN         STRN117        . PHE E 210 ? PHE E 210 ? PHE E 210 PHE E 210 . . .
+HELX_LH_PP_P HELX_LH_PP_P9  . LEU E 211 ? ASP E 212 ? LEU E 211 ASP E 212 . . .
+HELX_RH_3T_P HELX_RH_3T_P16 . PRO E 213 ? LYS E 215 ? PRO E 213 LYS E 215 . . .
+BEND         BEND57         . ALA E 216 ? ALA E 216 ? ALA E 216 ALA E 216 . . .
+OTHER        OTHER135       . SER E 217 ? SER E 217 ? SER E 217 SER E 217 . . .
+HELX_RH_AL_P HELX_RH_AL_P4  . SER E 218 ? SER E 221 ? SER E 218 SER E 221 . . .
+TURN_TY1_P   TURN_TY1_P74   . SER E 222 ? SER E 222 ? SER E 222 SER E 222 . . .
+OTHER        OTHER136       . GLY E 223 ? GLY E 223 ? GLY E 223 GLY E 223 . . .
+STRN         STRN118        . PHE E 224 ? PHE E 224 ? PHE E 224 PHE E 224 . . .
+OTHER        OTHER137       . SER E 225 ? ASP E 227 ? SER E 225 ASP E 227 . . .
+STRN         STRN119        . PHE E 228 ? MET E 234 ? PHE E 228 MET E 234 . . .
+OTHER        OTHER138       . ASP E 235 ? ASP E 235 ? ASP E 235 ASP E 235 . . .
+TURN_TY1_P   TURN_TY1_P75   . ARG E 236 ? LYS E 237 ? ARG E 236 LYS E 237 . . .
+OTHER        OTHER139       . ALA E 238 ? ALA E 238 ? ALA E 238 ALA E 238 . . .
+BEND         BEND58         . SER E 239 ? SER E 239 ? SER E 239 SER E 239 . . .
+OTHER        OTHER140       . LYS E 240 ? GLN E 241 ? LYS E 240 GLN E 241 . . .
+STRN         STRN120        . GLN E 242 ? TRP E 260 ? GLN E 242 TRP E 260 . . .
+OTHER        OTHER141       . THR E 261 ? THR E 261 ? THR E 261 THR E 261 . . .
+BEND         BEND59         . SER E 262 ? ASN E 264 ? SER E 262 ASN E 264 . . .
+STRN         STRN121        . TRP E 265 ? ASP E 285 ? TRP E 265 ASP E 285 . . .
+TURN_TY1_P   TURN_TY1_P76   . TRP E 286 ? GLU E 289 ? TRP E 286 GLU E 289 . . .
+STRN         STRN122        . GLU E 290 ? THR E 292 ? GLU E 290 THR E 292 . . .
+OTHER        OTHER142       . ASN E 293 ? ALA F   1 ? ASN E 293 ALA F 1   . . .
+HELX_RH_3T_P HELX_RH_3T_P17 . ASP F   2 ? ILE F   5 ? ASP F 2   ILE F 5   . . .
+TURN_TY1_P   TURN_TY1_P77   . ASN F   6 ? ASN F   6 ? ASN F 6   ASN F 6   . . .
+STRN         STRN123        . ILE F   7 ? ILE F   7 ? ILE F 7   ILE F 7   . . .
+OTHER        OTHER143       . LYS F   8 ? LYS F   8 ? LYS F 8   LYS F 8   . . .
+TURN_TY1_P   TURN_TY1_P78   . THR F   9 ? THR F  12 ? THR F 9   THR F 12  . . .
+OTHER        OTHER144       . ASP F  13 ? ASP F  13 ? ASP F 13  ASP F 13  . . .
+STRN         STRN124        . ILE F  14 ? ILE F  14 ? ILE F 14  ILE F 14  . . .
+OTHER        OTHER145       . GLY F  15 ? GLY F  15 ? GLY F 15  GLY F 15  . . .
+TURN_TY1_P   TURN_TY1_P79   . SER F  16 ? ASN F  17 ? SER F 16  ASN F 17  . . .
+OTHER        OTHER146       . THR F  18 ? VAL F  20 ? THR F 18  VAL F 20  . . .
+STRN         STRN125        . LYS F  21 ? ASP F  29 ? LYS F 21  ASP F 29  . . .
+TURN_TY1_P   TURN_TY1_P80   . LYS F  30 ? GLY F  33 ? LYS F 30  GLY F 33  . . .
+STRN         STRN126        . MET F  34 ? ILE F  43 ? MET F 34  ILE F 43  . . .
+OTHER        OTHER147       . ASP F  44 ? ASP F  45 ? ASP F 44  ASP F 45  . . .
+TURN_TY1_P   TURN_TY1_P81   . LYS F  46 ? ASN F  47 ? LYS F 46  ASN F 47  . . .
+STRN         STRN127        . HIS F  48 ? HIS F  48 ? HIS F 48  HIS F 48  . . .
+BEND         BEND60         . ASN F  49 ? LYS F  50 ? ASN F 49  LYS F 50  . . .
+STRN         STRN128        . LYS F  51 ? ILE F  61 ? LYS F 51  ILE F 61  . . .
+OTHER        OTHER148       . ALA F  62 ? TYR F  65 ? ALA F 62  TYR F 65  . . .
+STRN         STRN129        . ARG F  66 ? GLU F  70 ? ARG F 66  GLU F 70  . . .
+OTHER        OTHER149       . GLU F  71 ? GLU F  71 ? GLU F 71  GLU F 71  . . .
+BEND         BEND61         . GLY F  72 ? ASN F  74 ? GLY F 72  ASN F 74  . . .
+STRN         STRN130        . LYS F  75 ? GLN F  89 ? LYS F 75  GLN F 89  . . .
+OTHER        OTHER150       . LEU F  90 ? PRO F  91 ? LEU F 90  PRO F 91  . . .
+TURN_TY1_P   TURN_TY1_P82   . ASP F  92 ? ASN F  93 ? ASP F 92  ASN F 93  . . .
+OTHER        OTHER151       . GLU F  94 ? ALA F  96 ? GLU F 94  ALA F 96  . . .
+STRN         STRN131        . GLN F  97 ? TYR F 102 ? GLN F 97  TYR F 102 . . .
+BEND         BEND62         . PRO F 103 ? PRO F 103 ? PRO F 103 PRO F 103 . . .
+OTHER        OTHER152       . ARG F 104 ? ASP F 108 ? ARG F 104 ASP F 108 . . .
+STRN         STRN132        . THR F 109 ? ASP F 127 ? THR F 109 ASP F 127 . . .
+TURN_TY1_P   TURN_TY1_P83   . ASP F 128 ? THR F 129 ? ASP F 128 THR F 129 . . .
+OTHER        OTHER153       . GLY F 130 ? LYS F 131 ? GLY F 130 LYS F 131 . . .
+STRN         STRN133        . ILE F 132 ? PRO F 151 ? ILE F 132 PRO F 151 . . .
+BEND         BEND63         . ASP F 152 ? ASP F 152 ? ASP F 152 ASP F 152 . . .
+STRN         STRN134        . PHE F 153 ? GLU F 158 ? PHE F 153 GLU F 158 . . .
+OTHER        OTHER154       . SER F 159 ? THR F 161 ? SER F 159 THR F 161 . . .
+BEND         BEND64         . ASP F 162 ? LYS F 163 ? ASP F 162 LYS F 163 . . .
+STRN         STRN135        . LYS F 164 ? PHE F 171 ? LYS F 164 PHE F 171 . . .
+OTHER        OTHER155       . ASN F 172 ? ASN F 173 ? ASN F 172 ASN F 173 . . .
+STRN         STRN136        . MET F 174 ? ASN F 176 ? MET F 174 ASN F 176 . . .
+TURN_TY1_P   TURN_TY1_P84   . GLN F 177 ? ASN F 178 ? GLN F 177 ASN F 178 . . .
+STRN         STRN137        . TRP F 179 ? TYR F 182 ? TRP F 179 TYR F 182 . . .
+OTHER        OTHER156       . ASP F 183 ? ASP F 183 ? ASP F 183 ASP F 183 . . .
+TURN_TY1_P   TURN_TY1_P85   . ARG F 184 ? ASP F 185 ? ARG F 184 ASP F 185 . . .
+OTHER        OTHER157       . SER F 186 ? TRP F 187 ? SER F 186 TRP F 187 . . .
+STRN         STRN138        . ASN F 188 ? ASN F 188 ? ASN F 188 ASN F 188 . . .
+TURN_TY1_P   TURN_TY1_P86   . PRO F 189 ? TYR F 191 ? PRO F 189 TYR F 191 . . .
+STRN         STRN139        . GLY F 192 ? GLY F 192 ? GLY F 192 GLY F 192 . . .
+OTHER        OTHER158       . ASN F 193 ? GLN F 194 ? ASN F 193 GLN F 194 . . .
+TURN_TY1_P   TURN_TY1_P87   . LEU F 195 ? PHE F 196 ? LEU F 195 PHE F 196 . . .
+STRN         STRN140        . MET F 197 ? MET F 197 ? MET F 197 MET F 197 . . .
+BEND         BEND65         . LYS F 198 ? LYS F 198 ? LYS F 198 LYS F 198 . . .
+OTHER        OTHER159       . THR F 199 ? THR F 199 ? THR F 199 THR F 199 . . .
+BEND         BEND66         . ARG F 200 ? ASN F 201 ? ARG F 200 ASN F 201 . . .
+OTHER        OTHER160       . GLY F 202 ? GLY F 202 ? GLY F 202 GLY F 202 . . .
+BEND         BEND67         . SER F 203 ? MET F 204 ? SER F 203 MET F 204 . . .
+OTHER        OTHER161       . LYS F 205 ? LYS F 205 ? LYS F 205 LYS F 205 . . .
+HELX_RH_3T_P HELX_RH_3T_P18 . ALA F 206 ? ASP F 208 ? ALA F 206 ASP F 208 . . .
+BEND         BEND68         . ASN F 209 ? ASN F 209 ? ASN F 209 ASN F 209 . . .
+STRN         STRN141        . PHE F 210 ? PHE F 210 ? PHE F 210 PHE F 210 . . .
+HELX_LH_PP_P HELX_LH_PP_P10 . LEU F 211 ? ASP F 212 ? LEU F 211 ASP F 212 . . .
+HELX_RH_3T_P HELX_RH_3T_P19 . PRO F 213 ? LYS F 215 ? PRO F 213 LYS F 215 . . .
+BEND         BEND69         . ALA F 216 ? ALA F 216 ? ALA F 216 ALA F 216 . . .
+OTHER        OTHER162       . SER F 217 ? SER F 217 ? SER F 217 SER F 217 . . .
+HELX_RH_AL_P HELX_RH_AL_P5  . SER F 218 ? SER F 221 ? SER F 218 SER F 221 . . .
+TURN_TY1_P   TURN_TY1_P88   . SER F 222 ? SER F 222 ? SER F 222 SER F 222 . . .
+OTHER        OTHER163       . GLY F 223 ? GLY F 223 ? GLY F 223 GLY F 223 . . .
+STRN         STRN142        . PHE F 224 ? PHE F 224 ? PHE F 224 PHE F 224 . . .
+OTHER        OTHER164       . SER F 225 ? ASP F 227 ? SER F 225 ASP F 227 . . .
+STRN         STRN143        . PHE F 228 ? MET F 234 ? PHE F 228 MET F 234 . . .
+OTHER        OTHER165       . ASP F 235 ? ASP F 235 ? ASP F 235 ASP F 235 . . .
+TURN_TY1_P   TURN_TY1_P89   . ARG F 236 ? LYS F 237 ? ARG F 236 LYS F 237 . . .
+OTHER        OTHER166       . ALA F 238 ? ALA F 238 ? ALA F 238 ALA F 238 . . .
+BEND         BEND70         . SER F 239 ? SER F 239 ? SER F 239 SER F 239 . . .
+OTHER        OTHER167       . LYS F 240 ? GLN F 241 ? LYS F 240 GLN F 241 . . .
+STRN         STRN144        . GLN F 242 ? TRP F 260 ? GLN F 242 TRP F 260 . . .
+OTHER        OTHER168       . THR F 261 ? THR F 261 ? THR F 261 THR F 261 . . .
+BEND         BEND71         . SER F 262 ? ASN F 264 ? SER F 262 ASN F 264 . . .
+STRN         STRN145        . TRP F 265 ? ASP F 285 ? TRP F 265 ASP F 285 . . .
+TURN_TY1_P   TURN_TY1_P90   . TRP F 286 ? GLU F 289 ? TRP F 286 GLU F 289 . . .
+STRN         STRN146        . GLU F 290 ? THR F 292 ? GLU F 290 THR F 292 . . .
+OTHER        OTHER169       . ASN F 293 ? ALA G   1 ? ASN F 293 ALA G 1   . . .
+HELX_RH_3T_P HELX_RH_3T_P20 . ASP G   2 ? ILE G   5 ? ASP G 2   ILE G 5   . . .
+TURN_TY1_P   TURN_TY1_P91   . ASN G   6 ? ASN G   6 ? ASN G 6   ASN G 6   . . .
+STRN         STRN147        . ILE G   7 ? ILE G   7 ? ILE G 7   ILE G 7   . . .
+OTHER        OTHER170       . LYS G   8 ? LYS G   8 ? LYS G 8   LYS G 8   . . .
+TURN_TY1_P   TURN_TY1_P92   . THR G   9 ? THR G  12 ? THR G 9   THR G 12  . . .
+OTHER        OTHER171       . ASP G  13 ? ASP G  13 ? ASP G 13  ASP G 13  . . .
+STRN         STRN148        . ILE G  14 ? ILE G  14 ? ILE G 14  ILE G 14  . . .
+OTHER        OTHER172       . GLY G  15 ? GLY G  15 ? GLY G 15  GLY G 15  . . .
+TURN_TY1_P   TURN_TY1_P93   . SER G  16 ? ASN G  17 ? SER G 16  ASN G 17  . . .
+OTHER        OTHER173       . THR G  18 ? VAL G  20 ? THR G 18  VAL G 20  . . .
+STRN         STRN149        . LYS G  21 ? ASP G  29 ? LYS G 21  ASP G 29  . . .
+TURN_TY1_P   TURN_TY1_P94   . LYS G  30 ? GLY G  33 ? LYS G 30  GLY G 33  . . .
+STRN         STRN150        . MET G  34 ? ILE G  43 ? MET G 34  ILE G 43  . . .
+OTHER        OTHER174       . ASP G  44 ? ASP G  45 ? ASP G 44  ASP G 45  . . .
+TURN_TY1_P   TURN_TY1_P95   . LYS G  46 ? ASN G  47 ? LYS G 46  ASN G 47  . . .
+STRN         STRN151        . HIS G  48 ? HIS G  48 ? HIS G 48  HIS G 48  . . .
+BEND         BEND72         . ASN G  49 ? LYS G  50 ? ASN G 49  LYS G 50  . . .
+STRN         STRN152        . LYS G  51 ? ILE G  61 ? LYS G 51  ILE G 61  . . .
+OTHER        OTHER175       . ALA G  62 ? TYR G  65 ? ALA G 62  TYR G 65  . . .
+STRN         STRN153        . ARG G  66 ? GLU G  70 ? ARG G 66  GLU G 70  . . .
+OTHER        OTHER176       . GLU G  71 ? GLU G  71 ? GLU G 71  GLU G 71  . . .
+BEND         BEND73         . GLY G  72 ? ASN G  74 ? GLY G 72  ASN G 74  . . .
+STRN         STRN154        . LYS G  75 ? GLN G  89 ? LYS G 75  GLN G 89  . . .
+OTHER        OTHER177       . LEU G  90 ? PRO G  91 ? LEU G 90  PRO G 91  . . .
+TURN_TY1_P   TURN_TY1_P96   . ASP G  92 ? ASN G  93 ? ASP G 92  ASN G 93  . . .
+OTHER        OTHER178       . GLU G  94 ? ALA G  96 ? GLU G 94  ALA G 96  . . .
+STRN         STRN155        . GLN G  97 ? TYR G 102 ? GLN G 97  TYR G 102 . . .
+BEND         BEND74         . PRO G 103 ? PRO G 103 ? PRO G 103 PRO G 103 . . .
+OTHER        OTHER179       . ARG G 104 ? ASP G 108 ? ARG G 104 ASP G 108 . . .
+STRN         STRN156        . THR G 109 ? ASP G 127 ? THR G 109 ASP G 127 . . .
+TURN_TY1_P   TURN_TY1_P97   . ASP G 128 ? THR G 129 ? ASP G 128 THR G 129 . . .
+OTHER        OTHER180       . GLY G 130 ? LYS G 131 ? GLY G 130 LYS G 131 . . .
+STRN         STRN157        . ILE G 132 ? PRO G 151 ? ILE G 132 PRO G 151 . . .
+BEND         BEND75         . ASP G 152 ? ASP G 152 ? ASP G 152 ASP G 152 . . .
+STRN         STRN158        . PHE G 153 ? GLU G 158 ? PHE G 153 GLU G 158 . . .
+HELX_LH_PP_P HELX_LH_PP_P11 . SER G 159 ? PRO G 160 ? SER G 159 PRO G 160 . . .
+OTHER        OTHER181       . THR G 161 ? THR G 161 ? THR G 161 THR G 161 . . .
+BEND         BEND76         . ASP G 162 ? LYS G 163 ? ASP G 162 LYS G 163 . . .
+STRN         STRN159        . LYS G 164 ? PHE G 171 ? LYS G 164 PHE G 171 . . .
+OTHER        OTHER182       . ASN G 172 ? ASN G 173 ? ASN G 172 ASN G 173 . . .
+STRN         STRN160        . MET G 174 ? ASN G 176 ? MET G 174 ASN G 176 . . .
+TURN_TY1_P   TURN_TY1_P98   . GLN G 177 ? ASN G 178 ? GLN G 177 ASN G 178 . . .
+STRN         STRN161        . TRP G 179 ? TYR G 182 ? TRP G 179 TYR G 182 . . .
+OTHER        OTHER183       . ASP G 183 ? ASP G 183 ? ASP G 183 ASP G 183 . . .
+TURN_TY1_P   TURN_TY1_P99   . ARG G 184 ? ASP G 185 ? ARG G 184 ASP G 185 . . .
+OTHER        OTHER184       . SER G 186 ? TRP G 187 ? SER G 186 TRP G 187 . . .
+STRN         STRN162        . ASN G 188 ? ASN G 188 ? ASN G 188 ASN G 188 . . .
+TURN_TY1_P   TURN_TY1_P100  . PRO G 189 ? TYR G 191 ? PRO G 189 TYR G 191 . . .
+STRN         STRN163        . GLY G 192 ? GLY G 192 ? GLY G 192 GLY G 192 . . .
+OTHER        OTHER185       . ASN G 193 ? GLN G 194 ? ASN G 193 GLN G 194 . . .
+TURN_TY1_P   TURN_TY1_P101  . LEU G 195 ? PHE G 196 ? LEU G 195 PHE G 196 . . .
+STRN         STRN164        . MET G 197 ? MET G 197 ? MET G 197 MET G 197 . . .
+BEND         BEND77         . LYS G 198 ? LYS G 198 ? LYS G 198 LYS G 198 . . .
+OTHER        OTHER186       . THR G 199 ? THR G 199 ? THR G 199 THR G 199 . . .
+BEND         BEND78         . ARG G 200 ? ASN G 201 ? ARG G 200 ASN G 201 . . .
+OTHER        OTHER187       . GLY G 202 ? GLY G 202 ? GLY G 202 GLY G 202 . . .
+BEND         BEND79         . SER G 203 ? MET G 204 ? SER G 203 MET G 204 . . .
+OTHER        OTHER188       . LYS G 205 ? LYS G 205 ? LYS G 205 LYS G 205 . . .
+HELX_RH_3T_P HELX_RH_3T_P21 . ALA G 206 ? ASP G 208 ? ALA G 206 ASP G 208 . . .
+OTHER        OTHER189       . ASN G 209 ? ASN G 209 ? ASN G 209 ASN G 209 . . .
+STRN         STRN165        . PHE G 210 ? PHE G 210 ? PHE G 210 PHE G 210 . . .
+HELX_LH_PP_P HELX_LH_PP_P12 . LEU G 211 ? ASP G 212 ? LEU G 211 ASP G 212 . . .
+HELX_RH_3T_P HELX_RH_3T_P22 . PRO G 213 ? LYS G 215 ? PRO G 213 LYS G 215 . . .
+BEND         BEND80         . ALA G 216 ? ALA G 216 ? ALA G 216 ALA G 216 . . .
+OTHER        OTHER190       . SER G 217 ? SER G 217 ? SER G 217 SER G 217 . . .
+TURN_TY1_P   TURN_TY1_P102  . SER G 218 ? SER G 222 ? SER G 218 SER G 222 . . .
+OTHER        OTHER191       . GLY G 223 ? GLY G 223 ? GLY G 223 GLY G 223 . . .
+STRN         STRN166        . PHE G 224 ? PHE G 224 ? PHE G 224 PHE G 224 . . .
+OTHER        OTHER192       . SER G 225 ? ASP G 227 ? SER G 225 ASP G 227 . . .
+STRN         STRN167        . PHE G 228 ? MET G 234 ? PHE G 228 MET G 234 . . .
+OTHER        OTHER193       . ASP G 235 ? ASP G 235 ? ASP G 235 ASP G 235 . . .
+TURN_TY1_P   TURN_TY1_P103  . ARG G 236 ? LYS G 237 ? ARG G 236 LYS G 237 . . .
+OTHER        OTHER194       . ALA G 238 ? ALA G 238 ? ALA G 238 ALA G 238 . . .
+BEND         BEND81         . SER G 239 ? SER G 239 ? SER G 239 SER G 239 . . .
+OTHER        OTHER195       . LYS G 240 ? GLN G 241 ? LYS G 240 GLN G 241 . . .
+STRN         STRN168        . GLN G 242 ? TRP G 260 ? GLN G 242 TRP G 260 . . .
+OTHER        OTHER196       . THR G 261 ? THR G 261 ? THR G 261 THR G 261 . . .
+BEND         BEND82         . SER G 262 ? ASN G 264 ? SER G 262 ASN G 264 . . .
+STRN         STRN169        . TRP G 265 ? ASP G 285 ? TRP G 265 ASP G 285 . . .
+TURN_TY1_P   TURN_TY1_P104  . TRP G 286 ? GLU G 289 ? TRP G 286 GLU G 289 . . .
+STRN         STRN170        . GLU G 290 ? THR G 292 ? GLU G 290 THR G 292 . . .
+OTHER        OTHER197       . ASN G 293 ? ASN G 293 ? ASN G 293 ASN G 293 . . .
+#

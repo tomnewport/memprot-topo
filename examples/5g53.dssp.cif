@@ -1,0 +1,337 @@
+data_pdb_00005g53
+_entry.id   pdb_00005g53
+#
+loop_
+_audit_conform.dict_name
+_audit_conform.dict_version
+_audit_conform.dict_location
+mmcif_pdbx.dic     5.398 http://mmcif.pdb.org/dictionaries/ascii/mmcif_pdbx.dic
+dssp-extension.dic 1.1.1 https://pdb-redo.eu/dssp/dssp-extension.dic
+#
+loop_
+_struct_sheet.id
+_struct_sheet.number_strands
+A 2
+B 2
+C 6
+D 6
+#
+loop_
+_struct_conf_type.id
+_struct_conf_type.criteria
+_struct_conf_type.reference
+OTHER        DSSP .
+HELX_RH_AL_P DSSP .
+BEND         DSSP .
+TURN_TY1_P   DSSP .
+HELX_RH_PI_P DSSP .
+STRN         DSSP .
+HELX_RH_3T_P DSSP .
+HELX_LH_PP_P DSSP .
+#
+loop_
+_dssp_struct_ladder.id
+_dssp_struct_ladder.sheet_id
+_dssp_struct_ladder.range_id_1
+_dssp_struct_ladder.range_id_2
+_dssp_struct_ladder.type
+_dssp_struct_ladder.beg_1_label_comp_id
+_dssp_struct_ladder.beg_1_label_asym_id
+_dssp_struct_ladder.beg_1_label_seq_id
+_dssp_struct_ladder.pdbx_beg_1_PDB_ins_code
+_dssp_struct_ladder.end_1_label_comp_id
+_dssp_struct_ladder.end_1_label_asym_id
+_dssp_struct_ladder.end_1_label_seq_id
+_dssp_struct_ladder.pdbx_end_1_PDB_ins_code
+_dssp_struct_ladder.beg_1_auth_comp_id
+_dssp_struct_ladder.beg_1_auth_asym_id
+_dssp_struct_ladder.beg_1_auth_seq_id
+_dssp_struct_ladder.end_1_auth_comp_id
+_dssp_struct_ladder.end_1_auth_asym_id
+_dssp_struct_ladder.end_1_auth_seq_id
+_dssp_struct_ladder.beg_2_label_comp_id
+_dssp_struct_ladder.beg_2_label_asym_id
+_dssp_struct_ladder.beg_2_label_seq_id
+_dssp_struct_ladder.pdbx_beg_2_PDB_ins_code
+_dssp_struct_ladder.end_2_label_comp_id
+_dssp_struct_ladder.end_2_label_asym_id
+_dssp_struct_ladder.end_2_label_seq_id
+_dssp_struct_ladder.pdbx_end_2_PDB_ins_code
+_dssp_struct_ladder.beg_2_auth_comp_id
+_dssp_struct_ladder.beg_2_auth_asym_id
+_dssp_struct_ladder.beg_2_auth_seq_id
+_dssp_struct_ladder.end_2_auth_comp_id
+_dssp_struct_ladder.end_2_auth_asym_id
+_dssp_struct_ladder.end_2_auth_seq_id
+A A A B anti-parallel CYS A  71 ? ALA A  72 ? CYS A  71 ALA A  72 ALA A 165 ? VAL A 164 ? ALA A 165 VAL A 164
+B B C D anti-parallel CYS B  71 ? ALA B  72 ? CYS B  71 ALA B  72 ALA B 165 ? VAL B 164 ? ALA B 165 VAL B 164
+C C E G parallel      HIS C  17 ? LEU C  21 ? HIS C  41 LEU C  45 PHE C  64 ? ASP C  68 ? PHE C 219 ASP C 223
+D C E H parallel      LEU C  19 ? GLY C  23 ? LEU C  43 GLY C  47 ALA C  88 ? VAL C  92 ? ALA C 243 VAL C 247
+E C F G anti-parallel GLU C  54 ? VAL C  59 ? GLU C 209 VAL C 214 PHE C  67 ? VAL C  62 ? PHE C 222 VAL C 217
+F C H I parallel      ALA C  88 ? ASP C  94 ? ALA C 243 ASP C 249 SER C 121 ? ASN C 127 ? SER C 286 ASN C 292
+G C I J parallel      VAL C 122 ? LEU C 126 ? VAL C 287 LEU C 291 CYS C 194 ? PHE C 198 ? CYS C 359 PHE C 363
+H D K M parallel      HIS D  17 ? LEU D  21 ? HIS D  41 LEU D  45 PHE D  64 ? ASP D  68 ? PHE D 219 ASP D 223
+I D K N parallel      LEU D  19 ? GLY D  23 ? LEU D  43 GLY D  47 ALA D  88 ? VAL D  92 ? ALA D 243 VAL D 247
+J D L M anti-parallel GLU D  54 ? VAL D  59 ? GLU D 209 VAL D 214 PHE D  67 ? VAL D  62 ? PHE D 222 VAL D 217
+K D N O parallel      ILE D  89 ? ASP D  94 ? ILE D 244 ASP D 249 VAL D 122 ? ASN D 127 ? VAL D 287 ASN D 292
+L D O P parallel      VAL D 122 ? LEU D 126 ? VAL D 287 LEU D 291 CYS D 194 ? PHE D 198 ? CYS D 359 PHE D 363
+#
+loop_
+_struct_sheet_range.sheet_id
+_struct_sheet_range.id
+_struct_sheet_range.beg_label_comp_id
+_struct_sheet_range.beg_label_asym_id
+_struct_sheet_range.beg_label_seq_id
+_struct_sheet_range.pdbx_beg_PDB_ins_code
+_struct_sheet_range.end_label_comp_id
+_struct_sheet_range.end_label_asym_id
+_struct_sheet_range.end_label_seq_id
+_struct_sheet_range.pdbx_end_PDB_ins_code
+_struct_sheet_range.beg_auth_comp_id
+_struct_sheet_range.beg_auth_asym_id
+_struct_sheet_range.beg_auth_seq_id
+_struct_sheet_range.end_auth_comp_id
+_struct_sheet_range.end_auth_asym_id
+_struct_sheet_range.end_auth_seq_id
+A A CYS A  71 ? ALA A  72 ? CYS A 71  ALA A 72
+A B VAL A 164 ? ALA A 165 ? VAL A 164 ALA A 165
+B C CYS B  71 ? ALA B  72 ? CYS B 71  ALA B 72
+B D VAL B 164 ? ALA B 165 ? VAL B 164 ALA B 165
+C E HIS C  17 ? GLY C  23 ? HIS C 41  GLY C 47
+C F GLU C  54 ? VAL C  59 ? GLU C 209 VAL C 214
+C G VAL C  62 ? ASP C  68 ? VAL C 217 ASP C 223
+C H ALA C  88 ? ASP C  94 ? ALA C 243 ASP C 249
+C I SER C 121 ? ASN C 127 ? SER C 286 ASN C 292
+C J CYS C 194 ? PHE C 198 ? CYS C 359 PHE C 363
+D K HIS D  17 ? GLY D  23 ? HIS D 41  GLY D 47
+D L GLU D  54 ? VAL D  59 ? GLU D 209 VAL D 214
+D M VAL D  62 ? ASP D  68 ? VAL D 217 ASP D 223
+D N ALA D  88 ? ASP D  94 ? ALA D 243 ASP D 249
+D O VAL D 122 ? ASN D 127 ? VAL D 287 ASN D 292
+D P CYS D 194 ? PHE D 198 ? CYS D 359 PHE D 363
+#
+loop_
+_struct_conf.conf_type_id
+_struct_conf.id
+_struct_conf.pdbx_PDB_helix_id
+_struct_conf.beg_label_comp_id
+_struct_conf.beg_label_asym_id
+_struct_conf.beg_label_seq_id
+_struct_conf.pdbx_beg_PDB_ins_code
+_struct_conf.end_label_comp_id
+_struct_conf.end_label_asym_id
+_struct_conf.end_label_seq_id
+_struct_conf.pdbx_end_PDB_ins_code
+_struct_conf.beg_auth_comp_id
+_struct_conf.beg_auth_asym_id
+_struct_conf.beg_auth_seq_id
+_struct_conf.end_auth_comp_id
+_struct_conf.end_auth_asym_id
+_struct_conf.end_auth_seq_id
+_struct_conf.pdbx_PDB_helix_class
+_struct_conf.details
+_struct_conf.pdbx_PDB_helix_length
+OTHER        OTHER1         . SER A   6 ? SER A   6 ? SER A 6   SER A 6   . . .
+HELX_RH_AL_P HELX_RH_AL_P1  . SER A   7 ? LEU A  33 ? SER A 7   LEU A 33  . . .
+OTHER        OTHER2         . ASN A  34 ? ASN A  34 ? ASN A 34  ASN A 34  . . .
+BEND         BEND1          . SER A  35 ? SER A  35 ? SER A 35  SER A 35  . . .
+TURN_TY1_P   TURN_TY1_P1    . ASN A  36 ? LEU A  37 ? ASN A 36  LEU A 37  . . .
+OTHER        OTHER3         . GLN A  38 ? GLN A  38 ? GLN A 38  GLN A 38  . . .
+BEND         BEND2          . ASN A  39 ? ASN A  39 ? ASN A 39  ASN A 39  . . .
+TURN_TY1_P   TURN_TY1_P2    . VAL A  40 ? VAL A  40 ? VAL A 40  VAL A 40  . . .
+HELX_RH_AL_P HELX_RH_AL_P2  . THR A  41 ? ALA A  54 ? THR A 41  ALA A 54  . . .
+HELX_RH_PI_P HELX_RH_PI_P1  . VAL A  55 ? ALA A  59 ? VAL A 55  ALA A 59  . . .
+HELX_RH_AL_P HELX_RH_AL_P3  . ILE A  60 ? THR A  68 ? ILE A 60  THR A 68  . . .
+TURN_TY1_P   TURN_TY1_P3    . GLY A  69 ? GLY A  69 ? GLY A 69  GLY A 69  . . .
+OTHER        OTHER4         . PHE A  70 ? PHE A  70 ? PHE A 70  PHE A 70  . . .
+STRN         STRN1          . CYS A  71 ? ALA A  72 ? CYS A 71  ALA A 72  . . .
+OTHER        OTHER5         . ALA A  73 ? ALA A  73 ? ALA A 73  ALA A 73  . . .
+HELX_RH_AL_P HELX_RH_AL_P4  . CYS A  74 ? ARG A 107 ? CYS A 74  ARG A 107 . . .
+BEND         BEND3          . ILE A 108 ? ILE A 108 ? ILE A 108 ILE A 108 . . .
+TURN_TY1_P   TURN_TY1_P4    . PRO A 109 ? ARG A 111 ? PRO A 109 ARG A 111 . . .
+HELX_RH_AL_P HELX_RH_AL_P5  . TYR A 112 ? LEU A 115 ? TYR A 112 LEU A 115 . . .
+BEND         BEND4          . VAL A 116 ? VAL A 116 ? VAL A 116 VAL A 116 . . .
+OTHER        OTHER6         . THR A 117 ? THR A 117 ? THR A 117 THR A 117 . . .
+HELX_RH_AL_P HELX_RH_AL_P6  . GLY A 118 ? GLY A 136 ? GLY A 118 GLY A 136 . . .
+TURN_TY1_P   TURN_TY1_P5    . LEU A 137 ? LEU A 137 ? LEU A 137 LEU A 137 . . .
+HELX_RH_3T_P HELX_RH_3T_P1  . THR A 138 ? LEU A 141 ? THR A 138 LEU A 141 . . .
+TURN_TY1_P   TURN_TY1_P6    . GLY A 142 ? GLY A 142 ? GLY A 142 GLY A 142 . . .
+OTHER        OTHER7         . TRP A 143 ? TRP A 143 ? TRP A 143 TRP A 143 . . .
+BEND         BEND5          . ASN A 144 ? ASN A 144 ? ASN A 144 ASN A 144 . . .
+OTHER        OTHER8         . ASN A 145 ? GLY A 160 ? ASN A 145 GLY A 160 . . .
+TURN_TY1_P   TURN_TY1_P7    . GLU A 161 ? GLY A 162 ? GLU A 161 GLY A 162 . . .
+OTHER        OTHER9         . GLN A 163 ? GLN A 163 ? GLN A 163 GLN A 163 . . .
+STRN         STRN2          . VAL A 164 ? ALA A 165 ? VAL A 164 ALA A 165 . . .
+OTHER        OTHER10        . CYS A 166 ? LEU A 167 ? CYS A 166 LEU A 167 . . .
+HELX_RH_AL_P HELX_RH_AL_P7  . PHE A 168 ? VAL A 171 ? PHE A 168 VAL A 171 . . .
+BEND         BEND6          . VAL A 172 ? VAL A 172 ? VAL A 172 VAL A 172 . . .
+OTHER        OTHER11        . PRO A 173 ? PRO A 173 ? PRO A 173 PRO A 173 . . .
+HELX_RH_AL_P HELX_RH_AL_P8  . MET A 174 ? ASN A 175 ? MET A 174 ASN A 175 . . .
+HELX_RH_PI_P HELX_RH_PI_P2  . TYR A 176 ? LEU A 187 ? TYR A 176 LEU A 187 . . .
+HELX_RH_AL_P HELX_RH_AL_P9  . VAL A 188 ? GLN A 210 ? VAL A 188 GLN A 210 . . .
+OTHER        OTHER12        . MET A 211 ? THR A 224 ? MET A 211 THR A 224 . . .
+HELX_RH_AL_P HELX_RH_AL_P10 . LEU A 225 ? PHE A 258 ? LEU A 225 PHE A 258 . . .
+OTHER        OTHER13        . CYS A 259 ? CYS A 259 ? CYS A 259 CYS A 259 . . .
+BEND         BEND7          . PRO A 260 ? CYS A 262 ? PRO A 260 CYS A 262 . . .
+HELX_LH_PP_P HELX_LH_PP_P1  . SER A 263 ? PRO A 266 ? SER A 263 PRO A 266 . . .
+HELX_RH_AL_P HELX_RH_AL_P11 . LEU A 267 ? HIS A 278 ? LEU A 267 HIS A 278 . . .
+TURN_TY1_P   TURN_TY1_P8    . THR A 279 ? THR A 279 ? THR A 279 THR A 279 . . .
+HELX_RH_AL_P HELX_RH_AL_P12 . ASN A 280 ? ASN A 284 ? ASN A 280 ASN A 284 . . .
+HELX_RH_PI_P HELX_RH_PI_P3  . PRO A 285 ? TYR A 290 ? PRO A 285 TYR A 290 . . .
+TURN_TY1_P   TURN_TY1_P9    . ARG A 291 ? ARG A 291 ? ARG A 291 ARG A 291 . . .
+BEND         BEND8          . ILE A 292 ? ILE A 292 ? ILE A 292 ILE A 292 . . .
+HELX_RH_AL_P HELX_RH_AL_P13 . ARG A 293 ? ASN A 310 ? ARG A 293 ASN A 310 . . .
+OTHER        OTHER14        . LEU A 311 ? SER B   6 ? LEU A 311 SER B 6   . . .
+HELX_RH_AL_P HELX_RH_AL_P14 . SER B   7 ? LEU B  33 ? SER B 7   LEU B 33  . . .
+OTHER        OTHER15        . ASN B  34 ? ASN B  34 ? ASN B 34  ASN B 34  . . .
+BEND         BEND9          . SER B  35 ? SER B  35 ? SER B 35  SER B 35  . . .
+TURN_TY1_P   TURN_TY1_P10   . ASN B  36 ? LEU B  37 ? ASN B 36  LEU B 37  . . .
+OTHER        OTHER16        . GLN B  38 ? GLN B  38 ? GLN B 38  GLN B 38  . . .
+BEND         BEND10         . ASN B  39 ? ASN B  39 ? ASN B 39  ASN B 39  . . .
+TURN_TY1_P   TURN_TY1_P11   . VAL B  40 ? VAL B  40 ? VAL B 40  VAL B 40  . . .
+HELX_RH_AL_P HELX_RH_AL_P15 . THR B  41 ? ALA B  54 ? THR B 41  ALA B 54  . . .
+HELX_RH_PI_P HELX_RH_PI_P4  . VAL B  55 ? ALA B  59 ? VAL B 55  ALA B 59  . . .
+HELX_RH_AL_P HELX_RH_AL_P16 . ILE B  60 ? THR B  68 ? ILE B 60  THR B 68  . . .
+TURN_TY1_P   TURN_TY1_P12   . GLY B  69 ? GLY B  69 ? GLY B 69  GLY B 69  . . .
+OTHER        OTHER17        . PHE B  70 ? PHE B  70 ? PHE B 70  PHE B 70  . . .
+STRN         STRN3          . CYS B  71 ? ALA B  72 ? CYS B 71  ALA B 72  . . .
+OTHER        OTHER18        . ALA B  73 ? ALA B  73 ? ALA B 73  ALA B 73  . . .
+HELX_RH_AL_P HELX_RH_AL_P17 . CYS B  74 ? ARG B 107 ? CYS B 74  ARG B 107 . . .
+BEND         BEND11         . ILE B 108 ? ILE B 108 ? ILE B 108 ILE B 108 . . .
+TURN_TY1_P   TURN_TY1_P13   . PRO B 109 ? ARG B 111 ? PRO B 109 ARG B 111 . . .
+HELX_RH_AL_P HELX_RH_AL_P18 . TYR B 112 ? LEU B 115 ? TYR B 112 LEU B 115 . . .
+BEND         BEND12         . VAL B 116 ? VAL B 116 ? VAL B 116 VAL B 116 . . .
+OTHER        OTHER19        . THR B 117 ? THR B 117 ? THR B 117 THR B 117 . . .
+HELX_RH_AL_P HELX_RH_AL_P19 . GLY B 118 ? GLY B 136 ? GLY B 118 GLY B 136 . . .
+TURN_TY1_P   TURN_TY1_P14   . LEU B 137 ? LEU B 137 ? LEU B 137 LEU B 137 . . .
+HELX_RH_3T_P HELX_RH_3T_P2  . THR B 138 ? LEU B 141 ? THR B 138 LEU B 141 . . .
+TURN_TY1_P   TURN_TY1_P15   . GLY B 142 ? GLY B 142 ? GLY B 142 GLY B 142 . . .
+OTHER        OTHER20        . TRP B 143 ? TRP B 143 ? TRP B 143 TRP B 143 . . .
+BEND         BEND13         . ASN B 144 ? ASN B 145 ? ASN B 144 ASN B 145 . . .
+TURN_TY1_P   TURN_TY1_P16   . CYS B 146 ? GLY B 147 ? CYS B 146 GLY B 147 . . .
+BEND         BEND14         . GLN B 148 ? GLN B 148 ? GLN B 148 GLN B 148 . . .
+OTHER        OTHER21        . PRO B 149 ? LYS B 150 ? PRO B 149 LYS B 150 . . .
+HELX_RH_AL_P HELX_RH_AL_P20 . GLU B 151 ? SER B 156 ? GLU B 151 SER B 156 . . .
+TURN_TY1_P   TURN_TY1_P17   . GLN B 157 ? GLY B 158 ? GLN B 157 GLY B 158 . . .
+HELX_LH_PP_P HELX_LH_PP_P2  . CYS B 159 ? GLY B 160 ? CYS B 159 GLY B 160 . . .
+TURN_TY1_P   TURN_TY1_P18   . GLU B 161 ? GLY B 162 ? GLU B 161 GLY B 162 . . .
+OTHER        OTHER22        . GLN B 163 ? GLN B 163 ? GLN B 163 GLN B 163 . . .
+STRN         STRN4          . VAL B 164 ? ALA B 165 ? VAL B 164 ALA B 165 . . .
+OTHER        OTHER23        . CYS B 166 ? LEU B 167 ? CYS B 166 LEU B 167 . . .
+HELX_RH_AL_P HELX_RH_AL_P21 . PHE B 168 ? VAL B 171 ? PHE B 168 VAL B 171 . . .
+BEND         BEND15         . VAL B 172 ? VAL B 172 ? VAL B 172 VAL B 172 . . .
+OTHER        OTHER24        . PRO B 173 ? PRO B 173 ? PRO B 173 PRO B 173 . . .
+HELX_RH_AL_P HELX_RH_AL_P22 . MET B 174 ? ASN B 175 ? MET B 174 ASN B 175 . . .
+HELX_RH_PI_P HELX_RH_PI_P5  . TYR B 176 ? LEU B 187 ? TYR B 176 LEU B 187 . . .
+HELX_RH_AL_P HELX_RH_AL_P23 . VAL B 188 ? ARG B 206 ? VAL B 188 ARG B 206 . . .
+OTHER        OTHER25        . GLN B 207 ? THR B 224 ? GLN B 207 THR B 224 . . .
+HELX_RH_AL_P HELX_RH_AL_P24 . LEU B 225 ? PHE B 258 ? LEU B 225 PHE B 258 . . .
+OTHER        OTHER26        . CYS B 259 ? CYS B 259 ? CYS B 259 CYS B 259 . . .
+BEND         BEND16         . PRO B 260 ? CYS B 262 ? PRO B 260 CYS B 262 . . .
+HELX_LH_PP_P HELX_LH_PP_P3  . SER B 263 ? PRO B 266 ? SER B 263 PRO B 266 . . .
+HELX_RH_AL_P HELX_RH_AL_P25 . LEU B 267 ? HIS B 278 ? LEU B 267 HIS B 278 . . .
+TURN_TY1_P   TURN_TY1_P19   . THR B 279 ? THR B 279 ? THR B 279 THR B 279 . . .
+HELX_RH_AL_P HELX_RH_AL_P26 . ASN B 280 ? ASN B 284 ? ASN B 280 ASN B 284 . . .
+HELX_RH_PI_P HELX_RH_PI_P6  . PRO B 285 ? TYR B 290 ? PRO B 285 TYR B 290 . . .
+TURN_TY1_P   TURN_TY1_P20   . ARG B 291 ? ARG B 291 ? ARG B 291 ARG B 291 . . .
+BEND         BEND17         . ILE B 292 ? ILE B 292 ? ILE B 292 ILE B 292 . . .
+HELX_RH_AL_P HELX_RH_AL_P27 . ARG B 293 ? ARG B 304 ? ARG B 293 ARG B 304 . . .
+OTHER        OTHER27        . SER B 305 ? THR C  16 ? SER B 305 THR C 40  . . .
+STRN         STRN5          . HIS C  17 ? GLY C  23 ? HIS C 41  GLY C 47  . . .
+OTHER        OTHER28        . ALA C  24 ? ALA C  24 ? ALA C 48  ALA C 48  . . .
+TURN_TY1_P   TURN_TY1_P21   . ASP C  25 ? ASN C  26 ? ASP C 49  ASN C 50  . . .
+BEND         BEND18         . SER C  27 ? GLY C  28 ? SER C 51  GLY C 52  . . .
+HELX_RH_AL_P HELX_RH_AL_P28 . LYS C  29 ? MET C  36 ? LYS C 53  MET C 60  . . .
+OTHER        OTHER29        . ARG C  37 ? PHE C  53 ? ARG C 61  PHE C 208 . . .
+STRN         STRN6          . GLU C  54 ? VAL C  59 ? GLU C 209 VAL C 214 . . .
+TURN_TY1_P   TURN_TY1_P22   . ASP C  60 ? LYS C  61 ? ASP C 215 LYS C 216 . . .
+STRN         STRN7          . VAL C  62 ? ASP C  68 ? VAL C 217 ASP C 223 . . .
+OTHER        OTHER30        . VAL C  69 ? GLY C  70 ? VAL C 224 GLY C 225 . . .
+BEND         BEND19         . GLY C  71 ? GLU C  75 ? GLY C 226 GLU C 230 . . .
+HELX_RH_AL_P HELX_RH_AL_P29 . ARG C  76 ? ILE C  80 ? ARG C 231 ILE C 235 . . .
+TURN_TY1_P   TURN_TY1_P23   . GLN C  81 ? GLN C  81 ? GLN C 236 GLN C 236 . . .
+BEND         BEND20         . CYS C  82 ? CYS C  82 ? CYS C 237 CYS C 237 . . .
+OTHER        OTHER31        . PHE C  83 ? VAL C  86 ? PHE C 238 VAL C 241 . . .
+BEND         BEND21         . THR C  87 ? THR C  87 ? THR C 242 THR C 242 . . .
+STRN         STRN8          . ALA C  88 ? ASP C  94 ? ALA C 243 ASP C 249 . . .
+BEND         BEND22         . SER C  95 ? SER C  96 ? SER C 250 SER C 251 . . .
+OTHER        OTHER32        . ASP C  97 ? ASP C  97 ? ASP C 252 ASP C 252 . . .
+TURN_TY1_P   TURN_TY1_P24   . TYR C  98 ? ASN C  99 ? TYR C 253 ASN C 254 . . .
+HELX_RH_AL_P HELX_RH_AL_P30 . ARG C 100 ? ASN C 113 ? ARG C 265 ASN C 278 . . .
+OTHER        OTHER33        . ASN C 114 ? ASN C 114 ? ASN C 279 ASN C 279 . . .
+BEND         BEND23         . ARG C 115 ? ARG C 115 ? ARG C 280 ARG C 280 . . .
+TURN_TY1_P   TURN_TY1_P25   . TRP C 116 ? THR C 119 ? TRP C 281 THR C 284 . . .
+OTHER        OTHER34        . ILE C 120 ? ILE C 120 ? ILE C 285 ILE C 285 . . .
+STRN         STRN9          . SER C 121 ? ASN C 127 ? SER C 286 ASN C 292 . . .
+OTHER        OTHER35        . LYS C 128 ? LYS C 128 ? LYS C 293 LYS C 293 . . .
+HELX_RH_AL_P HELX_RH_AL_P31 . GLN C 129 ? ALA C 138 ? GLN C 294 ALA C 303 . . .
+OTHER        OTHER36        . GLY C 139 ? GLY C 139 ? GLY C 304 GLY C 304 . . .
+BEND         BEND24         . LYS C 140 ? SER C 141 ? LYS C 305 SER C 306 . . .
+OTHER        OTHER37        . LYS C 142 ? LYS C 142 ? LYS C 307 LYS C 307 . . .
+HELX_RH_AL_P HELX_RH_AL_P32 . ILE C 143 ? TYR C 146 ? ILE C 308 TYR C 311 . . .
+OTHER        OTHER38        . PHE C 147 ? PHE C 147 ? PHE C 312 PHE C 312 . . .
+HELX_RH_3T_P HELX_RH_3T_P3  . PRO C 148 ? ARG C 152 ? PRO C 313 ARG C 317 . . .
+OTHER        OTHER39        . TYR C 153 ? PRO C 156 ? TYR C 318 PRO C 321 . . .
+BEND         BEND25         . GLU C 157 ? ASP C 158 ? GLU C 322 ASP C 323 . . .
+OTHER        OTHER40        . ALA C 159 ? GLU C 162 ? ALA C 324 GLU C 327 . . .
+TURN_TY1_P   TURN_TY1_P26   . PRO C 163 ? GLY C 164 ? PRO C 328 GLY C 329 . . .
+OTHER        OTHER41        . GLU C 165 ? ASP C 166 ? GLU C 330 ASP C 331 . . .
+HELX_RH_AL_P HELX_RH_AL_P33 . PRO C 167 ? ALA C 186 ? PRO C 332 ALA C 351 . . .
+BEND         BEND26         . SER C 187 ? SER C 187 ? SER C 352 SER C 352 . . .
+OTHER        OTHER42        . GLY C 188 ? GLY C 190 ? GLY C 353 GLY C 355 . . .
+BEND         BEND27         . ARG C 191 ? HIS C 192 ? ARG C 356 HIS C 357 . . .
+OTHER        OTHER43        . TYR C 193 ? TYR C 193 ? TYR C 358 TYR C 358 . . .
+STRN         STRN10         . CYS C 194 ? PHE C 198 ? CYS C 359 PHE C 363 . . .
+OTHER        OTHER44        . THR C 199 ? GLU C 205 ? THR C 364 GLU C 370 . . .
+HELX_RH_AL_P HELX_RH_AL_P34 . ASN C 206 ? GLN C 225 ? ASN C 371 GLN C 390 . . .
+TURN_TY1_P   TURN_TY1_P27   . TYR C 226 ? GLU C 227 ? TYR C 391 GLU C 392 . . .
+OTHER        OTHER45        . LEU C 228 ? ALA D  15 ? LEU C 393 ALA D 39  . . .
+HELX_LH_PP_P HELX_LH_PP_P4  . THR D  16 ? THR D  16 ? THR D 40  THR D 40  . . .
+STRN         STRN11         . HIS D  17 ? GLY D  23 ? HIS D 41  GLY D 47  . . .
+OTHER        OTHER46        . ALA D  24 ? ALA D  24 ? ALA D 48  ALA D 48  . . .
+TURN_TY1_P   TURN_TY1_P28   . ASP D  25 ? GLY D  28 ? ASP D 49  GLY D 52  . . .
+HELX_RH_AL_P HELX_RH_AL_P35 . LYS D  29 ? MET D  36 ? LYS D 53  MET D 60  . . .
+OTHER        OTHER47        . ARG D  37 ? PHE D  53 ? ARG D 61  PHE D 208 . . .
+STRN         STRN12         . GLU D  54 ? VAL D  59 ? GLU D 209 VAL D 214 . . .
+TURN_TY1_P   TURN_TY1_P29   . ASP D  60 ? LYS D  61 ? ASP D 215 LYS D 216 . . .
+STRN         STRN13         . VAL D  62 ? ASP D  68 ? VAL D 217 ASP D 223 . . .
+OTHER        OTHER48        . VAL D  69 ? VAL D  86 ? VAL D 224 VAL D 241 . . .
+BEND         BEND28         . THR D  87 ? THR D  87 ? THR D 242 THR D 242 . . .
+STRN         STRN14         . ALA D  88 ? ASP D  94 ? ALA D 243 ASP D 249 . . .
+BEND         BEND29         . SER D  95 ? SER D  96 ? SER D 250 SER D 251 . . .
+OTHER        OTHER49        . ASP D  97 ? ASP D  97 ? ASP D 252 ASP D 252 . . .
+TURN_TY1_P   TURN_TY1_P30   . TYR D  98 ? ASN D  99 ? TYR D 253 ASN D 254 . . .
+HELX_RH_AL_P HELX_RH_AL_P36 . ARG D 100 ? ASN D 113 ? ARG D 265 ASN D 278 . . .
+OTHER        OTHER50        . ASN D 114 ? ASN D 114 ? ASN D 279 ASN D 279 . . .
+BEND         BEND30         . ARG D 115 ? ARG D 115 ? ARG D 280 ARG D 280 . . .
+TURN_TY1_P   TURN_TY1_P31   . TRP D 116 ? THR D 119 ? TRP D 281 THR D 284 . . .
+OTHER        OTHER51        . ILE D 120 ? SER D 121 ? ILE D 285 SER D 286 . . .
+STRN         STRN15         . VAL D 122 ? ASN D 127 ? VAL D 287 ASN D 292 . . .
+OTHER        OTHER52        . LYS D 128 ? LYS D 128 ? LYS D 293 LYS D 293 . . .
+HELX_RH_AL_P HELX_RH_AL_P37 . GLN D 129 ? ALA D 138 ? GLN D 294 ALA D 303 . . .
+OTHER        OTHER53        . GLY D 139 ? GLY D 139 ? GLY D 304 GLY D 304 . . .
+BEND         BEND31         . LYS D 140 ? SER D 141 ? LYS D 305 SER D 306 . . .
+OTHER        OTHER54        . LYS D 142 ? LYS D 142 ? LYS D 307 LYS D 307 . . .
+HELX_RH_AL_P HELX_RH_AL_P38 . ILE D 143 ? TYR D 146 ? ILE D 308 TYR D 311 . . .
+OTHER        OTHER55        . PHE D 147 ? PHE D 147 ? PHE D 312 PHE D 312 . . .
+HELX_RH_3T_P HELX_RH_3T_P4  . PRO D 148 ? ARG D 152 ? PRO D 313 ARG D 317 . . .
+OTHER        OTHER56        . TYR D 153 ? PRO D 156 ? TYR D 318 PRO D 321 . . .
+BEND         BEND32         . GLU D 157 ? ASP D 158 ? GLU D 322 ASP D 323 . . .
+OTHER        OTHER57        . ALA D 159 ? GLU D 162 ? ALA D 324 GLU D 327 . . .
+TURN_TY1_P   TURN_TY1_P32   . PRO D 163 ? GLY D 164 ? PRO D 328 GLY D 329 . . .
+OTHER        OTHER58        . GLU D 165 ? ASP D 166 ? GLU D 330 ASP D 331 . . .
+HELX_RH_AL_P HELX_RH_AL_P39 . PRO D 167 ? ALA D 186 ? PRO D 332 ALA D 351 . . .
+BEND         BEND33         . SER D 187 ? SER D 187 ? SER D 352 SER D 352 . . .
+OTHER        OTHER59        . GLY D 188 ? GLY D 190 ? GLY D 353 GLY D 355 . . .
+BEND         BEND34         . ARG D 191 ? HIS D 192 ? ARG D 356 HIS D 357 . . .
+OTHER        OTHER60        . TYR D 193 ? TYR D 193 ? TYR D 358 TYR D 358 . . .
+STRN         STRN16         . CYS D 194 ? PHE D 198 ? CYS D 359 PHE D 363 . . .
+OTHER        OTHER61        . THR D 199 ? CYS D 200 ? THR D 364 CYS D 365 . . .
+BEND         BEND35         . ALA D 201 ? VAL D 202 ? ALA D 366 VAL D 367 . . .
+OTHER        OTHER62        . ASP D 203 ? ASP D 203 ? ASP D 368 ASP D 368 . . .
+BEND         BEND36         . THR D 204 ? THR D 204 ? THR D 369 THR D 369 . . .
+OTHER        OTHER63        . GLU D 205 ? GLU D 205 ? GLU D 370 GLU D 370 . . .
+HELX_RH_AL_P HELX_RH_AL_P40 . ASN D 206 ? GLN D 225 ? ASN D 371 GLN D 390 . . .
+TURN_TY1_P   TURN_TY1_P33   . TYR D 226 ? GLU D 227 ? TYR D 391 GLU D 392 . . .
+OTHER        OTHER64        . LEU D 228 ? LEU D 228 ? LEU D 393 LEU D 393 . . .
+#
