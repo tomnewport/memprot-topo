@@ -1,8 +1,8 @@
 import type { CylinderMapping, Vec } from '../unroll/index.js';
 
 /**
- * Everything the 2-D renderer drew, recorded in draw order, plus the real 3-D
- * geometry behind it. The morph rebuilds the same picture from this at t = 0
+ * Everything the 2-D view draws, in draw order, plus the real 3-D geometry
+ * behind it, built from the chain's layout (`layout/scene.ts`). The morph rebuilds the same picture from this at t = 0
  * and rolls it up into a 3-D Richardson diagram at t = 1.
  */
 export interface MorphScene {
