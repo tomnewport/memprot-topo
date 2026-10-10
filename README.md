@@ -39,6 +39,8 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 - [docs/architecture.md](docs/architecture.md) — the pipeline from structure file to the 1-D, 2-D and 3-D views, and a module map
 - [docs/rendering.md](docs/rendering.md) — how Cα traces are smoothed into helix and strand axes
 - [docs/beta-barrels.md](docs/beta-barrels.md) — β-barrel detection and the cylindrical unwrap
+- [docs/chain-selection.md](docs/chain-selection.md) — the membrane frame and which chains count as transmembrane
+- [docs/loops.md](docs/loops.md) — fixed gaps between elements and the loop control points
 - [docs/usage.md](docs/usage.md) — quickstart: embedding, the `ProteinData` format, properties and events
 - [docs/attributes.md](docs/attributes.md) — every `<topology-display>` attribute, property and event
 - [docs/chain-icons.md](docs/chain-icons.md) — chain-picker icons and `chain-icon-bandwidth`

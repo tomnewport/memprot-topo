@@ -60,7 +60,7 @@ of this is drawn (`membraneAtDetail`). `membrane/profile.ts` turns it into the
 
 - [`orientation/`](../src/orientation/) decides which chains cross the
   bilayer; the display shows the largest transmembrane chain unless
-  `selection` names another.
+  `selection` names another. See [chain-selection.md](chain-selection.md).
 - [`contacts/`](../src/contacts/) pairs β-strands from Cα geometry and
   measures β-barrels (strand number, shear, tilt, axis), for single chains and
   for multi-chain assembly barrels. Whether a chain is a closed barrel decides
@@ -87,6 +87,10 @@ Geometry comes from [`unroll/`](../src/unroll/):
   `layout/segments.ts` for multi-chain barrels such as α-hemolysin's stem): residues are placed by
   angle round the barrel axis, so neighbouring strands are drawn parallel.
   See [beta-barrels.md](beta-barrels.md).
+
+Elements are then spaced a fixed gap apart and each loop is drawn through a
+few control points that keep its true height
+([loops.md](loops.md)).
 
 Short helix and strand assignments are dropped first (`min-helix-length`,
 `min-strand-length`; see [secondary-structure.md](secondary-structure.md)).

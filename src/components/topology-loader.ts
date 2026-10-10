@@ -32,7 +32,7 @@ const FORWARDED = [
 ];
 
 export class TopologyLoader extends HTMLElement {
-  static observedAttributes = ['pdb-id', 'sim-id', 'distortions', ...FORWARDED];
+  static observedAttributes = ['pdb-id', 'sim-id', 'distortions', 'ss-310', ...FORWARDED];
 
   private _pdbId: string | null = null;
   private _simId: string | null = null;
@@ -187,7 +187,9 @@ export class TopologyLoader extends HTMLElement {
       if (myGen !== this._generation || !this.isConnected) return;
 
       const chains = parsePdb(pdbText);
-      const ssSegments = parseDsspMmcif(dsspText);
+      const ssSegments = parseDsspMmcif(dsspText, {
+        helix310: this.getAttribute('ss-310') === 'helix',
+      });
       // MemProtMD renumbers from 1 and runs the protomers together: put them
       // back into the deposited chains and numbering the DSSP is keyed on.
       const mapped = mapToDeposited(chains, dsspText, ssSegments);
