@@ -1,5 +1,5 @@
 import type { Calpha } from '../types.js';
-import { parseMmcifLoop } from './dssp-mmcif.js';
+import { mmcifCategory, parseMmcifLoops } from './mmcif-tokenizer.js';
 import type { RawChain, RawSSSegment } from './types.js';
 
 /**
@@ -49,8 +49,9 @@ interface DepositedChain {
  * number and insertion code. Null if the file lacks either category.
  */
 function depositedChains(dsspText: string): DepositedChain[] | null {
-  const summary = parseMmcifLoop(dsspText, '_dssp_struct_summary');
-  const scheme = parseMmcifLoop(dsspText, '_pdbx_poly_seq_scheme');
+  const loops = parseMmcifLoops(dsspText);
+  const summary = mmcifCategory(loops, '_dssp_struct_summary');
+  const scheme = mmcifCategory(loops, '_pdbx_poly_seq_scheme');
   if (summary.length === 0 || scheme.length === 0) return null;
 
   const author = new Map<string, { chainId: string; resSeq: number; iCode: string }>();
