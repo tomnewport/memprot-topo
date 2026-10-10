@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { layoutSequence, residuesPerRow, rowPoint, SEQ } from '../../../src/sequence/layout.js';
-import { pointAt, SequenceTransition, UNWRAP_END } from '../../../src/sequence/transition.js';
+import {
+  compactCentre,
+  layoutSequence,
+  residuesPerRow,
+  rowPoint,
+  SEQ,
+} from '../../../src/sequence/layout.js';
+import {
+  EXPAND_END,
+  pointAt,
+  SequenceTransition,
+  UNWRAP_END,
+} from '../../../src/sequence/transition.js';
 import { oneLetter } from '../../../src/sequence/amino-acids.js';
 import type { TracePoint } from '../../../src/sequence/types.js';
 
@@ -69,6 +80,21 @@ describe('sequence ↔ topology transition', () => {
         expect(p.y).toBeCloseTo(q.y, 6);
       }
     }
+  });
+
+  it('first collapses the rows to the cartoon’s height, keeping x', () => {
+    const t = new SequenceTransition(trace, layout, line);
+    const at0 = t.frame(0);
+    t.frame(EXPAND_END).forEach((fr, r) => {
+      expect(fr.unwrap).toBe(0);
+      fr.pts.forEach((p, j) => {
+        expect(p.x).toBeCloseTo(at0[r].pts[j].x, 6);
+        expect(p.y).toBeCloseTo(compactCentre(r), 6);
+      });
+      expect(t.rowShift(r, EXPAND_END)).toBeCloseTo(compactCentre(r) - at0[r].pts[0].y, 6);
+      expect(t.rowShift(r, 0)).toBeCloseTo(0, 6);
+    });
+    expect(t.rowShift(99, 0.1)).toBeCloseTo(0, 6);
   });
 
   it('unwraps every row onto one line, in sequence order, before folding', () => {

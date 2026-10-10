@@ -28,6 +28,8 @@ export const SEQ = {
   laneHeightPx: 16,
   laneGapPx: 3,
   rowGapPx: 14,
+  /** Row pitch while the rows are collapsed to the cartoon (1-D ↔ 2-D transition). */
+  compactPitchPx: 24,
   /** Residues per row when the width is unknown. */
   fallbackPerRow: 50,
 };
@@ -154,4 +156,14 @@ export function rowPoint(layout: SequenceLayout, r: number, f: number): { x: num
   const i = Math.floor(f);
   const t = f - i;
   return { x: layout.x[i] + t * (layout.x[i + 1] - layout.x[i]), y: yc };
+}
+
+/** Cartoon centre of row `r` when the rows are collapsed to the cartoon's height (px). */
+export function compactCentre(r: number): number {
+  return SEQ.topPx + SEQ.compactPitchPx / 2 + r * SEQ.compactPitchPx;
+}
+
+/** Picture height with `rows` rows collapsed to the cartoon's height (px). */
+export function compactHeight(rows: number): number {
+  return SEQ.topPx * 2 + Math.max(1, rows) * SEQ.compactPitchPx;
 }

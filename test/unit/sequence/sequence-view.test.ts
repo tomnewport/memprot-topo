@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SequenceController } from '../../../src/sequence/controller.js';
 import { SequenceRenderer } from '../../../src/sequence/renderer.js';
-import { UNWRAP_END } from '../../../src/sequence/transition.js';
+import { EXPAND_END, UNWRAP_END } from '../../../src/sequence/transition.js';
+import { compactHeight } from '../../../src/sequence/layout.js';
 import type { SequenceSource, TracePoint } from '../../../src/sequence/types.js';
 import { DARK_THEME, LIGHT_THEME } from '../../../src/theme/index.js';
 import type { ResolvedTracks } from '../../../src/tracks/resolve.js';
@@ -122,7 +123,10 @@ describe('SequenceRenderer', () => {
   it('joins the rows with connectors while they unwrap', () => {
     const r = new SequenceRenderer(source(), { wrap: 10 }, LIGHT_THEME);
     r.configure(420, 0);
-    r.render(0.05);
+    // Not while the rows collapse, only once they start to unwrap.
+    r.render(EXPAND_END / 2);
+    expect(r.svg.querySelectorAll('path')).toHaveLength(0);
+    r.render(EXPAND_END + 0.05);
     expect(r.svg.querySelectorAll('path').length).toBeGreaterThan(0);
     r.render(UNWRAP_END);
     expect(r.svg.querySelectorAll('path')).toHaveLength(0);
@@ -353,6 +357,30 @@ describe('SequenceRenderer with data tracks', () => {
     r.setTheme(DARK_THEME);
     r.render(0.02);
     expect(r.svg.querySelector('rect[fill="#0000ff"]')!.parentElement).not.toBe(first);
+  });
+
+  it('collapses the rows to the cartoon, tracks and letters fading, before they unwrap', () => {
+    const r = new SequenceRenderer(source({ tracks: tracks() }), { wrap: 10 }, LIGHT_THEME);
+    r.configure(800, 0);
+    const full = r.sequenceLayout!.height;
+    r.render(EXPAND_END / 2);
+    const mid = Number(r.svg.getAttribute('height'));
+    expect(mid).toBeLessThan(full);
+    expect(mid).toBeGreaterThan(compactHeight(3));
+    // Each row's furniture moves up with its row, the last row's furthest.
+    const shifts = [...r.svg.querySelectorAll('g[pointer-events="none"] > g')].map((g) =>
+      Number(/translate\(0, (-?[\d.]+)\)/.exec(g.getAttribute('transform') ?? '')?.[1] ?? 0),
+    );
+    expect(shifts).toHaveLength(3);
+    expect(shifts[2]).toBeLessThan(shifts[1]);
+    expect(shifts[1]).toBeLessThan(shifts[0]);
+    const letters = r.svg.querySelector('g[font-size="11"]')!;
+    expect(Number(letters.getAttribute('opacity'))).toBeLessThan(1);
+    // Collapsed: just the cartoon, with no tracks or letters.
+    r.render(EXPAND_END);
+    expect(Number(r.svg.getAttribute('height'))).toBeCloseTo(compactHeight(3), 6);
+    expect(r.svg.querySelector('rect[fill="#0000ff"]')).toBeNull();
+    expect(r.svg.querySelector('text[data-res]')).toBeNull();
   });
 
   it('hides the letters when the tracks say so', () => {

@@ -49,21 +49,26 @@ One-letter codes come from the residue names in the structure file
 
 ## Transition
 
-Sequence → Topology runs in two stages (reversed on the way back):
+Sequence → Topology runs in three stages (reversed on the way back, so
+the lines flatten, wrap, then expand):
 
-1. **Unwrap.** The rows snake together into one line, first row first: the
+1. **Collapse.** The rows close up to just the height of the
+   secondary-structure cartoon. Letters, row numbers, membrane shading, lanes
+   and data tracks move with their rows and fade out.
+2. **Unwrap.** The rows snake together into one line, first row first: the
    first row stays where it is and shrinks along x, and each following row
    rises to join the end of the one before, so the whole chain ends up on one
    line that fits the box (or the membrane slab, where that is on screen).
    While they move, a faint curve joins each row's end to the next row's
-   start. Letters, row numbers, membrane shading and lanes fade out.
-2. **Fold.** A wave runs from the left-most residue to the right; as it
+   start.
+3. **Fold.** A wave runs from the left-most residue to the right; as it
    passes, each part of the line rises into its place in the topology, and the
    membrane slab is revealed behind it. Residue-number labels and the legend
    fade in at the end.
 
-At the ends every point is exactly where the other view draws it, and at the
-end of the unwrap every point is on the line in sequence order (all
+At the ends every point is exactly where the other view draws it, at the end
+of the collapse every row is at its collapsed height, and at the end of the
+unwrap every point is on the line in sequence order (all
 unit-tested). The static 2-D SVG is swapped back in at the topology end.
 Residues the topology leaves out (an assembly barrel's cap) fade as they
 shrink into the drawn chain's end.

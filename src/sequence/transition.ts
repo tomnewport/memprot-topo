@@ -1,22 +1,34 @@
 /**
- * Geometry of the 1-D ↔ 2-D transition, in two stages.
+ * Geometry of the 1-D ↔ 2-D transition, in three stages.
  *
- * 1. Unwrap (progress 0 → {@link UNWRAP_END}): the rows snake together into
- *    one line, N-terminal row first: the first row stays where it is and the
- *    others rise to join its end. The x-axis shrinks as they go, so the whole
- *    chain fits on the line.
- * 2. Fold (→ 1): a wave runs from the left-most residue to the right; as it
+ * 1. Collapse (progress 0 → {@link EXPAND_END}): the rows close up to just the
+ *    height of the secondary-structure cartoon, their letters, lanes and data
+ *    tracks fading out. Run backwards, the lines expand.
+ * 2. Unwrap (→ {@link UNWRAP_END}): the rows snake together into one line,
+ *    N-terminal row first: the first row stays where it is and the others
+ *    rise to join its end. The x-axis shrinks as they go, so the whole chain
+ *    fits on the line.
+ * 3. Fold (→ 1): a wave runs from the left-most residue to the right; as it
  *    passes, each part of the line rises into its place in the topology.
  *
- * At progress 0 every point is exactly on its row, at {@link UNWRAP_END} on the
- * line, and at 1 exactly where the 2-D picture drew it.
+ * At progress 0 every point is exactly on its row, at {@link EXPAND_END} on
+ * its collapsed row, at {@link UNWRAP_END} on the line, and at 1 exactly where
+ * the 2-D picture drew it.
  */
 
-import { rowPoint, type SequenceLayout } from './layout.js';
+import { compactCentre, rowPoint, SEQ, type SequenceLayout } from './layout.js';
 import type { TracePoint } from './types.js';
 
+/** Progress at which the rows have collapsed to the cartoon's height. */
+export const EXPAND_END = 0.15;
+
 /** Progress at which the rows have become one line. */
-export const UNWRAP_END = 0.4;
+export const UNWRAP_END = 0.45;
+
+/** How expanded the rows are at progress `u` (1 = full height, 0 = collapsed). */
+export function expandAt(u: number): number {
+  return 1 - ease(u / EXPAND_END);
+}
 
 /** Width of the folding wave, as a fraction of the line. */
 export const WAVE = 0.35;
@@ -89,7 +101,9 @@ export interface SequenceLine {
 interface Chunk {
   row: number;
   fs: number[];
-  /** Positions on the row, on the line and in the topology. */
+  /** How far the full row sits below its collapsed place (px). */
+  dy: number;
+  /** Positions on the collapsed row, on the line and in the topology. */
   p1: { x: number; y: number }[];
   pl: { x: number; y: number }[];
   p2: { x: number; y: number }[];
@@ -119,10 +133,15 @@ export class SequenceTransition {
     });
     this.chunks = layout.rows.map((row, r) => {
       const fs = chunkFs(trace, row.first - 0.5, row.last + 0.5);
+      const dy = row.y + SEQ.cartoonPx - compactCentre(r);
       return {
         row: r,
         fs,
-        p1: fs.map((f) => rowPoint(layout, r, f)),
+        dy,
+        p1: fs.map((f) => {
+          const p = rowPoint(layout, r, f);
+          return { x: p.x, y: p.y - dy };
+        }),
         pl: fs.map(onLine),
         p2: fs.map((f) => pointAt(trace, f)),
       };
@@ -146,7 +165,8 @@ export class SequenceTransition {
   /** The chain at progress `u` (0 = sequence, 1 = topology). */
   frame(u: number): ChunkFrame[] {
     const rows = this.chunks.length;
-    const a = Math.max(0, Math.min(1, u / UNWRAP_END));
+    const grow = expandAt(u);
+    const a = Math.max(0, Math.min(1, (u - EXPAND_END) / (UNWRAP_END - EXPAND_END)));
     const delay = rows > 1 ? ROW_STAGGER / (rows - 1) : 0;
     const span = 1 - delay * (rows - 1);
     return this.chunks.map((c, r) => {
@@ -154,12 +174,17 @@ export class SequenceTransition {
       const pts = c.fs.map((f, j) => {
         const q = {
           x: c.p1[j].x + (c.pl[j].x - c.p1[j].x) * unwrap,
-          y: c.p1[j].y + (c.pl[j].y - c.p1[j].y) * unwrap,
+          y: c.p1[j].y + (c.pl[j].y - c.p1[j].y) * unwrap + c.dy * grow,
         };
         const e = this.foldAt(u, f);
         return { x: q.x + (c.p2[j].x - q.x) * e, y: q.y + (c.p2[j].y - q.y) * e, f };
       });
       return { row: c.row, unwrap, pts };
     });
+  }
+
+  /** How far row `r`'s furniture is shifted from its full-height place at progress `u` (px). */
+  rowShift(r: number, u: number): number {
+    return -(this.chunks[r]?.dy ?? 0) * (1 - expandAt(u));
   }
 }
