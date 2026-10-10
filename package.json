@@ -29,6 +29,7 @@
     "prebuild:gallery": "node scripts/prebuild-gallery.mjs",
     "prebuild:demo": "tsx scripts/prebuild-demo.ts",
     "build:demo": "vite build --config vite.config.demo.ts",
+    "docs:figures": "tsx scripts/docs-figures.ts",
     "prepare": "husky"
   },
   "engines": {
