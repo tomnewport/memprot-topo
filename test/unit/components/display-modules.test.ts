@@ -28,16 +28,16 @@ describe('fullscreenScale', () => {
 });
 
 describe('DimensionController', () => {
-  function host(seqProgress: number, morphProgress: number | null, attrs: Record<string, string>) {
+  function host(seqProgress: number, view3dProgress: number | null, attrs: Record<string, string>) {
     const element = document.createElement('div');
     for (const [k, v] of Object.entries(attrs)) element.setAttribute(k, v);
     const seq = { progress: seqProgress } as SequenceController;
     const h: DimensionHost = {
       element,
       seq: () => seq,
-      morph: () => (morphProgress === null ? null : ({ progress: morphProgress } as never)),
-      has3d: () => morphProgress !== null,
-      loadMorph: () => Promise.resolve(null),
+      view3d: () => (view3dProgress === null ? null : ({ progress: view3dProgress } as never)),
+      has3d: () => view3dProgress !== null,
+      loadView3D: () => Promise.resolve(null),
       setTransitionProgress: () => Promise.resolve(),
       leave2d: () => undefined,
       onMove: () => undefined,

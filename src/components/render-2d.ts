@@ -34,7 +34,7 @@ export interface ResidueStyle {
  * arrowhead when `withArrow` is true. Sharing one outline (rather than
  * overlaying a separate arrow on a stroked path) is what gives the element
  * its single-shape appearance. The geometry lives in {@link ssOutline} so the
- * 3-D morph can rebuild exactly the same shape.
+ * 3-D view can rebuild exactly the same shape.
  *
  * Widths are specified in screen pixels and back-projected into user space so
  * the polygon stays consistent under the plot group's non-uniform scale.

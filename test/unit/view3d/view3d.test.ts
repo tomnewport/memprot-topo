@@ -1,15 +1,15 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { unrollChain, unwrapBarrel } from '../../../src/unroll/index.js';
 import { analyseBarrel } from '../../../src/contacts/index.js';
-import { buildMorphModel } from '../../../src/morph/model.js';
-import { computePose, localProgress } from '../../../src/morph/curtain.js';
-import { MorphRenderer } from '../../../src/morph/renderer.js';
-import { DEFAULT_MORPH_OPTIONS } from '../../../src/morph/options.js';
-import { Veil, type SurfaceShading } from '../../../src/morph/membrane-layer.js';
-import { fitLine, findKink } from '../../../src/morph/prims/kinks.js';
-import { Camera } from '../../../src/morph/camera.js';
-import { buildFishnet } from '../../../src/morph/net.js';
-import type { MorphScene, MorphSegment, MorphElement } from '../../../src/morph/types.js';
+import { buildView3DModel } from '../../../src/view3d/model.js';
+import { computePose, localProgress } from '../../../src/view3d/curtain.js';
+import { View3DRenderer } from '../../../src/view3d/renderer.js';
+import { DEFAULT_VIEW3D_OPTIONS } from '../../../src/view3d/options.js';
+import { Veil, type SurfaceShading } from '../../../src/view3d/membrane-layer.js';
+import { fitLine, findKink } from '../../../src/view3d/prims/kinks.js';
+import { Camera } from '../../../src/view3d/camera.js';
+import { buildFishnet } from '../../../src/view3d/net.js';
+import type { View3DScene, View3DSegment, View3DElement } from '../../../src/view3d/types.js';
 import type { UnrollResult } from '../../../src/unroll/index.js';
 import type {
   Calpha,
@@ -20,7 +20,7 @@ import type {
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
 import { syntheticBarrel } from '../fixtures/barrel.js';
 
-const STYLE: MorphScene['style'] = {
+const STYLE: View3DScene['style'] = {
   helixFill: '#6e8db6',
   helixStroke: '#3e587a',
   strandFill: '#6ea76d',
@@ -85,8 +85,8 @@ function hairpinChain(): ChainData {
 }
 
 /** Elements covering each SS run's samples (residue → sample via sampleIndex). */
-function elementsFor(unroll: UnrollResult, ss: SecondaryStructureSegment[]): MorphElement[] {
-  const out: MorphElement[] = [];
+function elementsFor(unroll: UnrollResult, ss: SecondaryStructureSegment[]): View3DElement[] {
+  const out: View3DElement[] = [];
   let order = 0;
   unroll.segments.forEach((seg, s) => {
     for (const run of ss) {
@@ -108,12 +108,12 @@ function elementsFor(unroll: UnrollResult, ss: SecondaryStructureSegment[]): Mor
 }
 
 function sceneFor(
-  mode: MorphScene['mode'],
+  mode: View3DScene['mode'],
   unroll: UnrollResult,
   ss: SecondaryStructureSegment[],
   displayStretch = 1,
-): MorphScene {
-  const segments: MorphSegment[] = unroll.segments.map((seg) => ({
+): View3DScene {
+  const segments: View3DSegment[] = unroll.segments.map((seg) => ({
     display: seg.samples.map((p) => ({ arc: p.arc * displayStretch, z: p.z })),
     positions: seg.positions ?? [],
     unwrapArc: mode === 'cylinder' ? seg.samples.map((p) => p.arc) : undefined,
@@ -188,8 +188,8 @@ function handednessFlips(a: number[][], b: number[][]): { flips: number; checked
 
 /** Pose positions and real positions of every element sample. */
 function elementPoints(
-  model: ReturnType<typeof buildMorphModel>,
-  scene: MorphScene,
+  model: ReturnType<typeof buildView3DModel>,
+  scene: View3DScene,
   pose: ReturnType<typeof computePose>,
 ): { got: number[][]; want: number[][] } {
   const positions = scene.segments.flatMap((s) => s.positions);
@@ -217,7 +217,7 @@ describe('morph pose (arc-length unroll)', () => {
   const chain = hairpinChain();
   const unroll = unrollChain(chain.calphas, { ssSegments: chain.segments });
   const scene = sceneFor('polyline', unroll, chain.segments);
-  const model = buildMorphModel(scene);
+  const model = buildView3DModel(scene);
 
   it('lays every sample flat on the 2-D picture at t = 0', () => {
     const pose = computePose(model, 0, 0.7);
@@ -258,7 +258,7 @@ describe('morph pose (arc-length unroll)', () => {
     };
     const oUnroll = unrollChain(other.calphas, { ssSegments: other.segments });
     const oScene = sceneFor('polyline', oUnroll, other.segments);
-    const r = new MorphRenderer(model, undefined, 'mp', [buildMorphModel(oScene)]);
+    const r = new View3DRenderer(model, undefined, 'mp', [buildView3DModel(oScene)]);
     r.configure(900, 0);
     // Both chains' rolled-up helices are one rigid copy of the real structure.
     const placed = r as unknown as {
@@ -282,9 +282,9 @@ describe('morph pose (arc-length unroll)', () => {
     }
     expect(rigidError(got, want)).toBeLessThan(1e-3);
     // Not drawn early in the roll, drawn by the end.
-    const alone = new MorphRenderer(model);
+    const alone = new View3DRenderer(model);
     alone.configure(900, 0);
-    const drawn = (x: MorphRenderer, tau: number): number => {
+    const drawn = (x: View3DRenderer, tau: number): number => {
       x.render(tau);
       return [...x.svg.querySelectorAll('path')].filter(
         (p) => p.getAttribute('display') !== 'none' && (p.getAttribute('d') ?? '') !== '',
@@ -295,7 +295,7 @@ describe('morph pose (arc-length unroll)', () => {
   });
 
   it('leaves the not-yet-rolled end flat and in place during an end-anchored sweep', () => {
-    const endModel = buildMorphModel(scene, { anchor: 'end' });
+    const endModel = buildView3DModel(scene, { anchor: 'end' });
     const pose = computePose(endModel, 0.4, 0.35);
     const a = endModel.anchor;
     let flat = 0;
@@ -331,7 +331,7 @@ describe('morph membrane', () => {
   const { x0, x1 } = flat.slab;
   const xs = Array.from({ length: 101 }, (_, i) => x0 + ((x1 - x0) * i) / 100);
   const dip = (x: number) => -6 * Math.exp(-(((x - (x0 + x1) / 2) / 6) ** 2));
-  const dipped: MorphScene = {
+  const dipped: View3DScene = {
     ...flat,
     slab: {
       ...flat.slab,
@@ -340,8 +340,8 @@ describe('morph membrane', () => {
   };
 
   /** The membrane rim's path data (the first path of the back layer). */
-  function rimAt(scene: MorphScene, tau: number): string {
-    const r = new MorphRenderer(buildMorphModel(scene));
+  function rimAt(scene: View3DScene, tau: number): string {
+    const r = new View3DRenderer(buildView3DModel(scene));
     r.configure(900, 0);
     r.render(tau);
     return r.svg.querySelector('path')!.getAttribute('d')!;
@@ -364,16 +364,16 @@ describe('morph membrane', () => {
   });
 
   /** The renderer's fishnet heights (upper leaflet) for a scene. */
-  function netHeights(scene: MorphScene): number[] {
-    const r = new MorphRenderer(buildMorphModel(scene));
+  function netHeights(scene: View3DScene): number[] {
+    const r = new View3DRenderer(buildView3DModel(scene));
     r.configure(900, 0);
     const net = (r as unknown as { net: { upper: Float64Array[] } }).net;
     return net.upper.flatMap((l) => [...l].filter((_, i) => i % 3 === 2));
   }
 
   /** Stroke paths drawn in the frame at `tau`. */
-  function strokeCount(scene: MorphScene, tau: number): number {
-    const r = new MorphRenderer(buildMorphModel(scene));
+  function strokeCount(scene: View3DScene, tau: number): number {
+    const r = new View3DRenderer(buildView3DModel(scene));
     r.configure(900, 0);
     r.render(tau);
     return [...r.svg.querySelectorAll('path')].filter((p) => p.getAttribute('fill') === 'none')
@@ -383,7 +383,7 @@ describe('morph membrane', () => {
   it('draws a fishnet over each leaflet in 3-D, following the local surface', () => {
     expect(new Set(netHeights(flat))).toEqual(new Set([15]));
     // A 4 Å rise, in the frame of the scene's sample positions.
-    const raised: MorphScene = {
+    const raised: View3DScene = {
       ...flat,
       slab: { ...flat.slab, surface: { upper: () => 19, lower: () => -19 } },
     };
@@ -400,11 +400,11 @@ describe('morph membrane', () => {
       upper: (_x: number, _y: number, radius: number) => (radii.add(radius), 19),
       lower: () => -19,
     };
-    const scene: MorphScene = { ...flat, slab: { ...flat.slab, surface } };
+    const scene: View3DScene = { ...flat, slab: { ...flat.slab, surface } };
     const radiiAt = (gridSpacing: number) => {
       radii.clear();
-      const r = new MorphRenderer(buildMorphModel(scene), {
-        ...DEFAULT_MORPH_OPTIONS,
+      const r = new View3DRenderer(buildView3DModel(scene), {
+        ...DEFAULT_VIEW3D_OPTIONS,
         gridSpacing,
       });
       r.configure(900, 0);
@@ -446,7 +446,7 @@ describe('morph pose (β-barrel unwrap)', () => {
   // Stretch the display to mimic the strand-spacing layout, which the roll
   // must undo.
   const scene = sceneFor('cylinder', unroll, chain.segments, 1.3);
-  const model = buildMorphModel(scene);
+  const model = buildView3DModel(scene);
 
   it('exposes the cylinder mapping used by the unwrap', () => {
     expect(unroll.cylinder).toBeDefined();
@@ -487,7 +487,7 @@ describe('morph pose (β-barrel unwrap)', () => {
     const u = unwrapBarrel(mirrored.calphas, { ssSegments: mirrored.segments, centre: a.centre });
     expect(u.cylinder!.sign).toBe(-unroll.cylinder!.sign);
     const sc = sceneFor('cylinder', u, mirrored.segments, 1.3);
-    const m = buildMorphModel(sc);
+    const m = buildView3DModel(sc);
     const { got, want } = elementPoints(m, sc, computePose(m, 1, 0.7));
     expect(rigidError(got, want)).toBeLessThan(0.05);
     const h = handednessFlips(got, want);
@@ -538,7 +538,7 @@ describe('morph pose (β-barrel unwrap)', () => {
     const u = unwrapBarrel(calphas, { ssSegments: segments, centre: a.centre });
     expect(u.segments).toHaveLength(1);
     const sc = sceneFor('cylinder', u, segments);
-    const m = buildMorphModel(sc);
+    const m = buildView3DModel(sc);
     let worst = 0;
     for (const el of m.elements) {
       for (let g = el.g0; g <= el.g1; g++) worst = Math.max(worst, Math.hypot(m.nr[g], m.br[g]));
@@ -554,7 +554,7 @@ describe('morph pose (β-barrel unwrap)', () => {
     // curtain (curvature t·sign/R), whatever its neighbours are doing.
     for (const stretch of [1.3, 1.8]) {
       const sc = sceneFor('cylinder', unroll, chain.segments, stretch);
-      const m = buildMorphModel(sc, { anchor: 'end' });
+      const m = buildView3DModel(sc, { anchor: 'end' });
       for (const tau of [0.3, 0.5, 0.7]) {
         const pose = computePose(m, tau, 0.35);
         const { U, H } = pose.curtain;
@@ -571,7 +571,7 @@ describe('morph pose (β-barrel unwrap)', () => {
   });
 
   it('renders every frame without NaN coordinates', () => {
-    const r = new MorphRenderer(model);
+    const r = new View3DRenderer(model);
     r.configure(900, 0);
     // The steadying track starts at the identity, so frame 0 is untouched.
     const rigid0 = (r as unknown as { rigidAt(t: number): { phi: number; tx: number } }).rigidAt(0);
@@ -764,7 +764,7 @@ describe('Veil, surface style', () => {
   });
 });
 
-describe('<topology-display> 3-D morph', () => {
+describe('<topology-display> 3-D view', () => {
   afterEach(() => {
     document.body.innerHTML = '';
   });
@@ -781,7 +781,7 @@ describe('<topology-display> 3-D morph', () => {
     const root = el.shadowRoot!;
     const labels = [...root.querySelectorAll('.view-button')].map((b) => b.textContent);
     expect(labels).toEqual(['1D', '2D', '3D']);
-    expect(root.querySelector('.morph-toggle')?.textContent).toBe('3D');
+    expect(root.querySelector('.dimension-toggle')?.textContent).toBe('3D');
     expect(root.querySelector('input[type=range]')).toBeNull();
     expect(el.transitionProgress).toBe(0);
     expect(el.dimension).toBe(2);
@@ -805,7 +805,7 @@ describe('<topology-display> 3-D morph', () => {
     expect(root.querySelector('.view-button[aria-pressed=true]')?.textContent).toBe('1D');
     el.dimension = 2;
     expect(root.querySelector('.svg-scroll svg')).toBe(svg2d);
-    // The morph code loads on first use.
+    // The 3-D code loads on first use.
     el.dimension = 2.5;
     await vi.waitFor(() => expect(el.dimension).toBeCloseTo(2.5));
   });
@@ -818,27 +818,27 @@ describe('<topology-display> 3-D morph', () => {
     expect(el.dimension).toBe(1);
   });
 
-  it('swaps in the morph SVG away from t = 0 and restores the 2-D SVG at t = 0', async () => {
+  it('swaps in the 3-D SVG away from t = 0 and restores the 2-D SVG at t = 0', async () => {
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
     const svg2d = root.querySelector('.svg-scroll svg');
     await el.setTransitionProgress(0.5);
-    const morph = root.querySelector('.svg-scroll svg');
-    expect(morph).not.toBe(svg2d);
-    expect(morph?.classList.contains('morph-svg')).toBe(true);
-    expect(root.querySelector('.morph-toggle')?.getAttribute('aria-pressed')).toBe('true');
+    const svg3d = root.querySelector('.svg-scroll svg');
+    expect(svg3d).not.toBe(svg2d);
+    expect(svg3d?.classList.contains('view3d-svg')).toBe(true);
+    expect(root.querySelector('.dimension-toggle')?.getAttribute('aria-pressed')).toBe('true');
     // Loops are drawn as tubes in 3-D; every coordinate stays finite.
     await el.setTransitionProgress(1);
     const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
     expect(ds.join('')).not.toMatch(/NaN|Infinity/);
     await el.setTransitionProgress(0);
     expect(root.querySelector('.svg-scroll svg')).toBe(svg2d);
-    expect(root.querySelector('.morph-toggle')?.getAttribute('aria-pressed')).toBe('false');
+    expect(root.querySelector('.dimension-toggle')?.getAttribute('aria-pressed')).toBe('false');
   });
 
   type Internals = {
-    _morph: unknown;
-    _morphSource: { scene: MorphScene } | null;
+    _view3d: unknown;
+    _view3dSource: { scene: View3DScene } | null;
   };
 
   /** Every path coordinate of the shown SVG is finite at each τ. */
@@ -853,17 +853,17 @@ describe('<topology-display> 3-D morph', () => {
     }
   }
 
-  it('loads the morph code only when the 3-D view is first asked for', async () => {
+  it('loads the 3-D code only when the 3-D view is first asked for', async () => {
     const el = mount(hairpinChain());
-    expect((el as unknown as Internals)._morph).toBeNull();
+    expect((el as unknown as Internals)._view3d).toBeNull();
     await el.setTransitionProgress(0.2);
-    expect((el as unknown as Internals)._morph).not.toBeNull();
+    expect((el as unknown as Internals)._view3d).not.toBeNull();
   });
 
   it('takes the strand ribbon size from structure-strand-width and structure-strand-thickness', () => {
-    type WithOptions = { _morphSource: { options: Record<string, number> } | null };
+    type WithOptions = { _view3dSource: { options: Record<string, number> } | null };
     const el = mount(hairpinChain());
-    const opts = () => (el as unknown as WithOptions)._morphSource!.options;
+    const opts = () => (el as unknown as WithOptions)._view3dSource!.options;
     expect(opts().strandWidth).toBeUndefined();
     el.setAttribute('structure-strand-width', '10');
     el.setAttribute('structure-strand-thickness', '2.5');
@@ -876,10 +876,10 @@ describe('<topology-display> 3-D morph', () => {
   });
 
   it('sets the membrane grid spacing from structure-grid-spacing, in place', async () => {
-    type WithNet = { _morph: { renderer: { net: { spacing: number } } | null } | null };
+    type WithNet = { _view3d: { renderer: { net: { spacing: number } } | null } | null };
     const el = mount(hairpinChain());
     await el.setTransitionProgress(1);
-    const spacing = () => (el as unknown as WithNet)._morph!.renderer!.net.spacing;
+    const spacing = () => (el as unknown as WithNet)._view3d!.renderer!.net.spacing;
     const auto = spacing();
     expect(auto).toBeGreaterThanOrEqual(4);
     expect(auto).toBeLessThanOrEqual(8);
@@ -893,8 +893,8 @@ describe('<topology-display> 3-D morph', () => {
     el.setAttribute('structure-grid-spacing', '10000');
     expect(spacing()).toBeLessThan(100);
     expect(
-      (el as unknown as { _morph: { renderer: { net: { upper: unknown[] } } } })._morph.renderer.net
-        .upper,
+      (el as unknown as { _view3d: { renderer: { net: { upper: unknown[] } } } })._view3d.renderer
+        .net.upper,
     ).toHaveLength(2);
     el.setAttribute('structure-grid-spacing', 'auto');
     expect(spacing()).toBe(auto);
@@ -902,13 +902,13 @@ describe('<topology-display> 3-D morph', () => {
 
   it('draws the membrane as polar lines or a coloured surface from structure-membrane-style, in place', async () => {
     type Net = { style: string; mesh: unknown; upper: unknown[] };
-    type WithNet = { _morph: { renderer: { net: Net } } };
+    type WithNet = { _view3d: { renderer: { net: Net } } };
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
     // Annular leaflets that differ from the bulk, so the surface has colours.
     el.setAttribute('membrane-annular-upper', '15');
     await el.setTransitionProgress(1);
-    const net = () => (el as unknown as WithNet)._morph.renderer.net;
+    const net = () => (el as unknown as WithNet)._view3d.renderer.net;
     const finite = () => {
       const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
       expect(ds.join('')).not.toMatch(/NaN|Infinity/);
@@ -1015,7 +1015,7 @@ describe('<topology-display> 3-D morph', () => {
 
     type Net = { upper: Float64Array[] };
     type Internals3d = {
-      _morph: { blending: boolean; renderer: { drawnNet: Net; net: Net } };
+      _view3d: { blending: boolean; renderer: { drawnNet: Net; net: Net } };
     };
     const zs = (net: Net) => net.upper.flatMap((l) => [...l]);
 
@@ -1082,7 +1082,7 @@ describe('<topology-display> 3-D morph', () => {
     it('blends the 3-D membrane, and stops cleanly when the style changes', async () => {
       const { el } = setUp();
       await el.setTransitionProgress(1);
-      const internals = () => (el as unknown as Internals3d)._morph;
+      const internals = () => (el as unknown as Internals3d)._view3d;
       const flat = zs(internals().renderer.drawnNet);
       now = 5000;
       el.setAttribute('membrane-detail', 'bulk');
@@ -1137,34 +1137,34 @@ describe('<topology-display> 3-D morph', () => {
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
     await el.setTransitionProgress(1);
-    const controller = (el as unknown as Internals)._morph;
+    const controller = (el as unknown as Internals)._view3d;
     const before = root.querySelector('.svg-scroll svg');
     el.setAttribute('structure-projection', 'perspective');
     el.setAttribute('structure-strand-width', '6');
     el.setAttribute('transition-sweep', '0');
     // Same controller and progress; a new 3-D picture.
-    expect((el as unknown as Internals)._morph).toBe(controller);
+    expect((el as unknown as Internals)._view3d).toBe(controller);
     expect(el.transitionProgress).toBe(1);
     const after = root.querySelector('.svg-scroll svg');
     expect(after).not.toBe(before);
-    expect(after?.classList.contains('morph-svg')).toBe(true);
+    expect(after?.classList.contains('view3d-svg')).toBe(true);
     expect(root.querySelectorAll('.svg-scroll svg')).toHaveLength(1);
     const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
     expect(ds.join('')).not.toMatch(/NaN|Infinity/);
     // Back to 2-D shows the original drawing.
     await el.setTransitionProgress(0);
-    expect(root.querySelector('.svg-scroll svg')?.classList.contains('morph-svg')).toBe(false);
+    expect(root.querySelector('.svg-scroll svg')?.classList.contains('view3d-svg')).toBe(false);
   });
 
   it('keeps the 3-D view when a 2-D drawing attribute changes', async () => {
     const el = mount(hairpinChain());
     await el.setTransitionProgress(0.6);
     el.setAttribute('debug', 'loops');
-    // The redraw restores the view once the (already loaded) morph code resolves.
+    // The redraw restores the view once the (already loaded) 3-D code resolves.
     await new Promise((r) => setTimeout(r, 0));
     expect(el.transitionProgress).toBeCloseTo(0.6);
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
-    expect(svg?.classList.contains('morph-svg')).toBe(true);
+    expect(svg?.classList.contains('view3d-svg')).toBe(true);
     expect(el.dimension).toBeCloseTo(2.6);
   });
 
@@ -1210,7 +1210,7 @@ describe('<topology-display> 3-D morph', () => {
     expect(el.transitionProgress).toBe(1);
     el.resetView();
     expect(el.transitionProgress).toBe(0);
-    expect(el.shadowRoot!.querySelector('.svg-scroll svg')?.classList.contains('morph-svg')).toBe(
+    expect(el.shadowRoot!.querySelector('.svg-scroll svg')?.classList.contains('view3d-svg')).toBe(
       false,
     );
   });
@@ -1239,10 +1239,10 @@ describe('<topology-display> 3-D morph', () => {
   it('ignores re-assigning the same protein data', async () => {
     const el = mount(hairpinChain());
     await el.setTransitionProgress(1);
-    const controller = (el as unknown as Internals)._morph;
+    const controller = (el as unknown as Internals)._view3d;
     const data = el.proteinData;
     el.proteinData = data;
-    expect((el as unknown as Internals)._morph).toBe(controller);
+    expect((el as unknown as Internals)._view3d).toBe(controller);
     expect(el.transitionProgress).toBe(1);
   });
 
@@ -1263,11 +1263,11 @@ describe('<topology-display> 3-D morph', () => {
 
   it('rolls up a β-barrel with its loops (cylinder mode)', async () => {
     const el = mount(syntheticBarrel({ n: 8 }));
-    const scene = (el as unknown as Internals)._morphSource!.scene;
+    const scene = (el as unknown as Internals)._view3dSource!.scene;
     expect(scene.mode).toBe('cylinder');
     expect(scene.loops.length).toBeGreaterThan(4);
     // Each loop's real path runs from the end of one element to the start of the next.
-    const model = buildMorphModel(scene);
+    const model = buildView3DModel(scene);
     for (const loop of model.loops) {
       if (loop.fromG >= 0) expect(loop.real[0]).toBe(loop.fromG);
       if (loop.toG >= 0) expect(loop.real[loop.real.length - 1]).toBe(loop.toG);
@@ -1283,7 +1283,7 @@ describe('<topology-display> 3-D morph', () => {
     chain.calphas = chain.calphas.filter((c) => c.resSeq <= 22 || c.resSeq >= 28);
     chain.residueCount = chain.calphas.length;
     const el = mount(chain);
-    const scene = (el as unknown as Internals)._morphSource!.scene;
+    const scene = (el as unknown as Internals)._view3dSource!.scene;
     expect(scene.segments.length).toBeGreaterThan(1);
     const gap = scene.loops.find((l) => l.discontinuous);
     expect(gap).toBeDefined();
@@ -1314,7 +1314,7 @@ describe('<topology-display> 3-D morph', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'asm', chains } as ProteinData;
-    const scene = (el as unknown as Internals)._morphSource!.scene;
+    const scene = (el as unknown as Internals)._view3dSource!.scene;
     expect(scene.elements.some((e) => e.faded)).toBe(true);
     expect(scene.elements.some((e) => !e.faded)).toBe(true);
     const groupOpacities = (): string[] =>

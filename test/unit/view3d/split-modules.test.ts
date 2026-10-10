@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Direct tests of the modules split out of morph/renderer.ts (#84). The
+// Direct tests of the modules split out of view3d/renderer.ts (#84). The
 // builders, the engine's merging and the colour helpers need no DOM.
 import { describe, it, expect } from 'vitest';
 import type { ChainData } from '../../../src/types.js';
@@ -7,11 +7,11 @@ import { analyseBarrel } from '../../../src/contacts/index.js';
 import { resolveMembrane } from '../../../src/membrane/index.js';
 import { getTheme } from '../../../src/theme/index.js';
 import { build3d, layoutChain } from '../../../src/layout/index.js';
-import { buildMorphModel, type MorphModel } from '../../../src/morph/model.js';
-import { computePose } from '../../../src/morph/curtain.js';
-import { Camera } from '../../../src/morph/camera.js';
-import { DEFAULT_MORPH_OPTIONS } from '../../../src/morph/options.js';
-import { hexRgb, mixRgb, saturate, shade, smooth, type RGB } from '../../../src/morph/colour.js';
+import { buildView3DModel, type View3DModel } from '../../../src/view3d/model.js';
+import { computePose } from '../../../src/view3d/curtain.js';
+import { Camera } from '../../../src/view3d/camera.js';
+import { DEFAULT_VIEW3D_OPTIONS } from '../../../src/view3d/options.js';
+import { hexRgb, mixRgb, saturate, shade, smooth, type RGB } from '../../../src/view3d/colour.js';
 import {
   CONTEXT_ID,
   Run,
@@ -21,17 +21,17 @@ import {
   separated,
   type OpSpec,
   type Prim,
-} from '../../../src/morph/engine.js';
-import { Veil, buildNet, rimPrims, type MembraneEnv } from '../../../src/morph/membrane-layer.js';
-import type { PrimEnv } from '../../../src/morph/prims/env.js';
-import type { FrameCtx } from '../../../src/morph/prims/frame.js';
-import { cylinderGradient, downsample, helixPrims } from '../../../src/morph/prims/helix.js';
-import { strandPrims } from '../../../src/morph/prims/strand.js';
-import { loopPrims, tiePrims } from '../../../src/morph/prims/loop.js';
+} from '../../../src/view3d/engine.js';
+import { Veil, buildNet, rimPrims, type MembraneEnv } from '../../../src/view3d/membrane-layer.js';
+import type { PrimEnv } from '../../../src/view3d/prims/env.js';
+import type { FrameCtx } from '../../../src/view3d/prims/frame.js';
+import { cylinderGradient, downsample, helixPrims } from '../../../src/view3d/prims/helix.js';
+import { strandPrims } from '../../../src/view3d/prims/strand.js';
+import { loopPrims, tiePrims } from '../../../src/view3d/prims/loop.js';
 import { threeHelixChain } from '../fixtures/helices.js';
 import { syntheticBarrel } from '../fixtures/barrel.js';
 
-function modelOf(chain: ChainData, showContacts = false): MorphModel {
+function modelOf(chain: ChainData, showContacts = false): View3DModel {
   const membrane = resolveMembrane({}, null, []);
   const layout = layoutChain(
     chain,
@@ -41,15 +41,15 @@ function modelOf(chain: ChainData, showContacts = false): MorphModel {
     membrane,
     chain.calphas.filter((c) => Math.abs(c.z) < 12),
   );
-  return buildMorphModel(build3d(layout, getTheme('light'))!);
+  return buildView3DModel(build3d(layout, getTheme('light'))!);
 }
 
 const WHITE: RGB = [255, 255, 255];
 
-function envOf(model: MorphModel): PrimEnv {
+function envOf(model: View3DModel): PrimEnv {
   return {
     model,
-    options: DEFAULT_MORPH_OPTIONS,
+    options: DEFAULT_VIEW3D_OPTIONS,
     colours: {
       helix: [200, 80, 80],
       helixEdge: '#802020',
@@ -66,7 +66,7 @@ function envOf(model: MorphModel): PrimEnv {
 }
 
 /** A frame at `tau`, viewed from above at elevation `el` once it is 3-D. */
-function frameAt(model: MorphModel, tau: number, el = 0.6): FrameCtx {
+function frameAt(model: View3DModel, tau: number, el = 0.6): FrameCtx {
   const pose = computePose(model, tau, 0);
   const pxA = model.scene.frame.pxPerA;
   const cam = new Camera({
@@ -218,7 +218,7 @@ describe('membrane layer', () => {
     const pose = computePose(model, 1, 0);
     const env: MembraneEnv = {
       model,
-      options: DEFAULT_MORPH_OPTIONS,
+      options: DEFAULT_VIEW3D_OPTIONS,
       ground: WHITE,
       tmp: new Float64Array(8),
       back: null as unknown as MembraneEnv['back'],

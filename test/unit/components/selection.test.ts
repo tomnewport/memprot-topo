@@ -284,25 +284,25 @@ describe('TopologyDisplay selection in the 3-D view', () => {
   });
 
   const selected3d = (el: TopologyDisplay): (string | null)[] =>
-    [...el.shadowRoot!.querySelectorAll('.morph-svg g.selected')].map((g) =>
+    [...el.shadowRoot!.querySelectorAll('.view3d-svg g.selected')].map((g) =>
       g.getAttribute('data-type'),
     );
 
   it('marks the selected elements and loops, and follows changes in place', async () => {
     const el = mount('A:1-14');
     await el.setTransitionProgress(1);
-    const svg = el.shadowRoot!.querySelector('.morph-svg');
+    const svg = el.shadowRoot!.querySelector('.view3d-svg');
     expect(new Set(selected3d(el))).toEqual(new Set(['helix']));
     // Outlines are drawn wider while selected.
     const outlines = (): number =>
-      [...el.shadowRoot!.querySelectorAll('.morph-svg path[stroke-width]')]
+      [...el.shadowRoot!.querySelectorAll('.view3d-svg path[stroke-width]')]
         .map((p) => Number(p.getAttribute('stroke-width')))
         .reduce((a, b) => a + b, 0);
     const wide = outlines();
 
     el.setAttribute('selection', 'A:15-18');
     expect(new Set(selected3d(el))).toEqual(new Set(['loop']));
-    expect(el.shadowRoot!.querySelector('.morph-svg')).toBe(svg);
+    expect(el.shadowRoot!.querySelector('.view3d-svg')).toBe(svg);
     expect(el.transitionProgress).toBe(1);
 
     el.removeAttribute('selection');
@@ -315,7 +315,7 @@ describe('TopologyDisplay selection in the 3-D view', () => {
     await el.setTransitionProgress(1);
     // Spread between the largest and smallest channel, over every coloured path.
     const chroma = (): number =>
-      [...el.shadowRoot!.querySelectorAll('.morph-svg g path')]
+      [...el.shadowRoot!.querySelectorAll('.view3d-svg g path')]
         .flatMap((p) => [p.getAttribute('fill'), p.getAttribute('stroke')])
         .filter((c): c is string => !!c && c.startsWith('rgb('))
         .map((c) => {

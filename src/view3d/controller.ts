@@ -1,8 +1,8 @@
-import { buildMorphModel } from './model.js';
+import { buildView3DModel } from './model.js';
 import type { Fishnet } from './net.js';
-import { DEFAULT_MORPH_OPTIONS, type MorphOptions } from './options.js';
-import { MorphRenderer, type Orbit } from './renderer.js';
-import type { MorphScene, ResidueSpan } from './types.js';
+import { DEFAULT_VIEW3D_OPTIONS, type View3DOptions } from './options.js';
+import { View3DRenderer, type Orbit } from './renderer.js';
+import type { View3DScene, ResidueSpan } from './types.js';
 
 /** Duration (ms) of a full 2-D → 3-D transition. */
 const DURATION_MS = 2800;
@@ -12,7 +12,7 @@ const KEY_AZ = 0.1;
 const KEY_EL = 0.08;
 
 /** What a re-rendered component restores: progress, heading, orbit and 2-D scroll. */
-export interface MorphView {
+export interface View3DState {
   tau: number;
   goal: number;
   animating: boolean;
@@ -34,14 +34,14 @@ function prefersReducedMotion(): boolean {
 
 /**
  * Drives the 2-D ↔ 3-D morph inside a scroll container: swaps the static 2-D
- * SVG for the morph SVG while away from τ = 0 (the morph's first frame is the
+ * SVG for the 3-D SVG while away from τ = 0 (the morph's first frame is the
  * 2-D picture, so the swap is invisible), animates or scrubs τ, and lets the
  * user orbit the 3-D view by dragging or with the arrow keys.
  */
-export class MorphController {
+export class View3DController {
   private tau = 0;
   private goal = 0;
-  private renderer: MorphRenderer | null = null;
+  private renderer: View3DRenderer | null = null;
   private mounted = false;
   /** Renderer framed for the current scroll state but not yet swapped in. */
   private prepared = false;
@@ -57,7 +57,7 @@ export class MorphController {
   private appliedScroll = NaN;
   private readonly orbit: Orbit = { az: 0, el: 0 };
   private drag: { x: number; y: number; id: number; touch: boolean } | null = null;
-  private options: MorphOptions;
+  private options: View3DOptions;
   /** Model ids of the selected elements and loops. */
   private selectedIds: number[] = [];
   private readonly resize: ResizeObserver | null = null;
@@ -67,13 +67,13 @@ export class MorphController {
   constructor(
     private readonly scroll: HTMLElement,
     private readonly svg2d: SVGSVGElement,
-    private readonly scene: MorphScene,
+    private readonly scene: View3DScene,
     private readonly idPrefix: string,
-    options: Partial<MorphOptions> = {},
+    options: Partial<View3DOptions> = {},
     /** The structure's other chains, faded in around this one in 3-D. */
-    private readonly context: readonly MorphScene[] = [],
+    private readonly context: readonly View3DScene[] = [],
   ) {
-    this.options = { ...DEFAULT_MORPH_OPTIONS, ...options };
+    this.options = { ...DEFAULT_VIEW3D_OPTIONS, ...options };
     // Re-fit the 3-D framing when the container changes width (window
     // resize, phone rotation, or a container that was hidden when shown).
     if (typeof ResizeObserver !== 'undefined') {
@@ -148,7 +148,7 @@ export class MorphController {
   }
 
   /** The current view, to carry over to a controller for a re-rendered chain. */
-  get view(): MorphView {
+  get view(): View3DState {
     return {
       tau: this.tau,
       goal: this.goal,
@@ -193,7 +193,7 @@ export class MorphController {
   }
 
   /** Show `view` (from another controller of the same chain), resuming any animation. */
-  restore(view: MorphView): void {
+  restore(view: View3DState): void {
     this.cancel();
     this.scroll.scrollLeft = view.scroll0;
     if (view.tau <= 0 && !view.animating) return;
@@ -207,8 +207,8 @@ export class MorphController {
    * Change the options (projection, sweep, strand size) in place: the view
    * keeps its progress, orbit and any running animation.
    */
-  setOptions(options: Partial<MorphOptions>): void {
-    this.options = { ...DEFAULT_MORPH_OPTIONS, ...options };
+  setOptions(options: Partial<View3DOptions>): void {
+    this.options = { ...DEFAULT_VIEW3D_OPTIONS, ...options };
     const old = this.renderer;
     if (!old) return;
     // The new renderer has its own membrane: end any blend into the old one.
@@ -247,7 +247,7 @@ export class MorphController {
       !!range && !!r && r.start <= range.end && r.end >= range.start;
     const ids: number[] = [];
     elements.forEach((e, i) => hit(e.selectable) && ids.push(i));
-    // Model ids number loops after the elements (see buildMorphModel).
+    // Model ids number loops after the elements (see buildView3DModel).
     loops.forEach((l, i) => hit(l.selectable) && ids.push(elements.length + i));
     this.selectedIds = ids;
     this.renderer?.setSelected(ids);
@@ -297,16 +297,16 @@ export class MorphController {
     this.onChange?.(this.tau, this.goal);
   }
 
-  private ensureRenderer(): MorphRenderer {
+  private ensureRenderer(): View3DRenderer {
     if (!this.renderer) {
       // A sweeping roll is anchored at the end it reaches last (the renderer
       // then steadies the whole morph on screen).
       const anchor = this.options.sweep > 0 ? 'end' : 'centre';
-      this.renderer = new MorphRenderer(
-        buildMorphModel(this.scene, { anchor }),
+      this.renderer = new View3DRenderer(
+        buildView3DModel(this.scene, { anchor }),
         this.options,
         this.idPrefix,
-        this.context.map((c) => buildMorphModel(c)),
+        this.context.map((c) => buildView3DModel(c)),
       );
       this.renderer.setSelected(this.selectedIds);
       this.bindOrbit(this.renderer.svg);
@@ -315,7 +315,7 @@ export class MorphController {
   }
 
   /** Build and frame the renderer for the current scroll state (once per mount). */
-  private prepare(): MorphRenderer {
+  private prepare(): View3DRenderer {
     const renderer = this.ensureRenderer();
     if (!this.mounted && !this.prepared) {
       this.scroll0 = this.scroll.scrollLeft;
@@ -336,7 +336,7 @@ export class MorphController {
     if (!this.raf) this.show(this.tau);
   }
 
-  private mount(): MorphRenderer {
+  private mount(): View3DRenderer {
     const renderer = this.prepare();
     if (!this.mounted) {
       this.label(renderer.svg);

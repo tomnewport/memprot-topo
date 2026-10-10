@@ -11,7 +11,7 @@ import type { Leaf, SurfaceMesh } from './net.js';
 import { fogged, hexRgb, rgbStr, sampleProfile } from './colour.js';
 import type { Pose } from './curtain.js';
 import { Pooled } from './engine.js';
-import type { MorphModel } from './model.js';
+import type { View3DModel } from './model.js';
 import {
   buildFishnet,
   BULK_MARGIN,
@@ -20,7 +20,7 @@ import {
   fitRigid2d,
   type HeightAt,
 } from './net.js';
-import type { MorphOptions } from './options.js';
+import type { View3DOptions } from './options.js';
 import type { ContextChain, FrameCtx } from './prims/frame.js';
 
 /** The renderer's pooled paths behind the protein: rim, midplane and leaflets. */
@@ -35,8 +35,8 @@ export interface BackLayer {
 
 /** What the membrane layer reads from the renderer. */
 export interface MembraneEnv {
-  readonly model: MorphModel;
-  readonly options: MorphOptions;
+  readonly model: View3DModel;
+  readonly options: View3DOptions;
   /** The background: fog mixes towards it. */
   readonly ground: RGB;
   /** Scratch buffer for projected points. */

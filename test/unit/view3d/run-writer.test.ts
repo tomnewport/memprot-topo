@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Run, RunWriter, type OpSpec, type RunLook } from '../../../src/morph/engine.js';
+import { Run, RunWriter, type OpSpec, type RunLook } from '../../../src/view3d/engine.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const FILL: OpSpec = { layer: 0, key: 'f', kind: 'fill' };

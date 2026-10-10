@@ -4,10 +4,10 @@ import { Camera } from '../camera.js';
 import type { Pose } from '../curtain.js';
 import type { Prim } from '../engine.js';
 import { Veil } from '../membrane-layer.js';
-import type { MorphModel } from '../model.js';
+import type { View3DModel } from '../model.js';
 
 export interface FrameCtx {
-  model: MorphModel;
+  model: View3DModel;
   pose: Pose;
   cam: Camera;
   proj: Float64Array;
@@ -28,7 +28,7 @@ export interface FrameCtx {
 
 /** A context chain: shown, rolled up, in its real place around the morphing one. */
 export interface ContextChain {
-  model: MorphModel;
+  model: View3DModel;
   /** Fixed pose in the finished view's frame (set by precompute). */
   pose: Pose | null;
 }

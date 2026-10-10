@@ -6,7 +6,7 @@
 import { DEFAULT_MEMBRANE_STYLE, type MembraneStyle } from './membrane-style.js';
 
 /** Tunable 3-D appearance. Lengths in Å, angles in radians. */
-export interface MorphOptions {
+export interface View3DOptions {
   /** Helix cylinder radius. */
   helixRadius: number;
   /** Full width of a strand ribbon. */
@@ -40,7 +40,7 @@ export interface MorphOptions {
   membraneStyle: MembraneStyle;
 }
 
-export const DEFAULT_MORPH_OPTIONS: MorphOptions = {
+export const DEFAULT_VIEW3D_OPTIONS: View3DOptions = {
   helixRadius: 2.3,
   strandWidth: 2.85,
   arrowWidth: 4.65,

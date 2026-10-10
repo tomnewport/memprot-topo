@@ -157,7 +157,7 @@ Implement PDB/mmCIF → Cα coordinate extraction. Green unit tests. No renderin
 │   ├── secondary-structure/
 │   ├── unroll/            # Projection onto the membrane frame
 │   ├── layout/            # Pure chain layout (2-D, 3-D and sequence views)
-│   ├── morph/             # 2-D → 3-D view (SVG painter's-algorithm engine)
+│   ├── view3d/            # 2-D → 3-D view (SVG painter's-algorithm engine)
 │   ├── sequence/          # Sequence view
 │   ├── membrane/
 │   ├── contacts/

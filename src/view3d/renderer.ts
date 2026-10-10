@@ -1,10 +1,10 @@
 import { Camera } from './camera.js';
 import { computePose, type Pose, type Rigid } from './curtain.js';
-import type { MorphModel } from './model.js';
+import type { View3DModel } from './model.js';
 import { blendFishnet, discRadius, sameNetShape, type Fishnet } from './net.js';
 import { clamp01, FOG, hexRgb, lerp, type RGB, smooth } from './colour.js';
 import { Pooled, type Prim } from './engine.js';
-import { DEFAULT_MORPH_OPTIONS, type MorphOptions } from './options.js';
+import { DEFAULT_VIEW3D_OPTIONS, type View3DOptions } from './options.js';
 import { sheetsIn, SURFACE_BANDS, Veil } from './membrane-layer.js';
 import type { FrameCtx } from './prims/frame.js';
 import { helixPrims } from './prims/helix.js';
@@ -29,7 +29,7 @@ import type { ContextChain } from './prims/frame.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export { PROJECTIONS } from './projections.js';
-export { DEFAULT_MORPH_OPTIONS, type MorphOptions } from './options.js';
+export { DEFAULT_VIEW3D_OPTIONS, type View3DOptions } from './options.js';
 
 /** User orbit applied on top of the scripted camera (radians). */
 export interface Orbit {
@@ -86,7 +86,7 @@ const CONTEXT_FADE: [number, number] = [0.5, 0.95];
  * Richardson-style diagram (τ = 1) as plain SVG, so the first frame is the
  * 2-D picture itself and every frame stays vector.
  */
-export class MorphRenderer {
+export class View3DRenderer {
   readonly svg: SVGSVGElement;
   private readonly defs: SVGDefsElement;
   private readonly back: BackLayer;
@@ -132,10 +132,10 @@ export class MorphRenderer {
   private readonly membrane: MembraneEnv;
 
   constructor(
-    readonly model: MorphModel,
-    readonly options: MorphOptions = DEFAULT_MORPH_OPTIONS,
+    readonly model: View3DModel,
+    readonly options: View3DOptions = DEFAULT_VIEW3D_OPTIONS,
     idPrefix = 'mp',
-    context: readonly MorphModel[] = [],
+    context: readonly View3DModel[] = [],
   ) {
     // Context chains are drawn faded, and their ids are kept clear of the
     // morphing chain's (which selection and depth-sorted runs go by).
@@ -161,7 +161,7 @@ export class MorphRenderer {
     this.ground = hexRgb(st.background);
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('xmlns', SVG_NS);
-    svg.setAttribute('class', 'morph-svg');
+    svg.setAttribute('class', 'view3d-svg');
     svg.setAttribute('role', 'img');
     this.svg = svg;
     this.defs = document.createElementNS(SVG_NS, 'defs');
@@ -356,7 +356,7 @@ export class MorphRenderer {
       z1 = Math.max(z1, z);
     }
     // The finished view takes in the context chains too.
-    const all: { model: MorphModel; pose: Pose }[] = [{ model, pose }];
+    const all: { model: View3DModel; pose: Pose }[] = [{ model, pose }];
     for (const c of this.context) if (c.pose) all.push({ model: c.model, pose: c.pose });
     for (const { model: m, pose: p } of all.slice(1)) {
       for (let k = 0; k < m.n; k++) {
@@ -875,14 +875,14 @@ export class MorphRenderer {
  * smoothed, so they don't sit exactly on their real path), or every sample of
  * a chain without any.
  */
-function fitSamples(model: MorphModel): number[] {
+function fitSamples(model: View3DModel): number[] {
   const out: number[] = [];
   for (const e of model.elements) for (let g = e.g0; g <= e.g1; g++) out.push(g);
   return out.length >= 3 ? out : Array.from({ length: model.n }, (_, g) => g);
 }
 
 /** Real xy of the given samples, flat (x, y) pairs. */
-function realXY(model: MorphModel, samples: number[]): number[] {
+function realXY(model: View3DModel, samples: number[]): number[] {
   const out: number[] = [];
   let s = 0;
   for (const g of samples) {

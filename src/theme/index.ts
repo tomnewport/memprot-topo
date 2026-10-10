@@ -17,7 +17,7 @@ export interface Theme {
   surface: string;
   /** Body text. */
   text: string;
-  /** Secondary text: notes, captions, the morph bar. */
+  /** Secondary text: notes, captions, the dimension bar. */
   textMuted: string;
   /** Borders of the diagram box and panels. */
   border: string;

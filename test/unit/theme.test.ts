@@ -246,13 +246,13 @@ describe('<topology-display> theming', () => {
     await el.setTransitionProgress(1);
     const root = el.shadowRoot!;
     const before = root.querySelector('.svg-scroll svg')!;
-    expect(before.classList.contains('morph-svg')).toBe(true);
+    expect(before.classList.contains('view3d-svg')).toBe(true);
     el.setAttribute('theme', 'test-3d');
     expect(el.transitionProgress).toBe(1);
     const after = root.querySelector('.svg-scroll svg')!;
-    expect(after.classList.contains('morph-svg')).toBe(true);
-    const scene = (el as unknown as { _morphSource: { scene: { style: Record<string, string> } } })
-      ._morphSource.scene;
+    expect(after.classList.contains('view3d-svg')).toBe(true);
+    const scene = (el as unknown as { _view3dSource: { scene: { style: Record<string, string> } } })
+      ._view3dSource.scene;
     expect(scene.style.strandFill).toBe('#ff0000');
     expect(scene.style.background).toBe(DARK_THEME.background);
     // Shaded strand faces are reds now (lit and fogged towards the dark ground).

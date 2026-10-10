@@ -1,4 +1,4 @@
-import type { MorphModel } from './model.js';
+import type { View3DModel } from './model.js';
 
 /**
  * The curtain at one moment of the morph: a vertical developable surface given
@@ -135,7 +135,7 @@ export interface Rigid {
  * finished part is a rigid copy of the real structure, the rest is still flat,
  * and curvature never exceeds the final curvature. `rigid` places the result.
  */
-export function computePose(model: MorphModel, tau: number, sweep: number, rigid?: Rigid): Pose {
+export function computePose(model: View3DModel, tau: number, sweep: number, rigid?: Rigid): Pose {
   const { n, ud, zd, ua, zr, nr, br, pos, anchor } = model;
   const t = new Float64Array(n);
   for (let k = 0; k < n; k++) t[k] = localProgress(tau, pos[k], sweep);

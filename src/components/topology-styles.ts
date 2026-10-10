@@ -105,7 +105,7 @@ export const STYLES = `
        to compute height from container width, producing a huge whitespace gap */
   }
   .placeholder { font-style: italic; color: var(--mp-text-muted); }
-  .morph-bar {
+  .dimension-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -137,8 +137,8 @@ export const STYLES = `
     outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
-  .morph-hint { visibility: hidden; }
-  .morph-bar.is-3d .morph-hint { visibility: visible; }
+  .dimension-hint { visibility: hidden; }
+  .dimension-bar.is-3d .dimension-hint { visibility: visible; }
   .ss-element { cursor: pointer; outline: none; }
   .ss-element:hover, .ss-element:focus-visible {
     filter: brightness(1.15);
@@ -169,10 +169,10 @@ export const STYLES = `
     filter: saturate(var(--mp-unselected-saturation)) brightness(1.15);
   }
   /* The same glow in the 3-D view (its wider outlines are drawn by the renderer). */
-  .morph-svg .selected[data-type='helix'] { --glow-base: var(--mp-helix); }
-  .morph-svg .selected[data-type='strand'] { --glow-base: var(--mp-strand); }
-  .morph-svg .selected[data-type='loop'] { --glow-base: var(--mp-loop); }
-  .morph-svg .selected {
+  .view3d-svg .selected[data-type='helix'] { --glow-base: var(--mp-helix); }
+  .view3d-svg .selected[data-type='strand'] { --glow-base: var(--mp-strand); }
+  .view3d-svg .selected[data-type='loop'] { --glow-base: var(--mp-loop); }
+  .view3d-svg .selected {
     --glow: color-mix(in srgb, var(--glow-base), white var(--mp-selection-glow-brighten));
     filter: drop-shadow(0 0 var(--mp-selection-glow-blur) var(--glow));
   }

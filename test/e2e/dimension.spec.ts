@@ -15,7 +15,7 @@ test('the view buttons move between sequence, topology and structure', async ({ 
 
   await button(3).click();
   await expectDimension(page, 'td-5g53', 3);
-  await expect(display.locator('svg.morph-svg')).toBeVisible();
+  await expect(display.locator('svg.view3d-svg')).toBeVisible();
   await expect(button(3)).toHaveAttribute('aria-pressed', 'true');
 
   await button(1).click();
@@ -49,13 +49,13 @@ test('the 3-D view resolves its gradients inside the shadow DOM', async ({ page 
   const display = page.locator('#td-5g53');
   await display.locator('.view-button[data-dimension="3"]').click();
   await expectDimension(page, 'td-5g53', 3);
-  const morph = display.locator('svg.morph-svg');
-  await expect(morph).toBeVisible();
+  const svg3d = display.locator('svg.view3d-svg');
+  await expect(svg3d).toBeVisible();
 
   // Every url(#…) the 3-D view uses names an element in the same shadow root.
   const missing = await page.evaluate(() => {
     const root = document.getElementById('td-5g53')!.shadowRoot!;
-    const svg = root.querySelector('svg.morph-svg')!;
+    const svg = root.querySelector('svg.view3d-svg')!;
     const refs = new Set<string>();
     for (const el of svg.querySelectorAll('*')) {
       for (const attr of Array.from(el.attributes)) {
@@ -72,9 +72,9 @@ test('the 3-D view resolves its gradients inside the shadow DOM', async ({ page 
   // if the browser could not resolve them in the first place, it would not.
   // The swap rewrites the referring attributes so every engine repaints:
   // renaming the gradients' ids instead left WebKit's picture unchanged.
-  const painted = await morph.screenshot({ animations: 'disabled' });
+  const painted = await svg3d.screenshot({ animations: 'disabled' });
   await page.evaluate(() => {
-    const svg = document.getElementById('td-5g53')!.shadowRoot!.querySelector('svg.morph-svg')!;
+    const svg = document.getElementById('td-5g53')!.shadowRoot!.querySelector('svg.view3d-svg')!;
     for (const el of svg.querySelectorAll('*')) {
       for (const attr of Array.from(el.attributes)) {
         if (attr.value.includes('url(#')) {
@@ -83,6 +83,6 @@ test('the 3-D view resolves its gradients inside the shadow DOM', async ({ page 
       }
     }
   });
-  const unresolved = await morph.screenshot({ animations: 'disabled' });
+  const unresolved = await svg3d.screenshot({ animations: 'disabled' });
   expect(await pixelDifference(page, painted, unresolved)).toBeGreaterThan(0.01);
 });
