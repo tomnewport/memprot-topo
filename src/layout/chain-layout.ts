@@ -438,17 +438,18 @@ export function layoutChain(
     }
   }
 
-  // Expand the frame to fit all placed labels if they extend beyond it.
+  // Expand the frame to fit all placed labels if they extend beyond it. Label
+  // boxes are measured from the plot origin; the frame is in viewBox units.
   let minX = 0,
     maxX = svgWidth,
     minY = 0,
     maxY = svgHeight;
   for (const { box } of labels) {
     if (!box) continue;
-    const left = box.cx - box.w / 2;
-    const right = box.cx + box.w / 2;
-    const top = box.cy - box.h / 2;
-    const bottom = box.cy + box.h / 2;
+    const left = originX + box.cx - box.w / 2;
+    const right = originX + box.cx + box.w / 2;
+    const top = originY + box.cy - box.h / 2;
+    const bottom = originY + box.cy + box.h / 2;
     if (left < minX) minX = left;
     if (right > maxX) maxX = right;
     if (top < minY) minY = top;
