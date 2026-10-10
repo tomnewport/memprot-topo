@@ -5,7 +5,7 @@ import { buildView3DModel } from '../../../src/view3d/model.js';
 import { computePose, localProgress } from '../../../src/view3d/curtain.js';
 import { View3DRenderer } from '../../../src/view3d/renderer.js';
 import { DEFAULT_VIEW3D_OPTIONS } from '../../../src/view3d/options.js';
-import { Veil, type SurfaceShading } from '../../../src/view3d/membrane-layer.js';
+import { SURFACE_BANDS, Veil, type SurfaceShading } from '../../../src/view3d/membrane-layer.js';
 import { fitLine, findKink } from '../../../src/view3d/prims/kinks.js';
 import { Camera } from '../../../src/view3d/camera.js';
 import { buildFishnet } from '../../../src/view3d/net.js';
@@ -964,6 +964,36 @@ describe('<topology-display> 3-D view', () => {
     const thin = (await fills(12, -12)).filter(([r, , b]) => r !== b);
     expect(thin.length).toBeGreaterThan(0);
     for (const [r, , b] of thin) expect(r).toBeGreaterThan(b);
+  });
+
+  it('keys the surface colours, saying when the membrane runs past the saturated ends', async () => {
+    const el = mount(hairpinChain());
+    const root = el.shadowRoot!;
+    el.setAttribute('membrane-upper', '15');
+    el.setAttribute('membrane-lower', '-15');
+    await el.setTransitionProgress(1);
+    const key = () => root.querySelector<SVGGElement>('.svg-scroll svg .surface-key');
+    expect(key()).toBeNull();
+    el.setAttribute('structure-membrane-style', 'surface');
+    const texts = () =>
+      [...key()!.querySelectorAll('text')]
+        .filter((t) => t.getAttribute('display') !== 'none')
+        .map((t) => t.textContent);
+    // Within the scale: swatches and the saturated ends, no range note.
+    el.setAttribute('membrane-annular-upper', '17');
+    el.setAttribute('membrane-annular-lower', '-15');
+    await el.setTransitionProgress(1);
+    expect(key()!.getAttribute('display')).toBeNull();
+    expect(key()!.querySelectorAll('rect')).toHaveLength(SURFACE_BANDS + 1);
+    expect(texts()).toEqual(['Thickness vs bulk (Å)', '≤ −6', '0', '≥ +6']);
+    // 10 Å thicker round the protein: past the scale, so the key says how far.
+    el.setAttribute('membrane-annular-upper', '20');
+    el.setAttribute('membrane-annular-lower', '-20');
+    await el.setTransitionProgress(1);
+    expect(texts().at(-1)).toMatch(/^spans (0|\+\d+) to \+(9|10) Å$/);
+    // Gone with the 2-D view.
+    await el.setTransitionProgress(0);
+    expect(key()?.getAttribute('display') ?? 'none').toBe('none');
   });
 
   describe('membrane-detail blending', () => {

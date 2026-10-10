@@ -25,6 +25,7 @@ import {
   surfaceShading,
 } from './membrane-layer.js';
 import type { ContextChain } from './prims/frame.js';
+import { SurfaceKey } from './surface-key.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -94,6 +95,8 @@ export class View3DRenderer {
   /** Writes each frame's runs into the runs group, reusing its elements. */
   private readonly writer: RunWriter;
   private readonly labelsG: SVGGElement;
+  /** The surface style's colour key; null in the other styles. */
+  private readonly surfaceKey: SurfaceKey | null;
   private readonly texts: Pooled<SVGTextElement>[] = [];
   private framing: Framing | null = null;
   /** The leaflets' fishnets at τ = 1, about the final disc centre. */
@@ -187,7 +190,9 @@ export class View3DRenderer {
     this.runsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG = document.createElementNS(SVG_NS, 'g');
     this.labelsG.setAttribute('font-family', st.labelFontFamily);
+    this.surfaceKey = options.membraneStyle === 'surface' ? new SurfaceKey() : null;
     svg.append(this.defs, backG, this.runsG, this.labelsG);
+    if (this.surfaceKey) svg.append(this.surfaceKey.el);
     this.writer = new RunWriter(this.runsG, this.defs, idPrefix);
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
@@ -807,6 +812,7 @@ export class View3DRenderer {
     };
     this.writer.emit(mergeRuns(prims, width, height, look), look);
     this.drawLabels(ctx, labelAlpha);
+    this.surfaceKey?.draw(surface, planesOn ? eDisc : 0, st, this.ground, scrollLeft, height);
 
     this.svg.setAttribute('viewBox', `0 0 ${width.toFixed(2)} ${height.toFixed(2)}`);
     this.svg.setAttribute('width', width.toFixed(2));
