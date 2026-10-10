@@ -68,8 +68,9 @@ its residues; the fusion partner has no UniProt numbers.
 
 Chain IDs stay the structure's author chain IDs. The default,
 `residue-numbering="author"`, needs no network. `selection` is always in
-author numbering. `<topology-loader>` does not offer UniProt numbering, as
-MemProtMD renumbers its structures from 1 (#77).
+author numbering. `<topology-loader>` does not offer UniProt numbering
+(`residue-numbering` is not passed through), though it puts MemProtMD's
+structures back into the deposited entry's author numbering.
 
 The map is also available on its own: `fetchUniprotNumbering(pdbId)` returns
 it per chain (UniProt position → residue key), and `renumberSeries(series,

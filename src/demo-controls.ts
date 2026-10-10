@@ -332,6 +332,28 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Fill the available width and scroll, or size to the diagram.',
   },
   {
+    attribute: 'scale',
+    kind: 'number',
+    // PLOT.arcPxPerA in layout/constants.ts.
+    default: 2.5,
+    min: 1,
+    max: 6,
+    step: 0.5,
+    scope: 'all',
+    description: 'Plot scale of the 2-D diagram, px per Å.',
+  },
+  {
+    attribute: 'height',
+    kind: 'number',
+    default: 0,
+    min: 0,
+    max: 1000,
+    step: 50,
+    scope: 'all',
+    description:
+      'Height of the 2-D plot in px; 0 shows the membrane and 1.5 thicknesses above and below.',
+  },
+  {
     attribute: 'colour-scale',
     kind: 'text',
     default: '',

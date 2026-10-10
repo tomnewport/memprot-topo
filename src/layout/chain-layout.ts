@@ -39,6 +39,18 @@ import {
   type LoopRenderOptions,
 } from './loops.js';
 import { residueLabelBox, type LabelBox } from './labels.js';
+import { zWindow } from './z-window.js';
+
+/** The 2-D plot's size, from the `scale` and `height` attributes (issue #27). */
+export interface PlotOptions {
+  /** Plot scale, px per Å on both axes. Defaults to {@link PLOT.arcPxPerA}. */
+  pxPerA?: number;
+  /**
+   * Height of the plot's z-window in px, between the top and bottom margins.
+   * Defaults to the membrane plus 1.5 membrane thicknesses above and below.
+   */
+  heightPx?: number;
+}
 
 /** A laid-out chain segment, with the 3-D geometry behind it. */
 export interface LayoutSegment extends SegmentLayout {
@@ -204,7 +216,9 @@ export function layoutChain(
   /** xy of every chain's membrane-core Cα: the transmembrane segments. */
   core: readonly { x: number; y: number }[],
   assembly?: AssemblyContext,
+  plotOpts: PlotOptions = {},
 ): ChainLayout {
+  const pxPerA = plotOpts.pxPerA ?? PLOT.arcPxPerA;
   // Assembly barrels (multi-chain, e.g. α-hemolysin's heptameric stem) unwrap
   // every protomer around a shared cylinder; a single closed cylindrical barrel
   // unwraps by angle; everything else uses the arc-length unroll.
@@ -226,17 +240,17 @@ export function layoutChain(
       ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
       : unrollChain(chain.calphas, { ssSegments });
   const { layouts, totalArc } = asm
-    ? barrelLayout(unroll.segments, ssSegments, true)
+    ? barrelLayout(unroll.segments, ssSegments, true, pxPerA)
     : analysis.cylindrical
-      ? barrelLayout(unroll.segments, ssSegments)
-      : layoutSegments(unroll.segments, ssSegments);
+      ? barrelLayout(unroll.segments, ssSegments, false, pxPerA)
+      : layoutSegments(unroll.segments, ssSegments, pxPerA);
 
   // In barrel mode, hairpin loops leave each strand parallel to it (long tangent
   // handles following the strand tilt) and skip the centred vertical-extreme
   // points, so they lean over cleanly instead of rising straight up.
   const loopOpts: LoopRenderOptions = useUnwrap
-    ? { ...opts, extremePoints: false, tangentMagPx: BARREL.loopTangentPx }
-    : opts;
+    ? { ...opts, extremePoints: false, tangentMagPx: BARREL.loopTangentPx, pxPerA }
+    : { ...opts, pxPerA };
 
   // Membrane behind the diagram: bulk at its ends; under the residues, the
   // annular leaflets near the transmembrane segments and the local surface
@@ -247,21 +261,25 @@ export function layoutChain(
     bulk: membrane.bulk,
     annular: membrane.annular,
     anchors: membraneAnchors(layouts, unroll, membrane, core),
-    pxPerA: PLOT.arcPxPerA,
+    pxPerA,
   });
-  const membraneReach = Math.max(...profile.upper.map(Math.abs), ...profile.lower.map(Math.abs));
-  const zRange = Math.max(
-    PLOT.zRangeMin,
-    Math.abs(unroll.zMin),
-    Math.abs(unroll.zMax),
-    membraneReach,
+  // The plot's z-window: the membrane and 1.5 thicknesses beyond it unless
+  // `height` says otherwise, moved up or down to take in the protein (and any
+  // local membrane bulge) while keeping a quarter of the membrane in view.
+  const zWin = zWindow(
+    membrane.bulk,
+    {
+      zMin: Math.min(unroll.zMin, ...profile.lower),
+      zMax: Math.max(unroll.zMax, ...profile.upper),
+    },
+    plotOpts.heightPx !== undefined ? plotOpts.heightPx / pxPerA : undefined,
   );
-  const plotWidth = Math.max(200, totalArc * PLOT.arcPxPerA);
-  const plotHeight = zRange * 2 * PLOT.zPxPerA;
+  const plotWidth = Math.max(200, totalArc * pxPerA);
+  const plotHeight = (zWin.top - zWin.bottom) * pxPerA;
   const svgWidth = PLOT.margin.left + plotWidth + PLOT.margin.right;
   const svgHeight = PLOT.margin.top + plotHeight + PLOT.margin.bottom;
   const originX = PLOT.margin.left;
-  const originY = PLOT.margin.top + plotHeight / 2;
+  const originY = PLOT.margin.top + zWin.top * pxPerA;
 
   const segments: LayoutSegment[] = layouts.map((layout, s) => ({
     ...layout,
@@ -290,7 +308,7 @@ export function layoutChain(
       sample,
       text,
       isStart,
-      box: residueLabelBox(samples, sample, text, isStart),
+      box: residueLabelBox(samples, sample, text, isStart, pxPerA),
     });
   };
 
@@ -324,8 +342,8 @@ export function layoutChain(
           const centreline: OutlinePoint[] = [];
           for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
             centreline.push({
-              sx: samples[i].arc * PLOT.arcPxPerA,
-              sy: -samples[i].z * PLOT.zPxPerA,
+              sx: samples[i].arc * pxPerA,
+              sy: -samples[i].z * pxPerA,
             });
           }
           const sections = ssOutline(centreline, withArrow, {
@@ -439,6 +457,8 @@ export function layoutChain(
 
   // Expand the frame to fit all placed labels if they extend beyond it. Label
   // boxes are measured from the plot origin; the frame is in viewBox units.
+  // Vertically only labels centred inside the frame count: the rest belong to
+  // parts of the protein outside the z-window, which are cut off.
   let minX = 0,
     maxX = svgWidth,
     minY = 0,
@@ -451,6 +471,8 @@ export function layoutChain(
     const bottom = originY + box.cy + box.h / 2;
     if (left < minX) minX = left;
     if (right > maxX) maxX = right;
+    const centreY = originY + box.cy;
+    if (centreY < 0 || centreY > svgHeight) continue;
     if (top < minY) minY = top;
     if (bottom > maxY) maxY = bottom;
   }
@@ -472,7 +494,7 @@ export function layoutChain(
       minY,
       width: maxX - minX,
       height: maxY - minY,
-      pxPerA: PLOT.arcPxPerA,
+      pxPerA,
     },
     // Every displayed sample needs its 3-D position, or it would roll up to the
     // origin: without them the chain gets no 3-D view.

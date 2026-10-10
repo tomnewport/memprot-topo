@@ -2,7 +2,9 @@ import type { ProteinData } from '../types.js';
 import { parsePdb } from '../parser/pdb.js';
 import { parseDsspMmcif } from '../parser/dssp-mmcif.js';
 import { mergeProteinData } from '../parser/merge.js';
+import { mapToDeposited } from '../parser/memprotmd.js';
 import { parseDistortions, type MembraneDistortions } from '../membrane/distortions.js';
+import { parseStructureMembrane } from '../membrane/structure.js';
 import { TopologyDisplay } from './topology-display.js';
 import type { TracksConfig } from '../tracks/types.js';
 
@@ -27,11 +29,13 @@ const FORWARDED = [
   'structure-grid-spacing',
   'structure-membrane-style',
   'structure-membrane-colour',
+  'scale',
+  'height',
   'tracks',
 ];
 
 export class TopologyLoader extends HTMLElement {
-  static observedAttributes = ['pdb-id', 'sim-id', 'distortions', ...FORWARDED];
+  static observedAttributes = ['pdb-id', 'sim-id', 'distortions', 'ss-310', ...FORWARDED];
 
   private _pdbId: string | null = null;
   private _simId: string | null = null;
@@ -186,8 +190,25 @@ export class TopologyLoader extends HTMLElement {
       if (myGen !== this._generation || !this.isConnected) return;
 
       const chains = parsePdb(pdbText);
-      const ssSegments = parseDsspMmcif(dsspText);
-      const proteinData = mergeProteinData(pdbId, chains, ssSegments);
+      const ssSegments = parseDsspMmcif(dsspText, {
+        helix310: this.getAttribute('ss-310') === 'helix',
+      });
+      // MemProtMD renumbers from 1 and runs the protomers together: put them
+      // back into the deposited chains and numbering the DSSP is keyed on.
+      const mapped = mapToDeposited(chains, dsspText, ssSegments);
+      if (!mapped && dsspText.includes('_dssp_struct_summary.')) {
+        console.warn(
+          `topology-loader: couldn't match ${pdbId}'s residues to the deposited entry; ` +
+            'its secondary structure may not line up',
+        );
+      }
+      const proteinData = mergeProteinData(
+        pdbId,
+        mapped?.chains ?? chains,
+        mapped?.segments ?? ssSegments,
+      );
+      // at.pdb carries the bilayer: it puts the box-frame structure on its midplane.
+      proteinData.membrane = parseStructureMembrane(pdbText);
 
       this.renderData(proteinData, distortions);
     } catch (err) {

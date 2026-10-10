@@ -65,8 +65,10 @@ export interface SegmentLayout {
 export function layoutSegments(
   segments: UnrolledSegment[],
   ssSegments: SecondaryStructureSegment[],
+  /** Plot scale, px per Å (issue #27). */
+  pxPerA: number = PLOT.arcPxPerA,
 ): { layouts: SegmentLayout[]; totalArc: number } {
-  const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
+  const gapA = LOOP.elementGapPx / pxPerA;
   const layouts: SegmentLayout[] = [];
   let cursor = 0;
   let maxArc = 0;
@@ -143,13 +145,15 @@ export function barrelLayout(
   segments: UnrolledSegment[],
   wallSegments: SecondaryStructureSegment[],
   continuous = false,
+  /** Plot scale, px per Å (issue #27). */
+  pxPerA: number = PLOT.arcPxPerA,
 ): { layouts: SegmentLayout[]; totalArc: number } {
   const strandWidthPx = SS_BODY.halfWidthPx * 2;
-  const targetA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
-  const transitionGapA = (BARREL.transitionGapWidths * strandWidthPx) / PLOT.arcPxPerA;
+  const targetA = (BARREL.minStrandWidths * strandWidthPx) / pxPerA;
+  const transitionGapA = (BARREL.transitionGapWidths * strandWidthPx) / pxPerA;
   // Minimum element-to-element clearance used to nudge a transition element
   // forward if anchoring it to the loop-exit point would crowd anything.
-  const clearanceA = (BARREL.minStrandWidths * strandWidthPx) / PLOT.arcPxPerA;
+  const clearanceA = (BARREL.minStrandWidths * strandWidthPx) / pxPerA;
 
   // Placement state. In `continuous` mode (multi-chain assembly barrels) it
   // persists across segments so each protomer packs tight against the previous

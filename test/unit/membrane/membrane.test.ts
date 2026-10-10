@@ -237,7 +237,13 @@ describe('resolveMembrane — the three ways of placing the membrane', () => {
     const annular = membraneAtDetail(m, 'annular');
     expect(annular).toEqual({ ...m, surfaces: null });
     const bulk = membraneAtDetail(m, 'bulk');
-    expect(bulk).toEqual({ bulk: m.bulk, annular: m.bulk, surfaces: null, shift: m.shift });
+    expect(bulk).toEqual({
+      bulk: m.bulk,
+      annular: m.bulk,
+      surfaces: null,
+      shift: m.shift,
+      halfThickness: null,
+    });
     expect(bulk.annular).not.toBe(m.bulk);
     // The input is left alone.
     expect(m.surfaces).not.toBeNull();

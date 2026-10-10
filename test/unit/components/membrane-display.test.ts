@@ -353,6 +353,24 @@ describe('TopologyDisplay membrane', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it("centres a box-frame structure on the bilayer its file carries (MemProtMD's lipids)", () => {
+    const el = mount();
+    el.proteinData = {
+      ...hairpinProtein(70),
+      membrane: {
+        bilayer: { midplane: 70, bulk: { upper: 19.5, lower: -19.5 } },
+        halfThickness: null,
+      },
+    };
+    expect(el.membrane).toMatchObject({
+      shift: -70,
+      bulk: { upper: 19.5, lower: -19.5 },
+      surfaces: null,
+      halfThickness: null,
+    });
+    expect(new Set(band(el).map((p) => p.z))).toEqual(new Set([19.5, -19.5]));
+  });
+
   it('uses only the bulk of a distortions file in another frame, with a warning', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const el = mount();
