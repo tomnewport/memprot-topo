@@ -1,7 +1,7 @@
 import type { Theme } from '../theme/index.js';
 import type { View3DScene, View3DStyle } from '../view3d/types.js';
 import type { Membrane } from '../membrane/index.js';
-import { FADED_OPACITY, LABEL, LOOP, PLOT, SS_BODY } from './constants.js';
+import { FADED_OPACITY, LABEL, LOOP, SS_BODY } from './constants.js';
 import type { ChainLayout } from './chain-layout.js';
 
 export type View3DThemeStyle = Pick<
@@ -113,7 +113,7 @@ export function build3d(
         : undefined,
     },
     frame: { ...layout.frame },
-    gapA: LOOP.elementGapPx / PLOT.arcPxPerA,
+    gapA: LOOP.elementGapPx / layout.frame.pxPerA,
     style: {
       ...view3dColours(theme),
       labelFontSize: LABEL.fontSizePx,

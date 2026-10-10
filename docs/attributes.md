@@ -22,6 +22,8 @@ off a flag that is on by default.
 | `colour-scale`, `colour-domain`, `colour-label`                                                           | data range  | Residue colour scale and legend.                                                 |
 | `dimension`                                                                                               | `2`         | `1` sequence, `2` topology, `3` structure; fractions are part-way.               |
 | `fit`                                                                                                     | `width`     | `width` or `content`. See [sizing.md](sizing.md).                                |
+| `scale`                                                                                                   | `2.5`       | Plot scale of the 2-D view, px per Å. See [sizing.md](sizing.md).                |
+| `height`                                                                                                  | auto        | Plot height of the 2-D view, px. See [sizing.md](sizing.md).                     |
 | `transition-time`                                                                                         | 2500 ms     | Time to animate one whole dimension.                                             |
 | `transition-sweep`                                                                                        | `0.35`      | Rolling-wave width of the 2-D → 3-D transition. See [view-3d.md](view-3d.md).    |
 | `structure-projection`                                                                                    | `isometric` | `isometric` or `perspective`.                                                    |
@@ -41,7 +43,7 @@ off a flag that is on by default.
 ## `<topology-loader>` attributes
 
 `pdb-id`, `sim-id` and `distortions` choose what to load. `theme*`,
-`membrane-detail`, `transition-*`, `structure-*` and `tracks` are passed through to the
+`membrane-detail`, `transition-*`, `structure-*`, `scale`, `height` and `tracks` are passed through to the
 inner `<topology-display>`. The loader also takes the `tracks` property and a
 `<script type="application/json" slot="tracks">` child.
 

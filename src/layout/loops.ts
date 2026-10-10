@@ -35,6 +35,8 @@ export interface LoopRenderOptions {
    * (used for barrel hairpins). Defaults to {@link LOOP.tangentMagPx}.
    */
   tangentMagPx?: number;
+  /** Plot scale, px per Å (issue #27). Defaults to {@link PLOT.arcPxPerA}. */
+  pxPerA?: number;
 }
 
 /** One end of a loop: the samples array and the boundary sample index within it. */
@@ -70,9 +72,10 @@ export function buildLoopPoints(
   extreme: LoopExtreme | null,
   opts: LoopRenderOptions,
 ): LoopControlPoint[] {
-  const magA = (opts.tangentMagPx ?? LOOP.tangentMagPx) / PLOT.arcPxPerA;
-  const gapA = LOOP.elementGapPx / PLOT.arcPxPerA;
-  const extremeSpacingA = LOOP.extremeSpacingPx / PLOT.arcPxPerA;
+  const pxPerA = opts.pxPerA ?? PLOT.arcPxPerA;
+  const magA = (opts.tangentMagPx ?? LOOP.tangentMagPx) / pxPerA;
+  const gapA = LOOP.elementGapPx / pxPerA;
+  const extremeSpacingA = LOOP.extremeSpacingPx / pxPerA;
 
   const points: LoopControlPoint[] = [];
 

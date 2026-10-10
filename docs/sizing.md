@@ -16,6 +16,35 @@ shaded gradient and an arrow button. The arrow scrolls half the box's width,
 smoothly unless the reader prefers reduced motion, in which case it jumps.
 Both update as the box is scrolled or resized and while the 3-D morph runs.
 
+## Plot scale and height
+
+Two attributes size the 2-D diagram itself (issue #27).
+
+| Attribute | Default | Meaning                                                                    |
+| --------- | ------- | -------------------------------------------------------------------------- |
+| `scale`   | `2.5`   | px per Å, the same on both axes, so tilts are drawn true.                  |
+| `height`  | auto    | Height of the plot in px, between the top and bottom margins (36 px each). |
+
+`scale` stretches the plot, not the drawing: helices, strands, loop widths,
+the gap between elements and residue labels keep their size in px, so at a
+larger scale the elements are longer but no thicker, and sit closer together
+in Å. The 3-D view and the transitions to it and to the sequence view start
+from the scaled 2-D picture.
+
+By default the plot shows the membrane and 1.5 membrane thicknesses above and
+below it. "Membrane thickness" is the bulk headgroup separation (see
+[membrane.md](membrane.md)), so a 40 Å membrane gives a window from −80 Å to
++80 Å about the midplane: 400 px at the default scale. `height` replaces that
+window's height; it is then `height ÷ scale` Å tall.
+
+When the protein reaches past the window, the window moves up or down to take
+in as much of it as it can, but never so far that less than a quarter of the
+membrane's thickness stays in view. A protein taller than the window centres
+it on the protein, under the same limit. Whatever is still outside the window
+is cut off.
+
+Invalid, zero or negative values fall back to the defaults.
+
 ## Full screen
 
 The **Full screen** button at the right of the view switch shows the element
@@ -30,6 +59,10 @@ taller than the screen is shrunk to fit, but not below 0.6×. The 1-D and 3-D
 views share the zoom, and the 3-D view fills the box's height. On a short
 landscape screen (a phone on its side) the title and chain picker move to a
 column on the left.
+
+The full-screen zoom multiplies `scale`, and unlike `scale` it also enlarges
+text and line widths: `scale` sets the plot at 1×, and full screen magnifies
+the whole picture.
 
 The element carries a `fullscreen` attribute while it is full screen, and
 fires `fullscreen-change` (`detail.fullscreen`) on entering and leaving. Pages
