@@ -68,11 +68,11 @@ describe('resolveColouring', () => {
   it('maps all-number data through the scale over the data range', () => {
     const c = resolveColouring({ A: { 1: 0, 2: 5, 3: 10 } }, noOpts, theme)!;
     expect(c.kind).toBe('numerical');
-    expect(c.residueColour('A', 1)).toBe(DEFAULT_SCALE[0]);
-    expect(c.residueColour('A', 3)).toBe(DEFAULT_SCALE[DEFAULT_SCALE.length - 1]);
-    expect(c.residueColour('A', 2)).toBe(DEFAULT_SCALE[4]);
-    expect(c.residueColour('A', 4)).toBeUndefined();
-    expect(c.residueColour('B', 1)).toBeUndefined();
+    expect(c.residueColour('A', '1')).toBe(DEFAULT_SCALE[0]);
+    expect(c.residueColour('A', '3')).toBe(DEFAULT_SCALE[DEFAULT_SCALE.length - 1]);
+    expect(c.residueColour('A', '2')).toBe(DEFAULT_SCALE[4]);
+    expect(c.residueColour('A', '4')).toBeUndefined();
+    expect(c.residueColour('B', '1')).toBeUndefined();
   });
 
   it('honours colour-domain (clamping outside it) and a custom scale', () => {
@@ -82,17 +82,17 @@ describe('resolveColouring', () => {
       theme,
     )!;
     expect(c.kind === 'numerical' && [c.min, c.max]).toEqual([0, 1]);
-    expect(c.residueColour('A', 1)).toBe('#000000');
-    expect(c.residueColour('A', 2)).toBe('#808080');
-    expect(c.residueColour('A', 3)).toBe('#ffffff');
+    expect(c.residueColour('A', '1')).toBe('#000000');
+    expect(c.residueColour('A', '2')).toBe('#808080');
+    expect(c.residueColour('A', '3')).toBe('#ffffff');
     expect(c.label).toBe('Score');
   });
 
   it('uses amino-acid colours when every category is a residue letter', () => {
     const c = resolveColouring({ A: { 1: 'K', 2: 'L', 3: 'K' } }, noOpts, theme)!;
     expect(c.kind).toBe('categorical');
-    expect(c.residueColour('A', 1)).toBe(AMINO_ACID_COLOURS.K);
-    expect(c.residueColour('A', 2)).toBe(AMINO_ACID_COLOURS.L);
+    expect(c.residueColour('A', '1')).toBe(AMINO_ACID_COLOURS.K);
+    expect(c.residueColour('A', '2')).toBe(AMINO_ACID_COLOURS.L);
     // Legend order follows the palette's chemistry grouping (L before K).
     expect(c.kind === 'categorical' && c.categories).toEqual(['L', 'K']);
   });
@@ -103,9 +103,9 @@ describe('resolveColouring', () => {
       { scale: 'water: steelblue', domain: null, label: null },
       theme,
     )!;
-    expect(c.residueColour('A', 1)).toBe(DEFAULT_CATEGORIES[0]);
-    expect(c.residueColour('A', 2)).toBe(DEFAULT_CATEGORIES[1]);
-    expect(c.residueColour('A', 3)).toBe('steelblue');
+    expect(c.residueColour('A', '1')).toBe(DEFAULT_CATEGORIES[0]);
+    expect(c.residueColour('A', '2')).toBe(DEFAULT_CATEGORIES[1]);
+    expect(c.residueColour('A', '3')).toBe('steelblue');
   });
 
   it('treats mixed numbers and strings as categories, and spans every chain', () => {
@@ -139,9 +139,30 @@ describe('residue-data helpers', () => {
 
   it('reads width factors, with negative values counting as 0', () => {
     const f = widthFactors({ A: { 1: 1.5, 2: -2, 3: 'x' as unknown as number } }, 'A');
-    expect(f.get(1)).toBe(1.5);
-    expect(f.get(2)).toBe(0);
-    expect(f.has(3)).toBe(false);
+    expect(f.get('1')).toBe(1.5);
+    expect(f.get('2')).toBe(0);
+    expect(f.has('3')).toBe(false);
+  });
+
+  it('keeps residues with insertion codes apart from their bare number', () => {
+    const f = widthFactors({ H: { 100: 1, '100A': 2, '100b': 3, ' 101 ': 4, '10x0': 5 } }, 'H');
+    expect([...f.entries()]).toEqual([
+      ['100', 1],
+      ['100A', 2],
+      ['100B', 3],
+      ['101', 4],
+    ]);
+    const c = resolveColouring({ H: { 100: 'a', '100A': 'b' } }, noOpts, theme)!;
+    expect(c.residueColour('H', '100')).not.toBe(c.residueColour('H', '100A'));
+    const spans = residueSpans(
+      [
+        { resSeq: 100, iCode: '', sampleIndex: 0 },
+        { resSeq: 100, iCode: 'A', sampleIndex: 4 },
+      ],
+      0,
+      4,
+    );
+    expect(spans.map((s) => s.key)).toEqual(['100', '100A']);
   });
 
   it('interpolates widths smoothly without overshooting', () => {
@@ -179,11 +200,11 @@ describe('residue-data helpers', () => {
       { resSeq: 3, sampleIndex: 8 },
     ];
     expect(residueSpans(res, 0, 8)).toEqual([
-      { resSeq: 1, from: 0, to: 2 },
-      { resSeq: 2, from: 2, to: 6 },
-      { resSeq: 3, from: 6, to: 8 },
+      { key: '1', from: 0, to: 2 },
+      { key: '2', from: 2, to: 6 },
+      { key: '3', from: 6, to: 8 },
     ]);
-    const profile = widthProfile(res, new Map([[3, 2]]));
+    const profile = widthProfile(res, new Map([['3', 2]]));
     expect(profile(4)).toBe(1);
     expect(profile(8)).toBe(2);
     expect(profile(10)).toBe(2);

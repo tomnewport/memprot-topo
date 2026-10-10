@@ -5,6 +5,7 @@ import { FADED_OPACITY, LABEL, PLOT, SS_BODY } from '../layout/constants.js';
 import { flattenLoop, type LoopControlPoint } from '../layout/loops.js';
 import type { ChainLayout, LayoutElement, LayoutLoop } from '../layout/chain-layout.js';
 import { outlinePolygon, outlineSlice, type OutlinePoint } from './ss-outline.js';
+import { residueKey, type ResidueKey } from '../residue-key.js';
 import {
   measure,
   monotoneCubic,
@@ -22,9 +23,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Per-residue data styling for the displayed chain (issue #23). */
 export interface ResidueStyle {
   /** Colour of a residue, or undefined where it has no value; null when not colouring. */
-  colour: ((resSeq: number) => string | undefined) | null;
+  colour: ((key: ResidueKey) => string | undefined) | null;
   /** Width multiplier per residue (absent = 1). */
-  widths: Map<number, number>;
+  widths: Map<ResidueKey, number>;
 }
 
 /**
@@ -42,7 +43,7 @@ function drawSsPolygon(
   plot: SVGGElement,
   element: LayoutElement,
   data: ResidueStyle | undefined,
-  residues: { resSeq: number; sampleIndex: number }[],
+  residues: { resSeq: number; iCode?: string; sampleIndex: number }[],
 ): SVGPolygonElement | null {
   const { type, faded, centreline: screen, start: startIdx, end: endIdx } = element;
   let sections = element.sections;
@@ -68,7 +69,8 @@ function drawSsPolygon(
 
   // Per-residue colour: one fill slice per residue under the outline, which is
   // then drawn unfilled on top so the edge and hit area stay one shape.
-  const coloured = !!data?.colour && residues.some((r) => data.colour!(r.resSeq) !== undefined);
+  const coloured =
+    !!data?.colour && residues.some((r) => data.colour!(residueKey(r)) !== undefined);
   if (coloured) {
     const slices = document.createElementNS(SVG_NS, 'g');
     slices.setAttribute('class', 'residue-fill');
@@ -77,7 +79,7 @@ function drawSsPolygon(
     for (const span of residueSpans(residues, startIdx, endIdx)) {
       const verts = outlineSlice(screen, sections, span.from - startIdx, span.to - startIdx);
       if (verts.length < 3) continue;
-      const fill = data!.colour!(span.resSeq);
+      const fill = data!.colour!(span.key);
       const slice = document.createElementNS(SVG_NS, 'polygon');
       slice.setAttribute('points', toPoints(verts));
       // A hairline of the same colour hides anti-aliasing seams between slices.
@@ -89,7 +91,7 @@ function drawSsPolygon(
       }
       slice.setAttribute('stroke-width', '0.5');
       slice.setAttribute('vector-effect', 'non-scaling-stroke');
-      slice.dataset.res = String(span.resSeq);
+      slice.dataset.res = span.key;
       slices.appendChild(slice);
     }
     plot.appendChild(slices);
@@ -192,14 +194,14 @@ const LOOP_MIN_WIDTH_PX = 0.5;
 function drawLoopData(
   plot: SVGGElement,
   points: LoopControlPoint[],
-  loopResidues: { resSeq: number }[],
+  loopResidues: ResidueKey[],
   data: ResidueStyle,
   discontinuous: boolean,
 ): boolean {
   const n = loopResidues.length;
   if (n === 0 || points.length < 2) return false;
   const hasData = loopResidues.some(
-    (r) => data.widths.has(r.resSeq) || data.colour?.(r.resSeq) !== undefined,
+    (key) => data.widths.has(key) || data.colour?.(key) !== undefined,
   );
   if (!hasData) return false;
 
@@ -212,16 +214,16 @@ function drawLoopData(
   group.setAttribute('pointer-events', 'none');
   const widthPx = (f: number): number => Math.max(LOOP_MIN_WIDTH_PX, LOOP_STROKE_PX * f);
 
-  if (!discontinuous && loopResidues.some((r) => data.widths.has(r.resSeq))) {
+  if (!discontinuous && loopResidues.some((key) => data.widths.has(key))) {
     const profile = monotoneCubic(
       loopResidues.map((_, k) => ((k + 0.5) / n) * total),
-      loopResidues.map((r) => data.widths.get(r.resSeq) ?? 1),
+      loopResidues.map((key) => data.widths.get(key) ?? 1),
     );
     // Plot units are Å; the plot scale is uniform (1:1 aspect).
     const rib = ribbon(poly, (d) => widthPx(profile(d)) / 2 / PLOT.arcPxPerA);
     for (let k = 0; k < n; k++) {
-      const resSeq = loopResidues[k].resSeq;
-      const colour = data.colour?.(resSeq);
+      const key = loopResidues[k];
+      const colour = data.colour?.(key);
       const piece = document.createElementNS(SVG_NS, 'polygon');
       piece.setAttribute(
         'points',
@@ -239,7 +241,7 @@ function drawLoopData(
       piece.setAttribute('stroke-width', '0.4');
       piece.setAttribute('stroke-linejoin', 'round');
       piece.setAttribute('vector-effect', 'non-scaling-stroke');
-      piece.dataset.res = String(resSeq);
+      piece.dataset.res = key;
       group.appendChild(piece);
     }
     plot.appendChild(group);
@@ -248,24 +250,24 @@ function drawLoopData(
 
   for (let k = 0; k < n; k++) {
     const piece = slicePolyline(poly, (k / n) * total, ((k + 1) / n) * total);
-    const resSeq = loopResidues[k].resSeq;
+    const key = loopResidues[k];
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute(
       'd',
       piece.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(''),
     );
     path.setAttribute('fill', 'none');
-    const colour = data.colour?.(resSeq);
+    const colour = data.colour?.(key);
     if (colour) path.setAttribute('stroke', colour);
     else paint(path, { stroke: 'loop' });
-    const w = widthPx(data.widths.get(resSeq) ?? 1);
+    const w = widthPx(data.widths.get(key) ?? 1);
     path.setAttribute('stroke-width', w.toFixed(2));
     // Round caps join the pieces without gaps at bends.
     path.setAttribute('stroke-linecap', discontinuous ? 'butt' : 'round');
     path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('vector-effect', 'non-scaling-stroke');
     if (discontinuous) path.setAttribute('stroke-dasharray', '3 5');
-    path.dataset.res = String(resSeq);
+    path.dataset.res = key;
     group.appendChild(path);
   }
   plot.appendChild(group);
@@ -458,17 +460,7 @@ export function render2d(
     // Residue data is drawn over the curve, which stays as the hit area and the
     // selection halo (hidden otherwise; see `.loop.has-data`).
     const data = item.connector ? undefined : dataOf(item.seg);
-    if (
-      path &&
-      data &&
-      drawLoopData(
-        plot,
-        item.points,
-        item.residues.map((resSeq) => ({ resSeq })),
-        data,
-        item.discontinuous,
-      )
-    ) {
+    if (path && data && drawLoopData(plot, item.points, item.residues, data, item.discontinuous)) {
       path.classList.add('has-data');
     }
     if (path && item.selectable) markLoop(path, item.selectable.start, item.selectable.end);

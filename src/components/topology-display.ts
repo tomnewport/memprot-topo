@@ -27,6 +27,7 @@ import type { SeqResidue, SequenceSource } from '../sequence/types.js';
 import { SequenceController } from '../sequence/controller.js';
 import { DEFAULT_SEQUENCE_OPTIONS, type SequenceOptions } from '../sequence/renderer.js';
 import type { SeqLane } from '../sequence/types.js';
+import { parseResidueKey, residueKey, type ResidueKey } from '../residue-key.js';
 import { SEQ } from '../sequence/layout.js';
 import {
   DEFAULT_BULK,
@@ -1793,14 +1794,20 @@ export class TopologyDisplay extends HTMLElement {
     if (colour) {
       lanes.push({
         label: this.getAttribute('colour-label') || 'Colour',
-        colourAt: (i) => colour(residues[i].resSeq),
+        colourAt: (i) => colour(residueKey(residues[i])),
       });
     }
     for (const track of this._sequenceTracks) {
-      const values = track.values?.[chainId];
-      if (!values) continue;
+      const given = track.values?.[chainId];
+      if (!given) continue;
+      const values = new Map<ResidueKey, number | string>();
+      for (const [k, v] of Object.entries(given)) {
+        const key = parseResidueKey(k);
+        if (key !== null) values.set(key, v);
+      }
+      const valueAt = (i: number) => values.get(residueKey(residues[i]));
       const nums = residues
-        .map((r) => values[r.resSeq])
+        .map((_, i) => valueAt(i))
         .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
       const [lo, hi] = track.domain ?? [Math.min(...nums), Math.max(...nums)];
       const stops = (track.scale ?? this._theme.dataScale)
@@ -1809,7 +1816,7 @@ export class TopologyDisplay extends HTMLElement {
       lanes.push({
         label: track.label ?? 'Data',
         colourAt: (i) => {
-          const v = values[residues[i].resSeq];
+          const v = valueAt(i);
           if (typeof v === 'string') return v;
           if (typeof v !== 'number' || !Number.isFinite(v) || stops.length === 0) return undefined;
           return interpolateStops(stops, hi > lo ? (v - lo) / (hi - lo) : 0.5);
@@ -1930,8 +1937,9 @@ export interface SequenceTrack {
   /** Shown beside the strip. */
   label?: string;
   /**
-   * Values keyed by chain ID, then residue number: numbers are coloured on
-   * the scale, strings are taken as CSS colours.
+   * Values keyed by chain ID, then residue number, with the insertion code
+   * where a residue has one (`100A`): numbers are coloured on the scale,
+   * strings are taken as CSS colours.
    */
   values: Record<string, Record<string | number, number | string>>;
   /** Colour stops, low → high; the theme's data scale by default. */

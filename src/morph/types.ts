@@ -1,4 +1,5 @@
 import type { CylinderMapping, Vec } from '../unroll/index.js';
+import type { ResidueKey } from '../residue-key.js';
 
 /**
  * Everything the 2-D view draws, in draw order, plus the real 3-D geometry
@@ -108,8 +109,8 @@ export interface MorphLoop {
   /** Segment a stub belongs to (used when one end is null). */
   seg: number;
   order: number;
-  /** Residue numbers the loop stands for, in order (used by the sequence view). */
-  residues?: number[];
+  /** Residues the loop stands for, in order (used by the sequence view). */
+  residues?: ResidueKey[];
   /** Author residue range it stands for in the selection; absent when it takes no part. */
   selectable?: ResidueSpan;
 }

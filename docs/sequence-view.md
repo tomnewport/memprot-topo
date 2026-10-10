@@ -33,7 +33,8 @@ under that. Residues the 2-D layout puts inside the membrane are shaded.
   ];
   ```
 
-  Values are keyed by chain, then residue number, like the other series.
+  Values are keyed by chain, then residue number (with the insertion code
+  where there is one, e.g. `"100A"`), like the other series.
   Numbers are coloured on `scale` (the theme's data scale by default) over
   `domain` (the data's range by default); strings are taken as CSS colours.
   `residueWidths` is not shown in the sequence view.

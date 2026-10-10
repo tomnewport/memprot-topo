@@ -22,6 +22,7 @@ import {
   type ChunkFrame,
 } from './transition.js';
 import type { SeqLane, SequenceSource, TracePoint } from './types.js';
+import { residueKey } from '../residue-key.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -446,7 +447,7 @@ export class SequenceRenderer {
         const res = this.src.residues[i];
         const text = el('text', { x: p.x.toFixed(2), y: (p.y - lift).toFixed(2) });
         text.textContent = res.code;
-        text.dataset.res = String(res.resSeq);
+        text.dataset.res = residueKey(res);
         const title = el('title');
         title.textContent = `${res.code} ${res.resSeq}${res.iCode}`;
         text.appendChild(title);
