@@ -64,6 +64,7 @@ import {
   type ChainLayout,
   type AssemblyContext,
   type LoopRenderOptions,
+  type PlotOptions,
   type SsMinLengths,
 } from '../layout/index.js';
 import { render2d, type ChainDisplayData } from './render-2d.js';
@@ -219,6 +220,8 @@ export class TopologyDisplay extends HTMLElement {
     'structure-membrane-style',
     'chain-icon-bandwidth',
     'fit',
+    'scale',
+    'height',
     'min-helix-length',
     'min-strand-length',
     'membrane-upper',
@@ -681,6 +684,8 @@ export class TopologyDisplay extends HTMLElement {
       name === 'show-contacts' ||
       name === 'min-helix-length' ||
       name === 'min-strand-length' ||
+      name === 'scale' ||
+      name === 'height' ||
       name.startsWith('membrane-')
     ) {
       // The 2-D drawing changes; keep the scroll position and 3-D view.
@@ -898,6 +903,20 @@ export class TopologyDisplay extends HTMLElement {
     };
   }
 
+  /**
+   * The 2-D plot's size (issue #27): `scale` in px per Å (default 2.5) and
+   * `height`, the plot's height in px between its margins (default: the
+   * membrane and 1.5 membrane thicknesses above and below it). Invalid or
+   * non-positive values fall back to the defaults.
+   */
+  private get plotOptions(): PlotOptions {
+    const read = (name: string): number | undefined => {
+      const v = Number.parseFloat(this.getAttribute(name) ?? '');
+      return Number.isFinite(v) && v > 0 ? v : undefined;
+    };
+    return { pxPerA: read('scale'), heightPx: read('height') };
+  }
+
   /** Assemble the loop rendering options from the component's attributes. */
   private get loopOptions(): LoopRenderOptions {
     const extremePoints = booleanAttribute(this.getAttribute('loop-extremes'), true);
@@ -1036,6 +1055,7 @@ export class TopologyDisplay extends HTMLElement {
     analysis?: BarrelAnalysis,
   ): ChainLayout {
     const data = this._data!;
+    const plot = this.plotOptions;
     if (this._layouts?.data !== data || this._layouts.membrane !== membrane) {
       this._layouts = { data, membrane, byKey: new Map() };
     }
@@ -1049,6 +1069,7 @@ export class TopologyDisplay extends HTMLElement {
       opts,
       showContacts,
       assembly?.focalChainId ?? null,
+      plot,
     ]);
     let layout = this._layouts.byKey.get(key);
     if (!layout) {
@@ -1060,6 +1081,7 @@ export class TopologyDisplay extends HTMLElement {
         membrane,
         core,
         assembly,
+        plot,
       );
       this._layouts.byKey.set(key, layout);
     }

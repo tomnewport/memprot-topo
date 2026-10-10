@@ -8,8 +8,6 @@ export const PLOT = {
   // Top/bottom/right padded enough for residue-number labels that sit just
   // past the membrane-facing tips of helix/strand polygons.
   margin: { top: 36, right: 40, bottom: 36, left: 40 },
-  /** Maximum |z| (Å) shown on the y-axis — auto-expands if data exceeds. */
-  zRangeMin: 25,
   /**
    * Å per pixel on the x-axis (arc length).  Set equal to `zPxPerA` for a
    * 1:1 aspect ratio so that tilt angles in the 2-D plot faithfully match
@@ -18,7 +16,11 @@ export const PLOT = {
    * started reporting geometrically accurate arc lengths.
    */
   arcPxPerA: 2.5,
-  /** Å per pixel on the y-axis (real z).  Equal to arcPxPerA for 1:1 aspect ratio. */
+  /**
+   * Å per pixel on the y-axis (real z).  Equal to arcPxPerA for 1:1 aspect ratio.
+   * Both are the default of the `scale` attribute (issue #27); the plot's
+   * z-window is set by `height` (see `zWindow`).
+   */
   zPxPerA: 2.5,
 };
 

@@ -28,9 +28,11 @@ export function residueLabelBox(
   sampleIdx: number,
   text: string,
   isStart: boolean,
+  /** Plot scale, px per Å (issue #27). */
+  pxPerA: number = PLOT.arcPxPerA,
 ): LabelBox | null {
-  const sx = samples[sampleIdx].arc * PLOT.arcPxPerA;
-  const sy = -samples[sampleIdx].z * PLOT.zPxPerA;
+  const sx = samples[sampleIdx].arc * pxPerA;
+  const sy = -samples[sampleIdx].z * pxPerA;
 
   // Tangent (a→b) of the SS at this endpoint, in screen pixels. For the start
   // endpoint we look forward into the body; for the end we look backward.
@@ -38,8 +40,8 @@ export function residueLabelBox(
   const a = isStart ? sampleIdx : Math.max(0, sampleIdx - step);
   const b = isStart ? Math.min(samples.length - 1, sampleIdx + step) : sampleIdx;
   if (a === b) return null;
-  const tdx = (samples[b].arc - samples[a].arc) * PLOT.arcPxPerA;
-  const tdy = -(samples[b].z - samples[a].z) * PLOT.zPxPerA;
+  const tdx = (samples[b].arc - samples[a].arc) * pxPerA;
+  const tdy = -(samples[b].z - samples[a].z) * pxPerA;
   const tlen = Math.hypot(tdx, tdy);
   if (tlen < 1e-9) return null;
 

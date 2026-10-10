@@ -9,5 +9,6 @@ export * from './segments.js';
 export * from './loops.js';
 export * from './labels.js';
 export * from './chain-layout.js';
+export * from './z-window.js';
 export * from './scene.js';
 export * from './sequence.js';
