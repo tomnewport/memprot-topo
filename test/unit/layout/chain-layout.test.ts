@@ -102,6 +102,16 @@ describe('layoutChain', () => {
     );
   });
 
+  it('grows the frame only as far as the labels reach', () => {
+    const layout = layoutOf(threeHelixChain());
+    const { frame } = layout;
+    const boxes = layout.labels.flatMap((l) => (l.box ? [l.box] : []));
+    const top = Math.min(0, ...boxes.map((b) => frame.originY + b.cy - b.h / 2));
+    const left = Math.min(0, ...boxes.map((b) => frame.originX + b.cx - b.w / 2));
+    expect(frame.minY).toBeCloseTo(top, 9);
+    expect(frame.minX).toBeCloseTo(left, 9);
+  });
+
   it('unwraps a β-barrel: arrowed strands, and contact ties only when asked for', () => {
     const barrel = syntheticBarrel();
     const without = layoutOf(barrel);
