@@ -1,4 +1,6 @@
 import { clamp01, fmt, lerp, type RGB } from './colour.js';
+import { rgbStr, saturate } from './colour.js';
+import type { MorphStyle } from './types.js';
 
 /** A drawable piece of the scene, depth-sorted as a unit. */
 export interface Prim {
@@ -397,4 +399,278 @@ export class Pooled<T extends SVGElement> {
 export interface RunSlot {
   g: Pooled<SVGGElement>;
   paths: Pooled<SVGPathElement>[];
+}
+
+/** Model ids of the context chains start at this (times the chain's place + 1). */
+export const CONTEXT_ID = 1 << 20;
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * Group depth-sorted primitives into runs, emitting each into its run. A run
+ * holds consecutive pieces of one element and is drawn as one group, all its
+ * fills before its lines.
+ */
+export function mergeRuns(
+  prims: Prim[],
+  width: number,
+  height: number,
+  frame: Pick<RunLook, 'fadeOpacity' | 'contextOpacity' | 'coordScale'>,
+): Run[] {
+  // A primitive joins its element's latest run only if nothing drawn since
+  // that run started overlaps it on screen, and no piece of the run from
+  // further along the element does (see Prim.reach) — merged runs then never
+  // break the back-to-front order where it matters. A coarse grid finds the
+  // candidates; convex footprints decide.
+  const CELL = 32;
+  const cols = Math.max(1, Math.ceil(width / CELL) + 2);
+  const rows = Math.max(1, Math.ceil(height / CELL) + 2);
+  const cells: Prim[][] = Array.from({ length: cols * rows }, () => []);
+  /** Newest run index touching each cell, for a cheap early accept. */
+  const newest = new Int32Array(cols * rows).fill(-1);
+  const stamp = new Map<Prim, number>();
+  let visit = 0;
+  const open = new Map<number, number>();
+  const runs: Run[] = [];
+  for (const p of prims) {
+    const c0 = Math.max(0, Math.min(cols - 1, Math.floor(p.x0 / CELL) + 1));
+    const c1 = Math.max(0, Math.min(cols - 1, Math.floor(p.x1 / CELL) + 1));
+    const r0 = Math.max(0, Math.min(rows - 1, Math.floor(p.y0 / CELL) + 1));
+    const r1 = Math.max(0, Math.min(rows - 1, Math.floor(p.y1 / CELL) + 1));
+    let ri = open.get(p.id);
+    if (ri !== undefined) {
+      let blocked = false;
+      visit++;
+      for (let r = r0; r <= r1 && !blocked; r++) {
+        for (let c = c0; c <= c1 && !blocked; c++) {
+          const cell = r * cols + c;
+          if (newest[cell] < ri) continue;
+          for (const q of cells[cell]) {
+            const qr = q.run ?? -1;
+            if (qr < ri || stamp.get(q) === visit) continue;
+            if (
+              qr === ri &&
+              (p.reach === undefined ||
+                q.along === undefined ||
+                Math.abs((p.along ?? 0) - q.along) <= p.reach)
+            ) {
+              continue;
+            }
+            stamp.set(q, visit);
+            const margin = (p.pad ?? 0) + (q.pad ?? 0) + 1;
+            if (
+              p.x1 + margin < q.x0 ||
+              q.x1 + margin < p.x0 ||
+              p.y1 + margin < q.y0 ||
+              q.y1 + margin < p.y0
+            ) {
+              continue;
+            }
+            const hp = hullOf(p);
+            const hq = hullOf(q);
+            if (!hp || !hq || !separated(hp, hq, margin)) {
+              blocked = true;
+              break;
+            }
+          }
+        }
+      }
+      if (blocked) ri = undefined;
+    }
+    if (ri === undefined) {
+      ri = runs.length;
+      const opaque =
+        !p.faded ||
+        (frame.fadeOpacity >= 0.999 && (p.id < CONTEXT_ID || frame.contextOpacity >= 0.999));
+      runs.push(new Run(p.id, p.faded, opaque, frame.coordScale));
+      open.set(p.id, ri);
+    }
+    p.run = ri;
+    p.emit(runs[ri]);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const cell = r * cols + c;
+        cells[cell].push(p);
+        if (newest[cell] < ri) newest[cell] = ri;
+      }
+    }
+  }
+  return runs;
+}
+
+/** What {@link RunWriter.emit} needs to know about the frame besides its runs. */
+export interface RunLook {
+  style: Pick<MorphStyle, 'fadedOpacity' | 'unselectedSaturation' | 'selectionWidthScale'>;
+  /** The background: faded runs are lightened towards it. */
+  ground: RGB;
+  /** Opacity of faded (neighbouring-chain) runs. */
+  fadeOpacity: number;
+  /** Opacity of the context chains' runs (on top of `fadeOpacity`). */
+  contextOpacity: number;
+  /** Coordinate precision, steps per px. */
+  coordScale: number;
+  /** Ids of the selected elements and loops. */
+  selected: ReadonlySet<number>;
+  /** `helix`, `strand` or `loop` for a selectable id, else null. */
+  typeOf: (id: number) => string | null;
+}
+
+/**
+ * Writes runs into an SVG group as pooled `<g>`/`<path>` elements (and their
+ * gradients into `<defs>`), so a frame only touches attributes that changed.
+ */
+export class RunWriter {
+  private readonly slots: RunSlot[] = [];
+  private readonly grads: {
+    el: Pooled<SVGLinearGradientElement>;
+    stops: Pooled<SVGStopElement>[];
+  }[] = [];
+  /** Coordinate precision of the frame being written. */
+  private coordScale = 100;
+
+  constructor(
+    private readonly runsG: SVGGElement,
+    private readonly defs: SVGDefsElement,
+    private readonly idPrefix: string,
+  ) {}
+
+  /** Write `runs` as this frame's picture, hiding elements left over from the last. */
+  emit(runs: Run[], look: RunLook): void {
+    this.coordScale = look.coordScale;
+    const fadedOpacity = look.style.fadedOpacity;
+    const fadeA = look.fadeOpacity;
+    // Mix faded colours towards the background so that, drawn at `fadeA`,
+    // they look as they did at the 2-D opacity over it.
+    const k = fadedOpacity / fadeA;
+    const bg = look.ground;
+    const lighten = (c: RGB): RGB => [
+      bg[0] - k * (bg[0] - c[0]),
+      bg[1] - k * (bg[1] - c[1]),
+      bg[2] - k * (bg[2] - c[2]),
+    ];
+    const sat = look.style.unselectedSaturation;
+    const desaturate = (c: RGB): RGB => saturate(c, sat);
+    let gi = 0;
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i];
+      let slot = this.slots[i];
+      if (!slot) {
+        const g = document.createElementNS(SVG_NS, 'g');
+        this.runsG.appendChild(g);
+        slot = { g: new Pooled(g), paths: [] };
+        this.slots.push(slot);
+      }
+      slot.g.set('display', null);
+      const runA = run.faded ? fadeA * (run.id >= CONTEXT_ID ? look.contextOpacity : 1) : 1;
+      slot.g.set('opacity', runA < 0.999 ? runA.toFixed(3) : null);
+      const sel = look.selected.has(run.id);
+      // Everything else is desaturated while there is a selection (as in 2-D,
+      // the faded neighbouring chains are left alone).
+      const dull = !sel && !run.faded && look.selected.size > 0 && look.typeOf(run.id) !== null;
+      slot.g.set('class', sel ? 'selected' : null);
+      slot.g.set('data-type', sel ? look.typeOf(run.id) : null);
+      const widthScale = sel ? look.style.selectionWidthScale : 1;
+      const tint = run.faded ? lighten : dull ? desaturate : (c: RGB): RGB => c;
+      const ops = run.sortedOps();
+      for (let j = 0; j < ops.length; j++) {
+        const op = ops[j];
+        let path = slot.paths[j];
+        if (!path) {
+          const el = document.createElementNS(SVG_NS, 'path');
+          slot.g.el.appendChild(el);
+          path = new Pooled(el);
+          slot.paths.push(path);
+        }
+        path.set('display', null);
+        path.set('d', op.d.join(''));
+        const n = Math.max(1, op.rgb[3]);
+        const avg: RGB = tint([op.rgb[0] / n, op.rgb[1] / n, op.rgb[2] / n]);
+        const alpha = op.opacity[1] > 0 ? op.opacity[0] / op.opacity[1] : 1;
+        if (op.spec.kind === 'stroke') {
+          path.set('fill', 'none');
+          path.set('stroke', rgbStr(avg));
+          path.set(
+            'stroke-width',
+            ((op.width[0] / Math.max(1, op.width[1])) * widthScale).toFixed(2),
+          );
+          path.set('stroke-linecap', op.spec.linecap ?? 'round');
+          path.set('stroke-linejoin', 'round');
+          path.set('stroke-dasharray', op.spec.dash ?? null);
+          path.set('fill-rule', null);
+          path.set('opacity', alpha < 0.999 ? alpha.toFixed(3) : null);
+        } else {
+          path.set('stroke', null);
+          path.set('stroke-width', null);
+          path.set('stroke-linecap', null);
+          path.set('stroke-linejoin', null);
+          path.set('stroke-dasharray', null);
+          path.set('fill-rule', 'nonzero');
+          path.set('opacity', alpha < 0.999 ? alpha.toFixed(3) : null);
+          const grad =
+            op.spec.kind === 'gradient' && op.grad ? this.gradientFromDef(op.grad, gi, tint) : null;
+          if (grad) {
+            gi++;
+            path.set('fill', grad);
+          } else path.set('fill', rgbStr(op.grad ? tint(op.grad.mean) : avg));
+        }
+      }
+      for (let j = ops.length; j < slot.paths.length; j++) slot.paths[j].set('display', 'none');
+    }
+    for (let i = runs.length; i < this.slots.length; i++) this.slots[i].g.set('display', 'none');
+  }
+
+  /** Emit an explicit gradient, or null when its stops are all one colour. */
+  private gradientFromDef(g: GradientDef, gi: number, tint: (c: RGB) => RGB): string | null {
+    const a = g.stops[0].c;
+    let flat = true;
+    for (const s of g.stops) {
+      if (Math.abs(s.c[0] - a[0]) + Math.abs(s.c[1] - a[1]) + Math.abs(s.c[2] - a[2]) > 1.5) {
+        flat = false;
+        break;
+      }
+    }
+    if (flat || Math.hypot(g.x2 - g.x1, g.y2 - g.y1) < 0.5) return null;
+    const stops = g.stops.map((s) => ({ o: s.o, c: tint(s.c) }));
+    return this.writeGradient(gi, g.x1, g.y1, g.x2, g.y2, stops);
+  }
+
+  private writeGradient(
+    gi: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    sorted: { o: number; c: RGB }[],
+  ): string {
+    let slot = this.grads[gi];
+    if (!slot) {
+      const el = document.createElementNS(SVG_NS, 'linearGradient');
+      el.setAttribute('id', `${this.idPrefix}-g${gi}`);
+      el.setAttribute('gradientUnits', 'userSpaceOnUse');
+      this.defs.appendChild(el);
+      slot = { el: new Pooled(el), stops: [] };
+      this.grads.push(slot);
+    }
+    slot.el.set('x1', fmt(x1, this.coordScale));
+    slot.el.set('y1', fmt(y1, this.coordScale));
+    slot.el.set('x2', fmt(x2, this.coordScale));
+    slot.el.set('y2', fmt(y2, this.coordScale));
+    for (let k = 0; k < sorted.length; k++) {
+      let st = slot.stops[k];
+      if (!st) {
+        const el = document.createElementNS(SVG_NS, 'stop');
+        slot.el.el.appendChild(el);
+        st = new Pooled(el);
+        slot.stops.push(st);
+      }
+      st.set('offset', sorted[k].o.toFixed(4));
+      st.set('stop-color', rgbStr(sorted[k].c));
+    }
+    for (let k = sorted.length; k < slot.stops.length; k++) {
+      // Surplus stops repeat the last colour at offset 1.
+      slot.stops[k].set('offset', '1');
+      slot.stops[k].set('stop-color', rgbStr(sorted[sorted.length - 1].c));
+    }
+    return `url(#${this.idPrefix}-g${gi})`;
+  }
 }
