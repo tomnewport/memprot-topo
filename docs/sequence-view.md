@@ -39,6 +39,11 @@ under that. Residues the 2-D layout puts inside the membrane are shaded.
   `domain` (the data's range by default); strings are taken as CSS colours.
   `residueWidths` is not shown in the sequence view.
 
+- `sequenceTracks` only draws colour strips. The `tracks` configuration
+  ([data-tracks.md](data-tracks.md)) supersedes it, reading data from PDB and
+  CSV files and drawing heatmaps, stacked areas, line plots and feature
+  bars above or below the letters.
+
 One-letter codes come from the residue names in the structure file
 (`Calpha.resName`); residues without one show as `X`.
 
