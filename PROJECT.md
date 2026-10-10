@@ -15,8 +15,8 @@ Target publication: **OUP Bioinformatics Applications Note** (requires live publ
 The component is distributed via npm and available via jsDelivr CDN, so any researcher can embed it on a webpage with a single script tag:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/memprot2d/dist/memprot2d.min.js"></script>
-<membrane-topology pdb-id="1IWG"></membrane-topology>
+<script type="module" src="https://cdn.jsdelivr.net/npm/memprot2d/dist/memprot2d.js"></script>
+<topology-loader pdb-id="1IWG"></topology-loader>
 ```
 
 ---
@@ -38,7 +38,7 @@ Renders a 2D SVG topology diagram with B-spline curves preserving helix tilt and
 
 ### M2 — PDB/mmCIF Parser
 
-Extracts Cα coordinates, residue index, and chain ID from PDB and mmCIF files in the browser. Uses the **Mol\*** data parsing layer (`mol-io`) as a dependency (Apache 2.0). If Mol\* proves too heavy to import standalone, fall back to `ciftools-js`.
+Extracts Cα coordinates, residue index, and chain ID from PDB files in the browser, and DSSP secondary structure from mmCIF. Both are small hand-written parsers in `src/parser/` with no runtime dependencies (Mol\* `mol-io` was the original plan but was not needed).
 
 ### M3 — Orientation (`orientation`)
 
@@ -84,24 +84,24 @@ The first thing to get right before any domain code is written. Goal: a GitHub r
 
 ## Milestone 1 — Parser
 
-Verify `mol-io` standalone import feasibility, then implement PDB/mmCIF → Cα coordinate extraction. Green unit tests. No rendering yet.
+Implement PDB/mmCIF → Cα coordinate extraction. Green unit tests. No rendering yet.
 
 ---
 
 ## Tech Stack
 
-| Concern                 | Choice                    | Rationale                                               |
-| ----------------------- | ------------------------- | ------------------------------------------------------- |
-| Language                | TypeScript                | Type safety, developer tooling, browser-native          |
-| Build                   | Vite                      | Zero config, fast, clean single-bundle output           |
-| Rendering               | SVG                       | Paper-quality output, exportable, no pixelation         |
-| PDB parsing             | Mol\* mol-io (Apache 2.0) | Battle-tested, pure TS, browser-compatible              |
-| Unit testing            | Vitest                    | Native Vite integration                                 |
-| E2E / visual regression | Playwright                | Render correctness, button tests, screenshot diffs      |
-| CI                      | GitHub Actions            | Standard for open source; runs on PR                    |
-| Hosting / demo          | GitHub Pages              | Pure client-side, free, stable URL for publication      |
-| Licence                 | MIT                       | Simple, permissive, compatible with dependencies        |
-| CDN distribution        | jsDelivr + npm            | Automatic CDN from npm publish; single script tag embed |
+| Concern                 | Choice                | Rationale                                               |
+| ----------------------- | --------------------- | ------------------------------------------------------- |
+| Language                | TypeScript            | Type safety, developer tooling, browser-native          |
+| Build                   | Vite                  | Zero config, fast, clean single-bundle output           |
+| Rendering               | SVG                   | Paper-quality output, exportable, no pixelation         |
+| PDB parsing             | Own parsers (no deps) | Cα and DSSP records only; small, pure TS                |
+| Unit testing            | Vitest                | Native Vite integration                                 |
+| E2E / visual regression | Playwright            | Render correctness, button tests, screenshot diffs      |
+| CI                      | GitHub Actions        | Standard for open source; runs on PR                    |
+| Hosting / demo          | GitHub Pages          | Pure client-side, free, stable URL for publication      |
+| Licence                 | MIT                   | Simple, permissive, compatible with dependencies        |
+| CDN distribution        | jsDelivr + npm        | Automatic CDN from npm publish; single script tag embed |
 
 ---
 
@@ -151,12 +151,17 @@ Verify `mol-io` standalone import feasibility, then implement PDB/mmCIF → Cα 
 ```
 /
 ├── src/
-│   ├── components/        # Web components
+│   ├── components/        # Web components and the 2-D painter
 │   ├── parser/            # PDB/mmCIF parsing
 │   ├── orientation/       # Coordinate transforms
 │   ├── secondary-structure/
+│   ├── unroll/            # Projection onto the membrane frame
+│   ├── layout/            # Pure chain layout (2-D, 3-D and sequence views)
+│   ├── morph/             # 2-D → 3-D view (SVG painter's-algorithm engine)
+│   ├── sequence/          # Sequence view
 │   ├── membrane/
 │   ├── contacts/
+│   ├── theme/
 │   └── utils/
 ├── test/
 │   ├── unit/
