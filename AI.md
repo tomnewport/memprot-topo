@@ -21,6 +21,8 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | `src/demo-distortions.ts`        | AI-generated | Demo toggle for the sample distortions files, with OPM → MemProtMD registration.  |
 | `src/theme/`                     | AI-generated | Themes: tokens, built-in light/dark, registry and in-place repaint (issue #26).   |
 | `src/sequence/`                  | AI-generated | 1-D sequence view and its transition to the 2-D topology.                         |
+| `src/layout/`                    | AI-generated | Pure chain layout; the 2-D, 3-D and sequence views are built from it (issue #34). |
+| `src/components/render-2d.ts`    | AI-generated | Paints a chain layout as the 2-D topology SVG (issue #34).                        |
 
 ## Disclosure Guidelines
 

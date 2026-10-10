@@ -176,8 +176,9 @@ The pipeline lives in [`src/unroll/`](../src/unroll). `unrollChain`
 ([`unroll.ts`](../src/unroll/unroll.ts)) converts a chain's Cα into a sequence
 of `(arc, z)` points — `arc` is cumulative arc length along the membrane plane
 (the projected xy path), `z` is the real height relative to the bilayer
-midplane. The display component ([`topology-display.ts`](../src/components/topology-display.ts))
-draws polygons along those points.
+midplane. The layout stage ([`src/layout/`](../src/layout)) places the elements,
+loops and labels along those points, and the 2-D painter
+([`render-2d.ts`](../src/components/render-2d.ts)) draws them.
 
 ### 3.1 α-helices — local-axis projection by PCA
 

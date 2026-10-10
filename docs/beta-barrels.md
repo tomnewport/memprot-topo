@@ -106,7 +106,7 @@ draws barrels with the same polygon/loop/label machinery as everything else;
 only `arc` carries a different meaning (signed circumferential position rather
 than cumulative arc length).
 
-The display ([`topology-display.ts`](../src/components/topology-display.ts))
+The layout stage ([`chain-layout.ts`](../src/layout/chain-layout.ts))
 switches to the unwrap **only** for a chain that `analyseBarrel` reports as a
 closed, cylindrical barrel; helical bundles and planar sheets keep the existing
 arc-length layout. In barrel mode only the wall strands are drawn as strands;
