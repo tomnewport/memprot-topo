@@ -73,9 +73,10 @@ ratio. A precomputed zoom track backs the camera off where a half-rolled frame
 would otherwise run out of the picture.
 
 Once in 3-D, drag to orbit, or use the arrow keys on the focused diagram. On
-touch screens a horizontal drag turns the view and a vertical swipe still
-scrolls the page (the diagram can fill most of a phone screen), so tilting is
-mouse/pen/keyboard only. The framing is refitted when the container changes
+touch screens a vertical swipe still scrolls the page (the diagram can fill
+most of a phone screen); a drag that starts sideways turns the view, and once
+started it tilts it too, since the browser leaves a gesture that began
+sideways to the page. The framing is refitted when the container changes
 width. With `prefers-reduced-motion: reduce` the 3D button jumps straight to
 the other view instead of animating.
 
