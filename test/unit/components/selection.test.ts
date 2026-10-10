@@ -290,7 +290,7 @@ describe('TopologyDisplay selection in the 3-D view', () => {
 
   it('marks the selected elements and loops, and follows changes in place', async () => {
     const el = mount('A:1-14');
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const svg = el.shadowRoot!.querySelector('.morph-svg');
     expect(new Set(selected3d(el))).toEqual(new Set(['helix']));
     // Outlines are drawn wider while selected.
@@ -303,7 +303,7 @@ describe('TopologyDisplay selection in the 3-D view', () => {
     el.setAttribute('selection', 'A:15-18');
     expect(new Set(selected3d(el))).toEqual(new Set(['loop']));
     expect(el.shadowRoot!.querySelector('.morph-svg')).toBe(svg);
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
 
     el.removeAttribute('selection');
     expect(selected3d(el)).toEqual([]);
@@ -312,7 +312,7 @@ describe('TopologyDisplay selection in the 3-D view', () => {
 
   it('desaturates the unselected elements while there is a selection', async () => {
     const el = mount();
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     // Spread between the largest and smallest channel, over every coloured path.
     const chroma = (): number =>
       [...el.shadowRoot!.querySelectorAll('.morph-svg g path')]

@@ -130,7 +130,7 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-/** Default rolling-wave width for the 2-D → 3-D morph (see `morph-sweep`). */
+/** Default rolling-wave width for the 2-D → 3-D morph (see `transition-sweep`). */
 const DEFAULT_MORPH_SWEEP = 0.35;
 
 /** Default strand arrowhead width over ribbon width in the morph (4.65 / 2.85 Å). */
@@ -190,6 +190,23 @@ export function parseSelection(value: string | null): ParsedSelection | null {
   return { chainId: m[1], start: Math.min(a, b), end: Math.max(a, b) };
 }
 
+/** Attribute values that turn a boolean attribute off. */
+const OFF_VALUES = ['off', 'false', 'none', '0'];
+
+/**
+ * Read a boolean attribute: absent gives `fallback`; present means on, unless
+ * its value is `off`, `false`, `none` or `0` (any case).
+ */
+export function booleanAttribute(value: string | null, fallback: boolean): boolean {
+  if (value === null) return fallback;
+  return !OFF_VALUES.includes(value.trim().toLowerCase());
+}
+
+/** The space-separated, lower-cased tokens of the `debug` attribute. */
+export function debugTokens(value: string | null): Set<string> {
+  return new Set((value ?? '').toLowerCase().split(/\s+/).filter(Boolean));
+}
+
 /** Lowest and highest residue number of a chain's Cα trace. */
 function chainBounds(chain: ChainData): { start: number; end: number } {
   let start = Infinity;
@@ -204,20 +221,21 @@ function chainBounds(chain: ChainData): { start: number; end: number } {
 export class TopologyDisplay extends HTMLElement {
   static observedAttributes = [
     'protein-data',
-    'debug-loops',
-    'loop-extreme-points',
+    'debug',
+    'loop-extremes',
     'loop-extreme-threshold',
     'show-contacts',
     'dimension',
     'transition-time',
     'sequence-wrap',
-    'morph-sweep',
-    'morph-projection',
-    'morph-strand-width',
-    'morph-strand-thickness',
-    'morph-grid-spacing',
-    'morph-membrane-style',
-    'icon-bandwidth',
+    'transition-sweep',
+    'structure-projection',
+    'structure-strand-width',
+    'structure-strand-thickness',
+    'structure-grid-spacing',
+    'structure-membrane-style',
+    'chain-icon-bandwidth',
+    'fit',
     'min-helix-length',
     'min-strand-length',
     'membrane-upper',
@@ -312,7 +330,7 @@ export class TopologyDisplay extends HTMLElement {
   /** Undo the colour-scheme and theme-registry listeners while connected. */
   private _unlisten: (() => void) | null = null;
   // Cached multi-chain assembly-barrel analysis; depends only on proteinData, so
-  // it survives cosmetic re-renders (chain pick, show-contacts, debug-loops).
+  // it survives cosmetic re-renders (chain pick, show-contacts, debug).
   private _assemblyCache: {
     data: ProteinData;
     min: SsMinLengths;
@@ -578,7 +596,8 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
     if (name === 'transition-time') return;
-    if (name === 'sequence-wrap') {
+    if (name === 'sequence-wrap' || name === 'fit') {
+      // `fit` is otherwise CSS-only; fit="content" changes the sequence wrap.
       this._seq?.setOptions(this.sequenceOptions);
       return;
     }
@@ -605,12 +624,12 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
     if (
-      name === 'morph-sweep' ||
-      name === 'morph-projection' ||
-      name === 'morph-strand-width' ||
-      name === 'morph-strand-thickness' ||
-      name === 'morph-grid-spacing' ||
-      name === 'morph-membrane-style'
+      name === 'transition-sweep' ||
+      name === 'structure-projection' ||
+      name === 'structure-strand-width' ||
+      name === 'structure-strand-thickness' ||
+      name === 'structure-grid-spacing' ||
+      name === 'structure-membrane-style'
     ) {
       // 3-D only: update the morph in place, keeping its view.
       if (this._morphSource) {
@@ -619,7 +638,7 @@ export class TopologyDisplay extends HTMLElement {
       }
       return;
     }
-    if (name === 'icon-bandwidth') {
+    if (name === 'chain-icon-bandwidth') {
       // Only the chain-picker icons change.
       this.redrawPicker();
       return;
@@ -633,8 +652,8 @@ export class TopologyDisplay extends HTMLElement {
       return;
     }
     if (
-      name === 'debug-loops' ||
-      name === 'loop-extreme-points' ||
+      name === 'debug' ||
+      name === 'loop-extremes' ||
       name === 'loop-extreme-threshold' ||
       name === 'show-contacts' ||
       name === 'min-helix-length' ||
@@ -694,44 +713,45 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Whether loop control points are drawn for debugging. Hidden by default;
-   * set the `debug-loops` attribute to "on"/"true"/"show"/"1" to display them.
+   * Whether loop control points are drawn for debugging: the `loops` token
+   * of the space-separated `debug` attribute (`debug="loops"`). Debug tokens
+   * are not part of the stable API.
    */
   private get showLoopPoints(): boolean {
-    const v = this.getAttribute('debug-loops');
-    return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
+    return debugTokens(this.getAttribute('debug')).has('loops');
   }
 
   /**
    * Whether β-sheet residue contacts are overlaid as ties between paired
-   * strands. Off by default; set `show-contacts` to "on"/"true"/"show"/"1".
+   * strands (`show-contacts`, a boolean attribute; off by default).
    */
   private get showContacts(): boolean {
-    const v = this.getAttribute('show-contacts');
-    return v !== null && ['on', 'true', 'show', '1'].includes(v.toLowerCase());
+    return booleanAttribute(this.getAttribute('show-contacts'), false);
   }
 
   /**
    * Width of the rolling wave in the 2-D → 3-D morph, as a fraction of the
-   * chain (`morph-sweep`, default 0.35). 0 rolls the whole chain up at once;
+   * chain (`transition-sweep`, default 0.35). 0 rolls the whole chain up at once;
    * larger values roll it up progressively from the N-terminal end.
    */
   private get morphSweep(): number {
-    const v = Number.parseFloat(this.getAttribute('morph-sweep') ?? '');
+    const v = Number.parseFloat(this.getAttribute('transition-sweep') ?? '');
     return Number.isFinite(v) && v >= 0 ? v : DEFAULT_MORPH_SWEEP;
   }
 
   /**
-   * Projection of the finished 3-D view (`morph-projection`): `isometric`
+   * Projection of the finished 3-D view (`structure-projection`): `isometric`
    * (default, parallel) or `perspective` (35 mm-equivalent).
    */
   private get morphProjection(): keyof typeof PROJECTIONS {
-    return this.getAttribute('morph-projection') === 'perspective' ? 'perspective' : 'isometric';
+    return this.getAttribute('structure-projection') === 'perspective'
+      ? 'perspective'
+      : 'isometric';
   }
 
   /**
-   * Strand ribbon size in the 3-D view, in Å (`morph-strand-width`,
-   * `morph-strand-thickness`; defaults 2.85 × 1.0). The arrowhead keeps its
+   * Strand ribbon size in the 3-D view, in Å (`structure-strand-width`,
+   * `structure-strand-thickness`; defaults 2.85 × 1.0). The arrowhead keeps its
    * default proportion to the ribbon width. Invalid or non-positive values
    * fall back to the defaults.
    */
@@ -741,29 +761,29 @@ export class TopologyDisplay extends HTMLElement {
       return Number.isFinite(v) && v > 0 ? v : null;
     };
     const opts: Partial<MorphOptions> = {};
-    const width = read('morph-strand-width');
+    const width = read('structure-strand-width');
     if (width !== null) {
       opts.strandWidth = width;
       opts.arrowWidth = width * STRAND_ARROW_RATIO;
     }
-    const thickness = read('morph-strand-thickness');
+    const thickness = read('structure-strand-thickness');
     if (thickness !== null) opts.strandThickness = thickness;
     return opts;
   }
 
   /**
-   * Spacing (Å) of the 3-D membrane grid (`morph-grid-spacing`), at least
+   * Spacing (Å) of the 3-D membrane grid (`structure-grid-spacing`), at least
    * 2 Å; unset, `auto` or invalid gives 0, which sizes it from the membrane
    * disc (an eighth of its radius, 4–8 Å).
    */
   private get morphGridSpacing(): number {
-    const v = Number.parseFloat(this.getAttribute('morph-grid-spacing') ?? '');
+    const v = Number.parseFloat(this.getAttribute('structure-grid-spacing') ?? '');
     return Number.isFinite(v) && v > 0 ? v : 0;
   }
 
-  /** How the 3-D view draws the leaflets (`morph-membrane-style`); `grid` unless valid. */
+  /** How the 3-D view draws the leaflets (`structure-membrane-style`); `grid` unless valid. */
   private get morphMembraneStyle(): MembraneStyle {
-    const v = this.getAttribute('morph-membrane-style');
+    const v = this.getAttribute('structure-membrane-style');
     return (MEMBRANE_STYLES as readonly string[]).includes(v ?? '')
       ? (v as MembraneStyle)
       : DEFAULT_MEMBRANE_STYLE;
@@ -812,13 +832,13 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Smoothing for the chain-picker violins (`icon-bandwidth`): the σ, in Å, of
+   * Smoothing for the chain-picker violins (`chain-icon-bandwidth`): the σ, in Å, of
    * the Gaussian applied on top of the per-row residue counts (one row is half
    * a membrane thickness). Defaults to 0, the plain per-row histogram; invalid
    * or negative values fall back to the default.
    */
   private get iconBandwidth(): number {
-    const v = Number.parseFloat(this.getAttribute('icon-bandwidth') ?? '');
+    const v = Number.parseFloat(this.getAttribute('chain-icon-bandwidth') ?? '');
     return Number.isFinite(v) && v >= 0 ? v : 0;
   }
 
@@ -841,9 +861,7 @@ export class TopologyDisplay extends HTMLElement {
 
   /** Assemble the loop rendering options from the component's attributes. */
   private get loopOptions(): LoopRenderOptions {
-    const ext = this.getAttribute('loop-extreme-points');
-    const extremePoints =
-      ext === null || !['off', 'false', 'none', '0'].includes(ext.toLowerCase());
+    const extremePoints = booleanAttribute(this.getAttribute('loop-extremes'), true);
     const parsed = Number.parseFloat(this.getAttribute('loop-extreme-threshold') ?? '');
     const extremeThreshold = Number.isFinite(parsed) ? parsed : LOOP.extremeThreshold;
     return { showPoints: this.showLoopPoints, extremePoints, extremeThreshold };
@@ -1025,7 +1043,7 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /** 2-D ↔ 3-D morph progress of the displayed chain: 0 = 2-D, 1 = 3-D. */
-  get morphProgress(): number {
+  get transitionProgress(): number {
     return this._morph?.progress ?? 0;
   }
 
@@ -1033,7 +1051,7 @@ export class TopologyDisplay extends HTMLElement {
    * Jump the morph to `tau` ∈ [0, 1] without animating. Resolves once the
    * frame is drawn (the morph code is loaded on first use).
    */
-  async setMorphProgress(tau: number): Promise<void> {
+  async setTransitionProgress(tau: number): Promise<void> {
     if (tau > 0) this.finishBand();
     (await this.loadMorph())?.setProgress(tau);
   }
@@ -1674,7 +1692,7 @@ export class TopologyDisplay extends HTMLElement {
    */
   private get viewPosition(): number {
     const u = this._seq?.progress ?? 1;
-    return u < 1 ? u : 1 + this.morphProgress;
+    return u < 1 ? u : 1 + this.transitionProgress;
   }
 
   /**
@@ -1712,12 +1730,12 @@ export class TopologyDisplay extends HTMLElement {
     // Leaving the 2-D topology: its picture is the first frame either way.
     if (p !== 1) this.finishBand();
     if (p < 1) {
-      if (this.morphProgress > 0) this._morph?.setProgress(0);
+      if (this.transitionProgress > 0) this._morph?.setProgress(0);
       seq.setProgress(p);
     } else {
       seq.setProgress(1);
       if (this._morph) this._morph.setProgress(p - 1);
-      else if (p > 1) void this.setMorphProgress(p - 1);
+      else if (p > 1) void this.setTransitionProgress(p - 1);
     }
   }
 

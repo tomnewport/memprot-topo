@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { TopologyDisplay } from '../../../src/components/topology-display.js';
+import {
+  TopologyDisplay,
+  booleanAttribute,
+  debugTokens,
+} from '../../../src/components/topology-display.js';
 import type { ProteinData, ChainData } from '../../../src/types.js';
 import { syntheticBarrel } from '../fixtures/barrel.js';
 
@@ -333,7 +337,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(buttons[0].querySelector('.icon-label')!.textContent).toBe('A');
   });
 
-  it('re-renders the chain icons when icon-bandwidth changes', () => {
+  it('re-renders the chain icons when chain-icon-bandwidth changes', () => {
     const tm = tmHelixProtein().chains[0];
     const tmB = { ...tm, chainId: 'B' };
     const el = new TopologyDisplay();
@@ -342,11 +346,11 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     const path = () => el.shadowRoot!.querySelector('.icon-violin')!.getAttribute('d');
 
     const byDefault = path();
-    el.setAttribute('icon-bandwidth', '0');
+    el.setAttribute('chain-icon-bandwidth', '0');
     expect(path()).toBe(byDefault); // default = no smoothing (plain row histogram)
-    el.setAttribute('icon-bandwidth', '20');
+    el.setAttribute('chain-icon-bandwidth', '20');
     expect(path()).not.toBe(byDefault);
-    el.setAttribute('icon-bandwidth', 'nonsense');
+    el.setAttribute('chain-icon-bandwidth', 'nonsense');
     expect(path()).toBe(byDefault);
   });
 
@@ -576,7 +580,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(loopPaths[0].getAttribute('stroke-dasharray')).toBe('3 5');
   });
 
-  it('hides loop control-point markers by default and shows them via the debug-loops attribute', () => {
+  it('hides loop control-point markers by default and shows them via debug="loops"', () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = { pdbId: 'brl1', chains: [betaBarrelChain()] };
@@ -586,7 +590,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(markers.length).toBe(0);
 
     // Showing via attribute draws them without affecting the loop paths.
-    el.setAttribute('debug-loops', 'on');
+    el.setAttribute('debug', 'loops');
     markers = el.shadowRoot!.querySelectorAll('.loop-debug-point');
     expect(markers.length).toBe(12);
     expect(el.shadowRoot!.querySelectorAll('.svg-scroll svg path:not(.membrane)').length).toBe(3);
@@ -594,7 +598,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
   it('adds two vertical-extreme control points when a loop overshoots the tangent range', () => {
     const el = new TopologyDisplay();
-    el.setAttribute('debug-loops', 'on');
+    el.setAttribute('debug', 'loops');
     document.body.appendChild(el);
     // The loop (z up to 9) reaches above the tangent points (z 8) of the
     // flanking helices, triggering the two extreme points: 4 base + 2 = 6.
@@ -604,10 +608,10 @@ describe('TopologyDisplay (unrolled SVG)', () => {
     expect(markers.length).toBe(6);
   });
 
-  it('omits vertical-extreme points when loop-extreme-points is off', () => {
+  it('omits vertical-extreme points when loop-extremes is off', () => {
     const el = new TopologyDisplay();
-    el.setAttribute('debug-loops', 'on');
-    el.setAttribute('loop-extreme-points', 'off');
+    el.setAttribute('debug', 'loops');
+    el.setAttribute('loop-extremes', 'off');
     document.body.appendChild(el);
     el.proteinData = discontinuousLoopProtein();
 
@@ -618,7 +622,7 @@ describe('TopologyDisplay (unrolled SVG)', () => {
 
   it('respects a raised loop-extreme-threshold by suppressing the extreme points', () => {
     const el = new TopologyDisplay();
-    el.setAttribute('debug-loops', 'on');
+    el.setAttribute('debug', 'loops');
     // A large threshold relative to the flanking tangents' narrow z-range
     // suppresses the extreme points (4 base markers, no extreme pair).
     el.setAttribute('loop-extreme-threshold', '50');
@@ -916,8 +920,11 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
     const off = mount(barrelProtein());
     expect(off.shadowRoot!.querySelectorAll('.contact-ties line').length).toBe(0);
 
-    const on = mount(barrelProtein(), { 'show-contacts': 'on' });
+    // A boolean attribute: present means on, `off` turns it off.
+    const on = mount(barrelProtein(), { 'show-contacts': '' });
     expect(on.shadowRoot!.querySelectorAll('.contact-ties line').length).toBeGreaterThan(0);
+    on.setAttribute('show-contacts', 'off');
+    expect(on.shadowRoot!.querySelectorAll('.contact-ties line').length).toBe(0);
   });
 
   /** Strand polygons' vertex lists (x,y user-space coords) in document order. */
@@ -1051,5 +1058,21 @@ describe('TopologyDisplay (β-barrel cylindrical unwrap)', () => {
     // Some strands faded (neighbours) and some solid (focal protomer).
     expect(faded.length).toBeGreaterThan(0);
     expect(faded.length).toBeLessThan(strandPolys.length);
+  });
+});
+
+describe('attribute parsing', () => {
+  it('reads a boolean attribute as on when present unless off/false/none/0', () => {
+    expect(booleanAttribute(null, false)).toBe(false);
+    expect(booleanAttribute(null, true)).toBe(true);
+    for (const v of ['', 'on', 'true', 'show', '1', 'yes'])
+      expect(booleanAttribute(v, false)).toBe(true);
+    for (const v of ['off', 'FALSE', 'none', '0', ' Off '])
+      expect(booleanAttribute(v, true)).toBe(false);
+  });
+
+  it('splits the debug attribute into lower-cased tokens', () => {
+    expect([...debugTokens(null)]).toEqual([]);
+    expect([...debugTokens('  Loops  other ')]).toEqual(['loops', 'other']);
   });
 });

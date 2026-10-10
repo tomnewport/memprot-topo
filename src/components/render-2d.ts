@@ -326,7 +326,7 @@ export interface ChainDisplayData {
 
 /** How {@link render2d} draws a layout, beyond the theme. */
 export interface Render2dOptions {
-  /** Draw a debug circle at each loop control point (`debug-loops`). */
+  /** Draw a debug circle at each loop control point (`debug="loops"`). */
   showLoopPoints?: boolean;
   /** Residue data to style the chain with, and its legend. */
   display?: ChainDisplayData;
