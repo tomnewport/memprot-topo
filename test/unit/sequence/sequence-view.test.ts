@@ -374,11 +374,21 @@ describe('SequenceRenderer with data tracks', () => {
     expect(shifts).toHaveLength(3);
     expect(shifts[2]).toBeLessThan(shifts[1]);
     expect(shifts[1]).toBeLessThan(shifts[0]);
+    // The height only ever moves towards the topology's, never past it.
+    const heights = [0, 0.05, 0.1, EXPAND_END, 0.2, 0.3, UNWRAP_END, 0.7, 1].map((u) => {
+      r.render(u);
+      return Number(r.svg.getAttribute('height'));
+    });
+    for (let k = 1; k < heights.length; k++)
+      expect(heights[k]).toBeLessThanOrEqual(heights[k - 1] + 1e-9);
+    expect(heights[heights.length - 1]).toBeCloseTo(300, 6);
+    r.render(EXPAND_END / 2);
     const letters = r.svg.querySelector('g[font-size="11"]')!;
     expect(Number(letters.getAttribute('opacity'))).toBeLessThan(1);
-    // Collapsed: just the cartoon, with no tracks or letters.
+    // Collapsed: just the cartoon, with no tracks or letters, in a picture
+    // already the topology's height (300 px), which it then keeps.
     r.render(EXPAND_END);
-    expect(Number(r.svg.getAttribute('height'))).toBeCloseTo(compactHeight(3), 6);
+    expect(Number(r.svg.getAttribute('height'))).toBeCloseTo(300, 6);
     expect(r.svg.querySelector('rect[fill="#0000ff"]')).toBeNull();
     expect(r.svg.querySelector('text[data-res]')).toBeNull();
   });
@@ -392,6 +402,19 @@ describe('SequenceRenderer with data tracks', () => {
     r.configure(800, 0);
     r.render(0);
     expect(r.svg.querySelector('text[data-res]')).toBeNull();
+  });
+
+  it('grows the picture steadily when the topology is taller than the rows', () => {
+    const r = new SequenceRenderer(source(), { wrap: 10 }, LIGHT_THEME);
+    r.configure(420, 0);
+    const heights = [0, 0.05, EXPAND_END, 0.3, UNWRAP_END, 1].map((u) => {
+      r.render(u);
+      return Number(r.svg.getAttribute('height'));
+    });
+    expect(heights[0]).toBeLessThan(300);
+    for (let k = 1; k < heights.length; k++)
+      expect(heights[k]).toBeGreaterThanOrEqual(heights[k - 1] - 1e-9);
+    expect(heights[heights.length - 1]).toBeCloseTo(300, 6);
   });
 
   it('lays out as without tracks when there are none to draw', () => {

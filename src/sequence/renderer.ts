@@ -201,13 +201,16 @@ export class SequenceRenderer {
     const frames = transition.frame(t);
     const h2 = this.src.frame2d.height;
     const width = layout.width;
-    // The picture shrinks to the collapsed rows' height as they close up, then
-    // to the topology's height as the last row joins the line, so no row is
-    // cut off on its way.
+    // The picture's height moves one way, from the sequence's to the
+    // topology's: while the rows close up it follows them down no further
+    // than the topology's height, and goes the rest of the way as the last
+    // row joins the line, so no row is cut off on its way.
     const grow = expandAt(t);
     const lastUnwrap = frames.length > 0 ? frames[frames.length - 1].unwrap : 1;
-    const h1 = compactHeight(layout.rows.length);
-    const height = t < EXPAND_END ? h1 + (layout.height - h1) * grow : h1 + (h2 - h1) * lastUnwrap;
+    const collapsed = compactHeight(layout.rows.length);
+    const rows = collapsed + (layout.height - collapsed) * grow;
+    const floor = Math.max(collapsed, Math.min(h2, layout.height));
+    const height = t < EXPAND_END ? Math.max(rows, floor) : floor + (h2 - floor) * lastUnwrap;
     svg.setAttribute('viewBox', `0 0 ${width.toFixed(2)} ${height.toFixed(2)}`);
     svg.setAttribute('width', width.toFixed(2));
     svg.setAttribute('height', height.toFixed(2));
