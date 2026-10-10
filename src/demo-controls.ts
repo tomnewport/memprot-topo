@@ -7,7 +7,7 @@
  * (enforced by a unit test), so new attributes need an entry here. Attributes
  * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
  */
-import { DEFAULT_MORPH_OPTIONS } from './morph/renderer.js';
+import { DEFAULT_MORPH_OPTIONS } from './morph/options.js';
 import { DEFAULT_MEMBRANE_STYLE, MEMBRANE_STYLES } from './morph/membrane-style.js';
 import { DEFAULT_BULK, DEFAULT_MEMBRANE_DETAIL, MEMBRANE_DETAILS } from './membrane/model.js';
 import { registerTheme } from './theme/index.js';

@@ -1,6 +1,7 @@
 import { buildMorphModel } from './model.js';
 import type { Fishnet } from './net.js';
-import { DEFAULT_MORPH_OPTIONS, MorphRenderer, type MorphOptions, type Orbit } from './renderer.js';
+import { DEFAULT_MORPH_OPTIONS, type MorphOptions } from './options.js';
+import { MorphRenderer, type Orbit } from './renderer.js';
 import type { MorphScene, ResidueSpan } from './types.js';
 
 /** Duration (ms) of a full 2-D → 3-D transition. */

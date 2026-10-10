@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { TopologyDisplay } from '../../src/components/topology-display.js';
 import { DEMO_CONTROLS, mountDemoControls } from '../../src/demo-controls.js';
-import { DEFAULT_MORPH_OPTIONS } from '../../src/morph/renderer.js';
+import { DEFAULT_MORPH_OPTIONS } from '../../src/morph/options.js';
 
 function setup(n = 2): { panel: HTMLElement; displays: HTMLElement[]; reset: () => void } {
   const panel = document.createElement('div');
