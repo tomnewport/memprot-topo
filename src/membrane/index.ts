@@ -3,3 +3,4 @@ export * from './surface.js';
 export * from './distortions.js';
 export * from './model.js';
 export * from './profile.js';
+export * from './structure.js';

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseDsspMmcif } from '../../../src/parser/dssp-mmcif.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { isHelixConfType, parseDsspMmcif } from '../../../src/parser/dssp-mmcif.js';
 
 const SAMPLE_MMCIF = `\
 data_DSSP
@@ -95,9 +97,33 @@ TURN_P  T2 A 40 . A 42 .
 #
 `;
     const segments = parseDsspMmcif(mmcif);
-    expect(segments).toHaveLength(2);
-    expect(segments.every((s) => s.type === 'helix')).toBe(true);
-    expect(segments.map((s) => s.start).sort((a, b) => a - b)).toEqual([10, 30]);
+    expect(segments.map((s) => s.start)).toEqual([10]);
+    const with310 = parseDsspMmcif(mmcif, { helix310: true });
+    expect(with310.every((s) => s.type === 'helix')).toBe(true);
+    expect(with310.map((s) => s.start).sort((a, b) => a - b)).toEqual([10, 30]);
+  });
+
+  it('maps DSSP conformation types to helix or coil (#79)', () => {
+    expect(isHelixConfType('HELX_P')).toBe(true);
+    expect(isHelixConfType('HELX_RH_AL_P')).toBe(true);
+    expect(isHelixConfType('HELX_RH_PI_P')).toBe(true);
+    expect(isHelixConfType('HELX_RH_3T_P')).toBe(false);
+    expect(isHelixConfType('HELX_RH_3T_P', { helix310: true })).toBe(true);
+    expect(isHelixConfType('HELX_LH_PP_P')).toBe(false);
+    expect(isHelixConfType('HELX_LH_PP_P', { helix310: true })).toBe(false);
+    expect(isHelixConfType('TURN_P')).toBe(false);
+    expect(isHelixConfType('')).toBe(false);
+  });
+
+  it('draws 5G53 chain A 263-266 (polyproline II) as coil', () => {
+    const text = readFileSync(resolve(__dirname, '../../../examples/5g53.dssp.cif'), 'utf8');
+    const helices = parseDsspMmcif(text).filter((s) => s.chainId === 'A' && s.type === 'helix');
+    const covers = (resSeq: number) => helices.some((s) => s.start <= resSeq && resSeq <= s.end);
+    for (let r = 263; r <= 266; r++) expect(covers(r)).toBe(false);
+    // π helix 176-187 and 285-290 are kept; 3₁₀ 138-141 only on request.
+    expect(covers(180)).toBe(true);
+    expect(covers(288)).toBe(true);
+    expect(covers(139)).toBe(false);
   });
 
   it('handles absent/unknown values (. and ?)', () => {

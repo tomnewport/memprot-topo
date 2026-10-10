@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TopologyLoader } from '../../../src/components/topology-loader.js';
 import { TopologyDisplay } from '../../../src/components/topology-display.js';
 import { syntheticDistortions } from '../fixtures/distortions.js';
+import OMF_AT from '../../../examples/2omf_default_dppc-at.pdb?raw';
+import OMF_DSSP from '../../../examples/2omf.dssp.cif?raw';
 
 // Minimal PDB with 11 CA atoms spanning z = -20 to +20 (simulates a TM helix).
 const MINIMAL_PDB = `\
@@ -152,6 +154,28 @@ describe('TopologyLoader', () => {
 
     const display = el.shadowRoot!.querySelector('topology-display');
     expect(display).not.toBeNull();
+  });
+
+  it('draws a MemProtMD at.pdb with no distortions file: deposited chains, on its own bilayer', async () => {
+    vi.stubGlobal('fetch', makeFetchMock(OMF_AT, OMF_DSSP));
+    const el = attach(new TopologyLoader());
+    el.setAttribute('pdb-id', '2omf');
+
+    await flushPromises();
+
+    const display = el.shadowRoot!.querySelector('topology-display') as TopologyDisplay;
+    const data = display.proteinData!;
+    // One blank chain of 1020 residues becomes the trimer, in chain A's numbering.
+    expect(data.chains.map((c) => [c.chainId, c.residueCount])).toEqual([
+      ['A', 340],
+      ['B', 340],
+      ['C', 340],
+    ]);
+    expect(data.chains[1].segments.filter((s) => s.type === 'strand').length).toBeGreaterThan(10);
+    // Centred on the phosphates' midplane (z = 47.96 in the box).
+    expect(display.membrane!.shift).toBeCloseTo(-47.96, 2);
+    expect(display.membrane!.bulk.upper).toBeCloseTo(19.97, 2);
+    expect(display.shadowRoot!.querySelector('.chain-note')).toBeNull();
   });
 
   it('fetches the distortions file named by the distortions attribute and hands it on', async () => {

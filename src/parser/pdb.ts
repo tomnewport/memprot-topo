@@ -1,6 +1,9 @@
 import type { Calpha } from '../types.js';
 import type { RawChain } from './types.js';
 
+/** Names tried, in order, for a chain whose chain column is blank. */
+const BLANK_CHAIN_IDS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
 interface ChainAccumulator {
   residues: Set<string>;
   calphas: Calpha[];
@@ -15,6 +18,9 @@ interface ChainAccumulator {
  *
  * Residues are keyed by `resSeq + iCode` so insertion codes (e.g. 100A vs 100B)
  * are not collapsed. Cα order in the output preserves PDB file order.
+ *
+ * A blank chain column (as in MemProtMD's files) is a chain too, named by the
+ * first letter from A that no other chain in the file uses.
  */
 export function parsePdb(content: string): RawChain[] {
   const chainMap = new Map<string, ChainAccumulator>();
@@ -30,7 +36,7 @@ export function parsePdb(content: string): RawChain[] {
     if (line.slice(12, 16) !== ' CA ') continue;
 
     const chainId = line[21];
-    if (!chainId || chainId === ' ') continue;
+    if (!chainId) continue;
 
     const resSeqStr = line.slice(22, 26).trim();
     if (!resSeqStr) continue;
@@ -65,8 +71,9 @@ export function parsePdb(content: string): RawChain[] {
     acc.calphas.push(ca);
   }
 
+  const blankId = BLANK_CHAIN_IDS.find((id) => !chainMap.has(id)) ?? ' ';
   return Array.from(chainMap.entries()).map(([chainId, acc]) => ({
-    chainId,
+    chainId: chainId === ' ' ? blankId : chainId,
     residues: acc.residues,
     calphas: acc.calphas,
   }));

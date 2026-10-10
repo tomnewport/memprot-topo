@@ -581,7 +581,7 @@ export class TopologyDisplay extends HTMLElement {
       return cached.membrane;
     }
     const calphas = (data.chains ?? []).flatMap((c) => (Array.isArray(c.calphas) ? c.calphas : []));
-    const resolved = resolveMembrane(settings, this._distortions, calphas);
+    const resolved = resolveMembrane(settings, this._distortions, calphas, data.membrane ?? null);
     if (this._distortions && !resolved.surfaces) {
       console.warn(
         'topology-display: the structure is not in the distortions file’s frame; ' +
@@ -1516,8 +1516,9 @@ export class TopologyDisplay extends HTMLElement {
   private chainsWithCoords(): ChainData[] {
     // Don't mutate the caller's proteinData — consumers may share or memoise it.
     const min = this.ssMinLengths;
-    // A structure in a distortions file's simulation-box frame is moved onto
-    // the bulk midplane, so everything downstream sees z = 0 there.
+    // A structure in the simulation-box frame (of a distortions file or of its
+    // own lipids) is moved onto the bulk midplane, so everything downstream
+    // sees z = 0 there.
     const shift = this.membrane?.shift ?? 0;
     return (this._data?.chains ?? [])
       .filter((c) => Array.isArray(c.calphas) && c.calphas.length > 0)

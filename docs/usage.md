@@ -51,12 +51,24 @@ is a separate chunk, loaded the first time the 3-D view is shown.
 | `pdb-id`      | PDB entry. Required; nothing loads without it.                                                             |
 | `sim-id`      | MemProtMD simulation ID. Default `<pdb-id>_default_dppc`.                                                  |
 | `distortions` | URL of a MemProtMD bilayer-distortions file. Optional; if it fails to load, the default membrane is drawn. |
+| `ss-310`      | `helix` draws DSSP's 3₁₀ helices as helices. By default they are coil, as are polyproline II stretches.    |
 
 The loader fetches the simulation's `at.pdb` from
 `memprotmd.bioch.ox.ac.uk` and the entry's DSSP from `pdb-redo.eu`, so the
 page needs network access to both. While loading it shows "Loading …"; on
-failure it shows the error. Changing `pdb-id`, `sim-id` or `distortions`
-reloads.
+failure it shows the error. Changing `pdb-id`, `sim-id`, `distortions` or
+`ss-310` reloads.
+
+MemProtMD renumbers residues from 1 and writes every protomer on one chain,
+often with a blank chain ID. The loader matches the residues against the
+deposited entry's (from the DSSP file's per-residue records), so the drawing
+has the deposited chains and author numbering, and each copy of a chain in the
+simulated assembly gets the next chain ID the entry doesn't use (2OMF's trimer
+is drawn as chains A–C, each numbered as chain A). If the residues don't match,
+the structure is drawn as MemProtMD numbered it, with a console warning. The
+structure is centred on the bilayer simulated with it, read from the lipids in
+`at.pdb` (see [membrane.md](membrane.md#the-structure-files-own-membrane)), so
+no distortions file is needed to place it.
 
 `theme`, `theme-light`, `theme-dark`, `membrane-detail`, `transition-time`,
 `transition-sweep` and the `structure-*` attributes are passed through to the
@@ -128,6 +140,8 @@ interface Calpha {
 Residue numbers in `segments`, `calphas`, `selection`, `residueColours` and
 the event details are all author numbering, as in the PDB file.
 `parseDsspMmcif` reads the `auth_*` columns so that it matches `parsePdb`.
+It keeps DSSP's α and π helices and its strands; 3₁₀ helices only with
+`parseDsspMmcif(text, { helix310: true })`, and polyproline II never.
 
 Re-assigning the same object is a no-op; assign a new object to redraw.
 
