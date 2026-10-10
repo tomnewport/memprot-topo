@@ -2,8 +2,6 @@ import type { ChainData, ProteinData } from '../types.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
 import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
 import {
-  interpolateStops,
-  parseColour,
   parseSeriesAttribute,
   readDataTheme,
   resolveColouring,
@@ -23,11 +21,9 @@ import {
   MEMBRANE_STYLES,
   type MembraneStyle,
 } from '../morph/membrane-style.js';
-import type { SeqResidue, SequenceSource } from '../sequence/types.js';
+import type { SequenceSource } from '../sequence/types.js';
 import { SequenceController } from '../sequence/controller.js';
 import { DEFAULT_SEQUENCE_OPTIONS, type SequenceOptions } from '../sequence/renderer.js';
-import type { SeqLane } from '../sequence/types.js';
-import { parseResidueKey, residueKey, type ResidueKey } from '../residue-key.js';
 import { SEQ } from '../sequence/layout.js';
 import {
   DEFAULT_BULK,
@@ -77,10 +73,34 @@ import {
   type ChainLabel,
 } from './chain-picker.js';
 import { STYLES } from './topology-styles.js';
+import { FullscreenController, type FullscreenChangeDetail } from './fullscreen.js';
+import {
+  DEFAULT_TRANSITION_MS,
+  DimensionController,
+  renderViewBar,
+  type DimensionChangeDetail,
+} from './dimension-controller.js';
+import { BandBlend } from './band-blend.js';
+import {
+  bindElements,
+  chainBounds,
+  elementDetail,
+  parseSelection,
+  styleSelection,
+  type TopologyElementDetail,
+  type TopologySelection,
+} from './selection.js';
+import { sequenceLanes, type SequenceTrack } from './sequence-lanes.js';
 
 export { DEFAULT_MIN_HELIX_LENGTH, DEFAULT_MIN_STRAND_LENGTH, effectiveSsSegments };
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
+export { DEFAULT_TRANSITION_MS, parseSelection };
+export type {
+  DimensionChangeDetail,
+  FullscreenChangeDetail,
+  SequenceTrack,
+  TopologyElementDetail,
+  TopologySelection,
+};
 
 /**
  * Build a laid-out chain's three views: the 2-D SVG, the 3-D scene (null
@@ -108,12 +128,8 @@ function renderChainViews(
   return { svg, scene, sequence, decor2d };
 }
 
-/** Default time (ms) to move one whole dimension (see `transition-time`). */
-export const DEFAULT_TRANSITION_MS = 2500;
 /** A `membrane-detail` change blends over this fraction of `transition-time`. */
 const MEMBRANE_BLEND = 0.25;
-/** A number in SVG path data. */
-const PATH_NUMBER = /-?\d+(?:\.\d+)?/g;
 
 /** The membrane as drawn, for blending to a new `membrane-detail`. */
 interface MembraneSnapshot {
@@ -121,14 +137,6 @@ interface MembraneSnapshot {
   band: string | null;
   /** The 3-D membrane, while the 3-D view is shown. */
   net: Fishnet | null;
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
 }
 
 /** Default rolling-wave width for the 2-D → 3-D morph (see `transition-sweep`). */
@@ -150,35 +158,9 @@ function prefersDark(): boolean {
   );
 }
 
-/**
- * A residue range on one chain: the value of the `selection` attribute once
- * resolved, and the `detail` of `chain-select` events. `start`/`end` are
- * inclusive author residue numbers (`resSeq`).
- */
-export interface TopologySelection {
-  chainId: string;
-  start: number;
-  end: number;
-}
-
-/** `detail` of `element-click` and `element-hover` events. */
-export interface TopologyElementDetail extends TopologySelection {
-  type: 'helix' | 'strand';
-}
-
-/** `detail` of `dimension-change` events: the dimension now shown, 1 to 3. */
-export interface DimensionChangeDetail {
-  dimension: number;
-}
-
 /** `detail` of `theme-change` events: the name of the theme now in use. */
 export interface ThemeChangeDetail {
   name: string;
-}
-
-/** `detail` of `fullscreen-change` events. */
-export interface FullscreenChangeDetail {
-  fullscreen: boolean;
 }
 
 /** The events `<topology-display>` dispatches, by type. All bubble and are composed. */
@@ -190,31 +172,6 @@ export interface TopologyDisplayEventMap {
   'dimension-change': CustomEvent<DimensionChangeDetail>;
   'theme-change': CustomEvent<ThemeChangeDetail>;
   'fullscreen-change': CustomEvent<FullscreenChangeDetail>;
-}
-
-/** A parsed `selection` attribute; `start`/`end` are null for a whole chain. */
-interface ParsedSelection {
-  chainId: string;
-  start: number | null;
-  end: number | null;
-}
-
-const SELECTION_RE = /^([A-Za-z0-9_]+)(?::(-?\d+)(?:-(-?\d+))?)?$/;
-
-/**
- * Parse a `selection` attribute: `A` (whole chain), `A:45` (one residue) or
- * `A:45-60` (inclusive range; negative residue numbers allowed, e.g. `A:-3-10`).
- * A reversed range is swapped. Returns null for anything else, including a
- * range that names a second chain (`A:45-B:60`) or a list (`A:1-5,B:1-5`).
- */
-export function parseSelection(value: string | null): ParsedSelection | null {
-  if (value === null) return null;
-  const m = SELECTION_RE.exec(value.replace(/\s+/g, ''));
-  if (!m) return null;
-  if (m[2] === undefined) return { chainId: m[1], start: null, end: null };
-  const a = Number(m[2]);
-  const b = m[3] === undefined ? a : Number(m[3]);
-  return { chainId: m[1], start: Math.min(a, b), end: Math.max(a, b) };
 }
 
 /** Attribute values that turn a boolean attribute off. */
@@ -232,17 +189,6 @@ export function booleanAttribute(value: string | null, fallback: boolean): boole
 /** The space-separated, lower-cased tokens of the `debug` attribute. */
 export function debugTokens(value: string | null): Set<string> {
   return new Set((value ?? '').toLowerCase().split(/\s+/).filter(Boolean));
-}
-
-/** Lowest and highest residue number of a chain's Cα trace. */
-function chainBounds(chain: ChainData): { start: number; end: number } {
-  let start = Infinity;
-  let end = -Infinity;
-  for (const ca of chain.calphas) {
-    if (ca.resSeq < start) start = ca.resSeq;
-    if (ca.resSeq > end) end = ca.resSeq;
-  }
-  return { start, end };
 }
 
 export class TopologyDisplay extends HTMLElement {
@@ -321,24 +267,29 @@ export class TopologyDisplay extends HTMLElement {
   private _seq: SequenceController | null = null;
   /** Extra data lanes for the sequence view (see {@link sequenceTracks}). */
   private _sequenceTracks: SequenceTrack[] = [];
-  /** The running `dimension` animation's frame, and a counter that cancels a pending start. */
-  private _dimensionRaf = 0;
-  private _dimensionRun = 0;
-  /** Last position announced in a `dimension-change` event. */
-  private _lastPosition = NaN;
+  /** Moves the view between dimensions and keeps the view switch in step. */
+  private readonly _dimension = new DimensionController({
+    element: this,
+    seq: () => this._seq,
+    morph: () => this._morph,
+    has3d: () => this._morphSource !== null,
+    loadMorph: () => this.loadMorph(),
+    setTransitionProgress: (tau) => this.setTransitionProgress(tau),
+    leave2d: () => this.finishBand(),
+    onMove: () => this._scrollBox?.update(),
+  });
   private _morphLoad: Promise<MorphController | null> | null = null;
   /** A view a redraw is restoring while the morph code loads. */
   private _pendingView: MorphView | null = null;
   /** Running blend of the 2-D membrane band after a `membrane-detail` change. */
-  private _band: { raf: number; path: Element; to: string } | null = null;
+  private readonly _band = new BandBlend();
   private _scrollBox: ScrollBox | null = null;
-  /** Full-screen state: 'native' (Fullscreen API) or 'overlay' (fixed-position fallback). */
-  private _fullscreen: 'native' | 'overlay' | null = null;
-  /** Height the 3-D view fills while full screen (Infinity otherwise). */
-  private _fillHeight = Infinity;
-  private _fsButton: HTMLButtonElement | null = null;
-  /** Undo the full-screen listeners and page changes. */
-  private _fsCleanup: (() => void) | null = null;
+  private readonly _fs = new FullscreenController({
+    element: this,
+    box: () => this._scrollBox,
+    svg: () => this._shown?.svg ?? null,
+    onFillHeight: (height) => this._morph?.setFillHeight(height),
+  });
   private _selectedChainId: string | null = null;
   /** The chain picker, when the protein has more than one chain. */
   private _picker: HTMLElement | null = null;
@@ -619,7 +570,7 @@ export class TopologyDisplay extends HTMLElement {
   attributeChangedCallback(name: string, old: string | null, value: string | null) {
     if (name === 'dimension') {
       // Travel to the new dimension, keeping everything else.
-      if (value !== old && this._seq) this.animateTo(this.targetPosition);
+      if (value !== old && this._seq) this._dimension.animateTo(this._dimension.target);
       return;
     }
     if (name === 'transition-time') return;
@@ -904,12 +855,12 @@ export class TopologyDisplay extends HTMLElement {
   disconnectedCallback() {
     this._unlisten?.();
     this._unlisten = null;
-    this.leaveFullscreen();
+    this._fs.leave();
   }
 
   /** Whether the element is shown full screen. */
   get fullscreen(): boolean {
-    return this._fullscreen !== null;
+    return this._fs.active;
   }
 
   /**
@@ -917,138 +868,18 @@ export class TopologyDisplay extends HTMLElement {
    * Fullscreen API where the browser allows it (not iPhone Safari), else
    * covers the window. Escape, or the button, leaves.
    */
-  async requestFullscreenView(): Promise<void> {
-    if (this._fullscreen || !this.isConnected) return;
-    let mode: 'native' | 'overlay' = 'overlay';
-    if (document.fullscreenEnabled && typeof this.requestFullscreen === 'function') {
-      try {
-        await this.requestFullscreen({ navigationUI: 'hide' });
-        mode = 'native';
-      } catch {
-        // Refused (e.g. not from a user gesture): fall back to the overlay.
-      }
-    }
-    this.enterFullscreen(mode);
+  requestFullscreenView(): Promise<void> {
+    return this._fs.request();
   }
 
   /** Leave full screen. */
-  async exitFullscreenView(): Promise<void> {
-    const native = this._fullscreen === 'native' && document.fullscreenElement === this;
-    this.leaveFullscreen();
-    if (native) await document.exitFullscreen().catch(() => undefined);
+  exitFullscreenView(): Promise<void> {
+    return this._fs.exit();
   }
 
   /** Enter full screen, or leave it. */
   toggleFullscreen(): Promise<void> {
-    return this._fullscreen ? this.exitFullscreenView() : this.requestFullscreenView();
-  }
-
-  private enterFullscreen(mode: 'native' | 'overlay'): void {
-    this._fullscreen = mode;
-    this.setAttribute('fullscreen', '');
-    const offs: (() => void)[] = [];
-    const on = <K extends keyof DocumentEventMap>(
-      type: K,
-      fn: (e: DocumentEventMap[K]) => void,
-    ): void => {
-      document.addEventListener(type, fn);
-      offs.push(() => document.removeEventListener(type, fn));
-    };
-    if (mode === 'native') {
-      // The browser's own Escape (or the page leaving full screen).
-      on('fullscreenchange', () => {
-        if (document.fullscreenElement !== this) this.leaveFullscreen();
-      });
-    } else {
-      on('keydown', (e) => {
-        if (e.key === 'Escape') this.leaveFullscreen();
-      });
-      // The page under the overlay shouldn't scroll.
-      const root = document.documentElement;
-      const overflow = root.style.overflow;
-      root.style.overflow = 'hidden';
-      offs.push(() => (root.style.overflow = overflow));
-    }
-    if (typeof ResizeObserver !== 'undefined') {
-      const resize = new ResizeObserver(() => this.fitFullscreen());
-      resize.observe(this);
-      offs.push(() => resize.disconnect());
-    }
-    this._fsCleanup = () => offs.forEach((off) => off());
-    this.fitFullscreen();
-    this.syncFullscreenButton();
-    this.dispatchFullscreenChange();
-  }
-
-  private leaveFullscreen(): void {
-    if (!this._fullscreen) return;
-    this._fullscreen = null;
-    this._fsCleanup?.();
-    this._fsCleanup = null;
-    this.removeAttribute('fullscreen');
-    this.fitFullscreen();
-    this.syncFullscreenButton();
-    this.dispatchFullscreenChange();
-  }
-
-  private dispatchFullscreenChange(): void {
-    this.dispatchEvent(
-      new CustomEvent<FullscreenChangeDetail>('fullscreen-change', {
-        detail: { fullscreen: this.fullscreen },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
-  /**
-   * Scale the diagram box to the screen: the 2-D topology as large as fits
-   * (at most 4×; see below for when it is shrunk), with the 1-D and 3-D
-   * views at the same scale; the 3-D view fills the box's height. Undoes it
-   * all when not full screen.
-   *
-   * The box is laid out at the frame's size divided by the scale and then
-   * scaled up with a transform, so the views, which fit themselves to the
-   * box's width, see the smaller width. (CSS `zoom` would be simpler, but
-   * stray lines were seen across a zoomed 3-D view in Firefox.)
-   */
-  private fitFullscreen(): void {
-    const box = this._scrollBox;
-    const svg = this._shown?.svg;
-    if (!box) return;
-    const style = box.scroll.style;
-    let fill = Infinity;
-    if (this._fullscreen && svg) {
-      const w = Number(svg.getAttribute('width')) || 1;
-      const h = Number(svg.getAttribute('height')) || 1;
-      const fw = box.frame.clientWidth;
-      const fh = box.frame.clientHeight;
-      // Leave the border and a little slack, so rounding adds no scrollbars.
-      const aw = fw - 4;
-      const ah = fh - 4;
-      // As large as fits; never smaller than natural size for the width (it
-      // scrolls sideways instead), but shrunk, to a point, to fit the height.
-      const floor = Math.max(0.6, Math.min(1, ah / h));
-      const scale = Math.min(4, Math.max(floor, Math.min(aw / w, ah / h)));
-      style.width = `${fw / scale}px`;
-      style.height = `${fh / scale}px`;
-      style.transform = scale === 1 ? '' : `scale(${scale})`;
-      fill = box.scroll.clientHeight;
-    } else {
-      style.width = style.height = style.transform = '';
-    }
-    this._fillHeight = fill > 0 ? fill : Infinity;
-    this._morph?.setFillHeight(this._fillHeight);
-    box.update();
-  }
-
-  private syncFullscreenButton(): void {
-    const b = this._fsButton;
-    if (!b) return;
-    const on = this.fullscreen;
-    const label = on ? 'Exit full screen' : 'Full screen';
-    b.title = on ? 'Exit full screen (Esc)' : 'Show full screen';
-    b.replaceChildren(fullscreenIcon(on), label);
+    return this._fs.toggle();
   }
 
   /** Follow the system colour scheme, and themes (re-)registered by name. */
@@ -1111,9 +942,9 @@ export class TopologyDisplay extends HTMLElement {
           src.context(),
         );
         this._morph = morph;
-        morph.setFillHeight(this._fillHeight);
+        morph.setFillHeight(this._fs.fillHeight);
         morph.setSelection(this.morphSelection());
-        this.bindMorphBar(src.bar, morph);
+        morph.onChange = () => this._dimension.sync(src.bar);
         return morph;
       })
       .catch((err: unknown) => {
@@ -1201,7 +1032,7 @@ export class TopologyDisplay extends HTMLElement {
     this._morphLoad = null;
     this._scrollBox?.dispose();
     this._scrollBox = null;
-    this._fsButton = null;
+    this._fs.button = null;
     this._shown = null;
     this._picker = null;
     this._hovered = null;
@@ -1381,13 +1212,20 @@ export class TopologyDisplay extends HTMLElement {
     this._shown = { chain: selectedChain, svg };
     // The 2-D band blends only while the 2-D topology is shown and still.
     const still2d =
-      !this._dimensionRaf &&
+      !this._dimension.animating &&
       (!view || (view.tau <= 0 && !view.animating)) &&
       (seqView === null || seqView >= 1);
     if (membraneFrom?.band && still2d) this.blendBand(svg, membraneFrom.band);
     this.bindElements(svg, selectedChain.chainId);
     this.applySelection();
-    sequence.lanes = this.sequenceLanes(selectedChain.chainId, sequence.residues);
+    sequence.lanes = sequenceLanes(
+      selectedChain.chainId,
+      sequence.residues,
+      this.chainDisplayData(selectedChain.chainId)?.style.colour,
+      this.getAttribute('colour-label') || 'Colour',
+      this._sequenceTracks,
+      this._theme.dataScale,
+    );
     const seq = new SequenceController(
       scroll,
       svg,
@@ -1397,8 +1235,13 @@ export class TopologyDisplay extends HTMLElement {
       decor2d,
     );
     this._seq = seq;
-    const bar = this.renderMorphBar(scene !== null);
-    this.bindSequenceBar(bar, seq);
+    const bar = renderViewBar(
+      scene !== null,
+      (dimension) => (this.dimension = dimension),
+      () => void this.loadMorph().then((m) => m?.precompute()),
+      this._fs.createButton(),
+    );
+    seq.onChange = () => this._dimension.sync(bar);
     if (scene) {
       // Every other chain, except the protomers an assembly barrel already draws.
       const drawn = new Set(
@@ -1432,15 +1275,15 @@ export class TopologyDisplay extends HTMLElement {
     region.appendChild(block);
 
     this._contentEl.appendChild(region);
-    if (this._fullscreen) this.fitFullscreen();
+    if (this._fs.active) this._fs.fit();
 
     if (view) this.restoreView(view, membraneFrom?.net ?? null);
     if (seqView !== null) {
       if (seqView < 1) seq.setProgress(seqView);
     } else {
       // A fresh view starts at the page's `dimension`, without animating.
-      this.cancelDimension();
-      this.applyPosition(this.targetPosition);
+      this._dimension.cancel();
+      this._dimension.apply(this._dimension.target);
     }
   }
 
@@ -1460,7 +1303,7 @@ export class TopologyDisplay extends HTMLElement {
       this._pendingView = null;
       m?.restore(view);
       // Not while the view moves between dimensions: that redraws every frame.
-      if (!this._dimensionRaf) m?.blendMembraneFrom(net, this.membraneBlendTime);
+      if (!this._dimension.animating) m?.blendMembraneFrom(net, this.membraneBlendTime);
     });
   }
 
@@ -1474,50 +1317,17 @@ export class TopologyDisplay extends HTMLElement {
 
   /** Time (ms) a `membrane-detail` change takes to blend. */
   private get membraneBlendTime(): number {
-    return MEMBRANE_BLEND * this.transitionTime;
+    return MEMBRANE_BLEND * this._dimension.transitionTime;
   }
 
-  /**
-   * Blend the 2-D membrane band in `svg` from path data `from` to the band
-   * drawn there now. The first frame changes on the next animation frame, so
-   * until then the new band shows.
-   */
+  /** Blend the 2-D membrane band in `svg` from path data `from` to the band drawn there now. */
   private blendBand(svg: SVGSVGElement, from: string): void {
-    const path = svg.querySelector('path.membrane');
-    const to = path?.getAttribute('d');
-    const ms = this.membraneBlendTime;
-    if (!path || !to || to === from || ms <= 0 || prefersReducedMotion()) return;
-    // Both are membranePath output over the same x samples: blend the heights.
-    const a = from.match(PATH_NUMBER)?.map(Number);
-    const b = to.match(PATH_NUMBER)?.map(Number);
-    if (!a || !b || a.length !== b.length || a.some((v, i) => i % 2 === 0 && v !== b[i])) return;
-    const start = performance.now();
-    const band = { raf: 0, path, to };
-    const step = (now: number): void => {
-      const f = Math.max(0, Math.min(1, (now - start) / ms));
-      if (f >= 1) {
-        this.finishBand();
-        return;
-      }
-      const t = 0.5 - 0.5 * Math.cos(Math.PI * f);
-      let d = '';
-      for (let i = 0; i < a.length; i += 2) {
-        d += `${i === 0 ? 'M' : 'L'}${a[i]},${(a[i + 1] + t * (b[i + 1] - a[i + 1])).toFixed(2)}`;
-      }
-      path.setAttribute('d', d + 'Z');
-      band.raf = requestAnimationFrame(step);
-    };
-    band.raf = requestAnimationFrame(step);
-    this._band = band;
+    this._band.start(svg, from, this.membraneBlendTime);
   }
 
   /** End any 2-D band blend, showing the band it was heading for. */
   private finishBand(): void {
-    const band = this._band;
-    if (!band) return;
-    cancelAnimationFrame(band.raf);
-    band.path.setAttribute('d', band.to);
-    this._band = null;
+    this._band.finish();
   }
 
   /** The chain picker, labelled by the "Select chain" heading. */
@@ -1640,72 +1450,33 @@ export class TopologyDisplay extends HTMLElement {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
-  /** Event detail for an SS element polygon. */
-  private static elementDetail(el: Element, chainId: string): TopologyElementDetail {
-    const d = (el as SVGElement).dataset;
-    return {
-      chainId,
-      start: Number(d.start),
-      end: Number(d.end),
-      type: d.type === 'strand' ? 'strand' : 'helix',
-    };
-  }
-
   /**
    * Wire the SS element buttons: hover/focus emits `element-hover` (detail
    * null on leave), click/Enter/Space selects the element's residues and
-   * emits `element-click`. Delegated on the svg so one listener set serves
-   * every element.
+   * emits `element-click`.
    */
   private bindElements(svg: SVGSVGElement, chainId: string): void {
-    const target = (e: Event): Element | null =>
-      e.target instanceof Element ? e.target.closest('.ss-element') : null;
-    const hover = (el: Element | null): void => {
-      if (el === this._hovered) return;
-      this._hovered = el;
-      this.emit('element-hover', el ? TopologyDisplay.elementDetail(el, chainId) : null);
-    };
-    const activate = (el: Element): void => {
-      const detail = TopologyDisplay.elementDetail(el, chainId);
-      this.selectByUser(detail);
-      this.emit('element-click', detail);
-    };
-    svg.addEventListener('pointerover', (e) => hover(target(e)));
-    svg.addEventListener('pointerleave', () => hover(null));
-    svg.addEventListener('focusin', (e) => hover(target(e)));
-    svg.addEventListener('focusout', (e) => {
-      const next = (e as FocusEvent).relatedTarget;
-      if (!(next instanceof Element && svg.contains(next))) hover(null);
-    });
-    svg.addEventListener('click', (e) => {
-      const el = target(e);
-      if (el) activate(el);
-    });
-    svg.addEventListener('keydown', (e) => {
-      const el = target(e);
-      if (!el || (e.key !== 'Enter' && e.key !== ' ')) return;
-      e.preventDefault(); // Space would otherwise scroll the page.
-      activate(el);
-    });
+    bindElements(
+      svg,
+      (el) => {
+        if (el === this._hovered) return;
+        this._hovered = el;
+        this.emit('element-hover', el ? elementDetail(el, chainId) : null);
+      },
+      (el) => {
+        const detail = elementDetail(el, chainId);
+        this.selectByUser(detail);
+        this.emit('element-click', detail);
+      },
+    );
   }
 
-  /**
-   * Style the on-screen elements and loops that overlap the selection. An
-   * element or loop counts as selected when any of its residues is in range.
-   */
+  /** Style the on-screen elements and loops that overlap the selection. */
   private applySelection(): void {
     if (!this._shown) return;
     const sel = this.selection;
     const hit = sel && sel.chainId === this._shown.chain.chainId ? sel : null;
-    let any = false;
-    for (const el of this._shown.svg.querySelectorAll<SVGElement>('.ss-element, .loop')) {
-      const on =
-        hit !== null && Number(el.dataset.start) <= hit.end && Number(el.dataset.end) >= hit.start;
-      any ||= on;
-      el.classList.toggle('selected', on);
-      if (el.classList.contains('ss-element')) el.setAttribute('aria-pressed', String(on));
-    }
-    this._shown.svg.classList.toggle('has-selection', any);
+    styleSelection(this._shown.svg, hit);
     this._morph?.setSelection(this.morphSelection());
   }
 
@@ -1717,97 +1488,17 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   /**
-   * Where the view stands, 0 (sequence) → 1 (topology) → 2 (structure): the
-   * dimension minus one.
-   */
-  private get viewPosition(): number {
-    const u = this._seq?.progress ?? 1;
-    return u < 1 ? u : 1 + this.transitionProgress;
-  }
-
-  /**
    * The view's dimensionality, live: 1 (sequence), 2 (topology), 3
    * (structure), or in between while animating (1.3 is 30% of the way from
    * the sequence to the topology). Setting it writes the `dimension`
    * attribute, which animates there at `transition-time` ms per dimension.
    */
   get dimension(): number {
-    return 1 + this.viewPosition;
+    return 1 + this._dimension.position;
   }
 
   set dimension(value: number) {
     this.setAttribute('dimension', String(value));
-  }
-
-  /** Time (ms) to move one whole dimension (`transition-time`; 0 = instant). */
-  private get transitionTime(): number {
-    const v = Number.parseFloat(this.getAttribute('transition-time') ?? '');
-    return Number.isFinite(v) && v >= 0 ? v : DEFAULT_TRANSITION_MS;
-  }
-
-  /** Where `dimension` asks to be, as a view position (0–2), within what the chain can show. */
-  private get targetPosition(): number {
-    const raw = this.getAttribute('dimension');
-    const v = raw === null ? NaN : Number.parseFloat(raw);
-    const max = this._morphSource ? 2 : 1;
-    return Number.isFinite(v) ? Math.max(0, Math.min(max, v - 1)) : 1;
-  }
-
-  /** Show position `p` (0–2) at once. */
-  private applyPosition(p: number): void {
-    const seq = this._seq;
-    if (!seq) return;
-    // Leaving the 2-D topology: its picture is the first frame either way.
-    if (p !== 1) this.finishBand();
-    if (p < 1) {
-      if (this.transitionProgress > 0) this._morph?.setProgress(0);
-      seq.setProgress(p);
-    } else {
-      seq.setProgress(1);
-      if (this._morph) this._morph.setProgress(p - 1);
-      else if (p > 1) void this.setTransitionProgress(p - 1);
-    }
-  }
-
-  private cancelDimension(): void {
-    if (this._dimensionRaf) cancelAnimationFrame(this._dimensionRaf);
-    this._dimensionRaf = 0;
-    this._dimensionRun++;
-  }
-
-  /**
-   * Animate from where the view is to `target` (0–2) at `transition-time` per
-   * dimension, passing through the topology between the other two.
-   */
-  private animateTo(target: number): void {
-    this.cancelDimension();
-    const run = this._dimensionRun;
-    const from = this.viewPosition;
-    const ms = this.transitionTime * Math.abs(target - from);
-    if (ms <= 0 || from === target || prefersReducedMotion()) {
-      this.applyPosition(target);
-      return;
-    }
-    const go = (): void => {
-      if (run !== this._dimensionRun) return;
-      const start = performance.now();
-      const step = (now: number): void => {
-        const f = Math.min(1, (now - start) / ms);
-        const x = 0.5 - 0.5 * Math.cos(Math.PI * f);
-        this.applyPosition(f >= 1 ? target : from + (target - from) * x);
-        this._dimensionRaf = f < 1 ? requestAnimationFrame(step) : 0;
-      };
-      this._dimensionRaf = requestAnimationFrame(step);
-    };
-    // Set the 3-D view up before the clock starts, so the first frames don't stall.
-    if (Math.max(from, target) > 1) {
-      void this.loadMorph().then((m) => {
-        m?.precompute();
-        go();
-      });
-    } else {
-      go();
-    }
   }
 
   /** Sequence-view options from the attributes (`sequence-wrap`). */
@@ -1832,172 +1523,6 @@ export class TopologyDisplay extends HTMLElement {
   set sequenceTracks(tracks: SequenceTrack[] | null) {
     this._sequenceTracks = Array.isArray(tracks) ? tracks : [];
     this.render({ keepView: true });
-  }
-
-  /** Colour strips of the sequence view for `chainId`. */
-  private sequenceLanes(chainId: string, residues: SeqResidue[]): SeqLane[] {
-    const lanes: SeqLane[] = [];
-    const colour = this.chainDisplayData(chainId)?.style.colour;
-    if (colour) {
-      lanes.push({
-        label: this.getAttribute('colour-label') || 'Colour',
-        colourAt: (i) => colour(residueKey(residues[i])),
-      });
-    }
-    for (const track of this._sequenceTracks) {
-      const given = track.values?.[chainId];
-      if (!given) continue;
-      const values = new Map<ResidueKey, number | string>();
-      for (const [k, v] of Object.entries(given)) {
-        const key = parseResidueKey(k);
-        if (key !== null) values.set(key, v);
-      }
-      const valueAt = (i: number) => values.get(residueKey(residues[i]));
-      const nums = residues
-        .map((_, i) => valueAt(i))
-        .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-      const [lo, hi] = track.domain ?? [Math.min(...nums), Math.max(...nums)];
-      const stops = (track.scale ?? this._theme.dataScale)
-        .map(parseColour)
-        .filter((c): c is NonNullable<typeof c> => c !== null);
-      lanes.push({
-        label: track.label ?? 'Data',
-        colourAt: (i) => {
-          const v = valueAt(i);
-          if (typeof v === 'string') return v;
-          if (typeof v !== 'number' || !Number.isFinite(v) || stops.length === 0) return undefined;
-          return interpolateStops(stops, hi > lo ? (v - lo) / (hi - lo) : 0.5);
-        },
-      });
-    }
-    return lanes;
-  }
-
-  /**
-   * The view switch: 1D (sequence), 2D (topology) and 3D (structure). 3D is
-   * disabled when the chain has no 3-D view. Pointing at or focusing the
-   * switch loads the morph code and does its set-up ahead of the click.
-   */
-  private renderMorphBar(available: boolean): HTMLDivElement {
-    const bar = document.createElement('div');
-    bar.className = 'morph-bar';
-    const group = document.createElement('div');
-    group.className = 'view-switch';
-    group.setAttribute('role', 'group');
-    group.setAttribute('aria-label', 'Dimensions');
-    const views: [string, string][] = [
-      ['1D', 'Sequence: the chain flattened into its amino-acid sequence'],
-      ['2D', 'Topology: the chain unrolled across the membrane'],
-      ['3D', 'Structure: the topology rolled up into the 3-D structure'],
-    ];
-    const buttons = views.map(([text, label], k) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'view-button';
-      if (k === 2) b.classList.add('morph-toggle');
-      b.dataset.dimension = String(k + 1);
-      b.textContent = text;
-      b.title = label;
-      b.setAttribute('aria-label', label);
-      b.setAttribute('aria-pressed', k === 1 ? 'true' : 'false');
-      b.addEventListener('click', () => (this.dimension = k + 1));
-      group.appendChild(b);
-      return b;
-    });
-    const hint = document.createElement('span');
-    hint.className = 'morph-hint';
-    hint.textContent = 'Drag to rotate';
-    const fs = document.createElement('button');
-    fs.type = 'button';
-    fs.className = 'fullscreen-button';
-    fs.addEventListener('click', () => void this.toggleFullscreen());
-    this._fsButton = fs;
-    this.syncFullscreenButton();
-    bar.append(group, hint, fs);
-    if (!available) {
-      buttons[2].disabled = true;
-      buttons[2].title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
-      return bar;
-    }
-    const warm = (): void => {
-      void this.loadMorph().then((m) => m?.precompute());
-    };
-    bar.addEventListener('pointerenter', warm, { once: true });
-    bar.addEventListener('focusin', warm, { once: true });
-    return bar;
-  }
-
-  /** Bring the switch in step with the view, and tell the page where it is. */
-  private syncViewBar(bar: HTMLDivElement): void {
-    const p = this.viewPosition;
-    const shown = Math.round(this._dimensionRaf ? this.targetPosition : p) + 1;
-    for (const b of bar.querySelectorAll<HTMLButtonElement>('.view-button')) {
-      b.setAttribute('aria-pressed', Number(b.dataset.dimension) === shown ? 'true' : 'false');
-    }
-    bar.classList.toggle('is-3d', p > 1);
-    // The views resize and scroll the picture, so the edges change too.
-    this._scrollBox?.update();
-    if (p !== this._lastPosition) {
-      this._lastPosition = p;
-      this.dispatchEvent(
-        new CustomEvent<DimensionChangeDetail>('dimension-change', {
-          detail: { dimension: 1 + p },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
-  }
-
-  private bindSequenceBar(bar: HTMLDivElement, seq: SequenceController): void {
-    seq.onChange = () => this.syncViewBar(bar);
-  }
-
-  /** Keep the bar in step with the morph once it is loaded. */
-  private bindMorphBar(bar: HTMLDivElement, morph: MorphController): void {
-    morph.onChange = () => this.syncViewBar(bar);
-  }
-}
-
-/** Four corners pointing out (enter full screen) or in (leave). */
-function fullscreenIcon(exit: boolean): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('aria-hidden', 'true');
-  const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute(
-    'd',
-    exit ? 'M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5' : 'M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5',
-  );
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', 'currentColor');
-  path.setAttribute('stroke-width', '2');
-  svg.appendChild(path);
-  return svg;
-}
-
-/**
- * A data series for the sequence view (see {@link TopologyDisplay.sequenceTracks}),
- * drawn as a colour strip.
- */
-export interface SequenceTrack {
-  /** Shown beside the strip. */
-  label?: string;
-  /**
-   * Values keyed by chain ID, then residue number, with the insertion code
-   * where a residue has one (`100A`): numbers are coloured on the scale,
-   * strings are taken as CSS colours.
-   */
-  values: Record<string, Record<string | number, number | string>>;
-  /** Colour stops, low → high; the theme's data scale by default. */
-  scale?: string[];
-  /** Value range; by default the data's. */
-  domain?: [number, number];
-}
-
-declare global {
-  interface HTMLElementTagNameMap {
-    'topology-display': TopologyDisplay;
   }
 }
 
