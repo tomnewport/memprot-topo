@@ -125,6 +125,33 @@ describe('layoutChain', () => {
   });
 });
 
+describe('insertion codes', () => {
+  /** The three-helix chain with its first loop numbered 26, 26A, 27. */
+  function withInsertion(): ChainData {
+    const chain = threeHelixChain();
+    for (const ca of chain.calphas) {
+      if (ca.resSeq === 27) Object.assign(ca, { resSeq: 26, iCode: 'A' });
+      else if (ca.resSeq === 28) ca.resSeq = 27;
+    }
+    return chain;
+  }
+
+  it('keeps 26 and 26A apart in loops and the sequence view', () => {
+    const chain = withInsertion();
+    const layout = layoutOf(chain);
+    expect(layout.loops[0].residues).toEqual(['26', '26A', '27']);
+    const colours: Record<string, string> = { '26': 'red', '26A': 'blue' };
+    const seq = buildSequence(chain, layout, (key) => colours[key]);
+    const i26 = seq.residues.findIndex((r) => r.resSeq === 26 && r.iCode === '');
+    expect(seq.colourAt!(i26)).toBe('red');
+    expect(seq.colourAt!(i26 + 1)).toBe('blue');
+    // Each residue lands on its own place along the trace.
+    for (let i = 1; i < seq.trace.length; i++) {
+      expect(seq.trace[i].f).toBeGreaterThanOrEqual(seq.trace[i - 1].f);
+    }
+  });
+});
+
 describe('views from a layout', () => {
   it('builds the 3-D scene from the layout, in the same draw order', () => {
     const layout = layoutOf(threeHelixChain());

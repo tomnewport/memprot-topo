@@ -1,4 +1,5 @@
 import type { ChainData } from '../types.js';
+import { residueKey, type ResidueKey } from '../residue-key.js';
 import {
   unrollChain,
   unwrapBarrel,
@@ -88,8 +89,8 @@ export interface LayoutLoop {
   /** Segment a stub belongs to (used when one end is null). */
   seg: number;
   order: number;
-  /** Residue numbers the loop stands for, in order. */
-  residues: number[];
+  /** Residues the loop stands for, in order. */
+  residues: ResidueKey[];
   /** Author residue range it stands for in the selection; absent when it takes no part. */
   selectable?: ResidueSpan;
 }
@@ -388,7 +389,7 @@ export function layoutChain(
         to: nextRun ? { seg: s, sample: nextRun.startSample } : null,
         seg: s,
         order: order++,
-        residues: loopResidues.map((r) => r.resSeq),
+        residues: loopResidues.map(residueKey),
         selectable: selectable
           ? { start: loopResidues[0].resSeq, end: loopResidues[loopResidues.length - 1].resSeq }
           : undefined,
@@ -428,10 +429,8 @@ export function layoutChain(
         residues: [
           ...prevLayout.residues
             .filter((r) => !lastSs || r.resSeq > lastSs.endResSeq)
-            .map((r) => r.resSeq),
-          ...residues
-            .filter((r) => !firstSs || r.resSeq < firstSs.startResSeq)
-            .map((r) => r.resSeq),
+            .map(residueKey),
+          ...residues.filter((r) => !firstSs || r.resSeq < firstSs.startResSeq).map(residueKey),
         ],
         selectable: marked ? { start: from, end: to } : undefined,
       });
@@ -490,10 +489,10 @@ export function layoutChain(
  * hydrogen-bond across the sheet".
  */
 function contactTies(analysis: BarrelAnalysis, layouts: SegmentLayout[]): LayoutTie[] {
-  const pos = new Map<number, { arc: number; z: number; seg: number; sample: number }>();
+  const pos = new Map<ResidueKey, { arc: number; z: number; seg: number; sample: number }>();
   for (let s = 0; s < layouts.length; s++) {
     for (const r of layouts[s].residues) {
-      pos.set(r.resSeq, { arc: r.arc, z: r.z, seg: s, sample: r.sampleIndex });
+      pos.set(residueKey(r), { arc: r.arc, z: r.z, seg: s, sample: r.sampleIndex });
     }
   }
   // Only tie pairings between barrel-wall (ring) strands. Strands that fold
@@ -504,8 +503,8 @@ function contactTies(analysis: BarrelAnalysis, layouts: SegmentLayout[]): Layout
   for (const pairing of analysis.pairings) {
     if (!ring.has(pairing.a) || !ring.has(pairing.b)) continue;
     for (const c of pairing.contacts) {
-      const a = pos.get(c.aResSeq);
-      const b = pos.get(c.bResSeq);
+      const a = pos.get(c.aKey);
+      const b = pos.get(c.bKey);
       if (!a || !b) continue;
       ties.push({
         a: { seg: a.seg, sample: a.sample, arc: a.arc, z: a.z },

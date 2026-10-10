@@ -35,6 +35,7 @@
  */
 
 import type { Calpha, ChainData, SecondaryStructureSegment } from '../types.js';
+import { residueKey, type ResidueKey } from '../residue-key.js';
 
 export interface Vec3 {
   x: number;
@@ -59,6 +60,9 @@ export interface Strand {
 export interface ResidueContact {
   aResSeq: number;
   bResSeq: number;
+  /** The two residues' keys (number plus insertion code, e.g. `100A`). */
+  aKey: ResidueKey;
+  bKey: ResidueKey;
   /** Cα–Cα distance (Å). */
   distance: number;
 }
@@ -230,18 +234,12 @@ function mergeStrandSegments(segments: SecondaryStructureSegment[]): SecondarySt
  * are skipped (too short for a meaningful axis).
  */
 export function extractStrands(calphas: Calpha[], segments: SecondaryStructureSegment[]): Strand[] {
-  const byRes = new Map<number, Calpha>();
-  for (const c of calphas) byRes.set(c.resSeq, c);
-
   const strands: Strand[] = [];
   const strandSegs = mergeStrandSegments(segments);
 
   for (const seg of strandSegs) {
-    const cas: Calpha[] = [];
-    for (let r = seg.start; r <= seg.end; r++) {
-      const c = byRes.get(r);
-      if (c) cas.push(c);
-    }
+    // Every Cα numbered within the segment, insertion codes included.
+    const cas = calphas.filter((c) => c.resSeq >= seg.start && c.resSeq <= seg.end);
     if (cas.length < 2) continue;
     const { centroid, axis } = strandAxis(cas);
     strands.push({ index: strands.length, segment: seg, calphas: cas, centroid, axis });
@@ -273,7 +271,13 @@ function pairOf(a: Strand, b: Strand, opts: Required<BarrelAnalysisOptions>): St
     }
     nearest.push(best);
     if (bestCb && best <= opts.contactCutoff) {
-      contacts.push({ aResSeq: ca.resSeq, bResSeq: bestCb.resSeq, distance: best });
+      contacts.push({
+        aResSeq: ca.resSeq,
+        bResSeq: bestCb.resSeq,
+        aKey: residueKey(ca),
+        bKey: residueKey(bestCb),
+        distance: best,
+      });
     }
   }
 
