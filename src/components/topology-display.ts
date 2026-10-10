@@ -15,7 +15,7 @@ import type { IconMembrane } from './chain-icon.js';
 import { ScrollBox } from './scroll-box.js';
 import type { MorphScene } from '../morph/types.js';
 import type { MorphController, MorphView } from '../morph/controller.js';
-import type { MorphOptions } from '../morph/renderer.js';
+import type { MorphOptions } from '../morph/options.js';
 import type { Fishnet } from '../morph/net.js';
 import { PROJECTIONS } from '../morph/projections.js';
 import {
