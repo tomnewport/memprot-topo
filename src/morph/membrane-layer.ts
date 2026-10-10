@@ -1,3 +1,9 @@
+/**
+ * The membrane in the 3-D view: the rim and midplane behind the protein, the
+ * leaflet sheets (and the surface style's colour bands), the fishnet lines,
+ * and the veil that tints the protein where a leaflet is in front of it.
+ */
+
 import { Camera } from './camera.js';
 import { mixRgb, type RGB, smooth } from './colour.js';
 import type { OpSpec } from './engine.js';

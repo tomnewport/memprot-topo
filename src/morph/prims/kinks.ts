@@ -1,3 +1,5 @@
+/** Helix axis fitting and kink detection on the real structure. */
+
 /** Distance (Å) over which a loop eases from a moved element end to its own path. */
 export const END_EASE = 5;
 

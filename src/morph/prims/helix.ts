@@ -1,3 +1,5 @@
+/** Helices in the 3-D view: flat 2-D bars that grow into shaded cylinders. */
+
 import {
   AMBIENT,
   DIFFUSE,

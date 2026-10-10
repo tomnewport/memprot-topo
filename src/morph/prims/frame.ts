@@ -1,3 +1,5 @@
+/** Per-frame state shared by the element builders and the membrane layer. */
+
 import { Camera } from '../camera.js';
 import type { Pose } from '../curtain.js';
 import type { Prim } from '../engine.js';

@@ -1,3 +1,10 @@
+/**
+ * The 3-D view's drawing engine, in SVG: primitives (depth-sorted pieces of
+ * the scene), runs that collect consecutive pieces of one element into
+ * fill/stroke/gradient ops, the merging of sorted primitives into runs, and
+ * the writer that turns runs into pooled SVG elements each frame.
+ */
+
 import { clamp01, fmt, lerp, type RGB } from './colour.js';
 import { rgbStr, saturate } from './colour.js';
 import type { MorphStyle } from './types.js';

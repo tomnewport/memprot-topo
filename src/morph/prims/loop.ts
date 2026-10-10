@@ -1,3 +1,5 @@
+/** Loops in the 3-D view (lines that grow into tubes) and β-sheet contact ties. */
+
 import { clamp01, fogged, hexRgb, lerp, LIGHT, mixRgb, smooth, WHITE } from '../colour.js';
 import { DASH_ON, DASH_PERIOD, dashPieces, type OpSpec, Run } from '../engine.js';
 import { veilBoundary, veiled } from '../membrane-layer.js';

@@ -1,3 +1,5 @@
+/** Strands in the 3-D view: flat 2-D arrows that grow into thick ribbons. */
+
 import { type OutlinePoint, type OutlineSection, ssOutline } from '../../components/ss-outline.js';
 import {
   AMBIENT,

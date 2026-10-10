@@ -1,3 +1,5 @@
+/** Op specs (layer, key, kind) and screen tolerances shared by the element builders. */
+
 import type { OpSpec } from '../engine.js';
 
 export const SILHOUETTE: OpSpec = { layer: 2, key: 'sil-l', kind: 'stroke', linecap: 'round' };

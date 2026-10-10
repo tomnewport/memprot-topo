@@ -1,3 +1,5 @@
+/** Colour arithmetic, lighting and fog shared by the 3-D view's layers. */
+
 export type RGB = [number, number, number];
 
 /** Compact coordinate formatting to `scale` steps per px — much cheaper than toFixed. */

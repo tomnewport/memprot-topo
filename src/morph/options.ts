@@ -1,3 +1,8 @@
+/**
+ * The 3-D view's tunable options and their defaults, in a module of their own
+ * so pages can read them without loading the renderer.
+ */
+
 import { DEFAULT_MEMBRANE_STYLE, type MembraneStyle } from './membrane-style.js';
 
 /** Tunable 3-D appearance. Lengths in Å, angles in radians. */
