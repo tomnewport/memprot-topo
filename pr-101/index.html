@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MemProt2D — Demo</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #f8f9fa;
+        color: #212529;
+        line-height: 1.5;
+      }
+
+      header {
+        background: #1a1a2e;
+        color: #fff;
+        padding: 1.5rem 2rem;
+      }
+
+      header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.75rem;
+      }
+
+      header p {
+        margin: 0;
+        opacity: 0.75;
+        font-size: 0.95rem;
+      }
+
+      main {
+        padding: 2rem;
+      }
+
+      .protein-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+      }
+
+      section,
+      .controls {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+
+      section h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #495057;
+        border-bottom: 1px solid #e9ecef;
+        padding-bottom: 0.5rem;
+      }
+
+      /*
+       * Parameters live in a narrow sidebar that scrolls on its own and
+       * collapses to a thin strip, so the diagrams keep most of the width.
+       */
+      .layout {
+        display: flex;
+        align-items: flex-start;
+        gap: 1.5rem;
+      }
+
+      .protein-grid {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .controls {
+        flex: none;
+        position: sticky;
+        top: 1rem;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0.75rem 0.9rem;
+      }
+
+      .controls details[open] {
+        width: 16rem;
+      }
+
+      .controls summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: #495057;
+        white-space: nowrap;
+      }
+
+      /* Collapsed: a thin vertical tab. */
+      .controls:has(details:not([open])) {
+        padding: 0.75rem 0.4rem;
+      }
+      .controls details:not([open]) summary {
+        writing-mode: vertical-rl;
+        list-style: none;
+      }
+      .controls details:not([open]) summary::-webkit-details-marker {
+        display: none;
+      }
+      .controls details:not([open]) summary::before {
+        content: '\25B8\00A0';
+      }
+
+      .controls p {
+        margin: 0.5rem 0;
+        font-size: 0.8rem;
+        color: #6c757d;
+      }
+
+      .controls .control-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .controls .control {
+        grid-template-columns: auto 1fr;
+        grid-template-areas:
+          'label label'
+          'input default';
+        padding: 0.3rem 0;
+        border-top: 1px solid #e9ecef;
+      }
+
+      .controls .control:has(input[type='text']) {
+        grid-template-areas:
+          'label label'
+          'input input'
+          'default default';
+      }
+
+      .controls .control input[type='text'] {
+        width: 100%;
+      }
+
+      .controls .control .default {
+        text-align: right;
+      }
+
+      @media (max-width: 899px) {
+        .layout {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .controls {
+          position: static;
+          max-height: 60vh;
+        }
+        .controls details[open] {
+          width: auto;
+        }
+        .controls details:not([open]) summary {
+          writing-mode: horizontal-tb;
+        }
+        .controls .control-grid {
+          grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+          column-gap: 1.25rem;
+        }
+      }
+
+      .control-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+        gap: 0.5rem 1.25rem;
+      }
+
+      .control {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+          'label input'
+          'default default';
+        align-items: center;
+        column-gap: 0.5rem;
+        font-size: 0.85rem;
+      }
+
+      .control label {
+        grid-area: label;
+      }
+
+      .control input,
+      .control select {
+        grid-area: input;
+        font: inherit;
+      }
+
+      .control input[type='number'] {
+        width: 5rem;
+      }
+
+      .control input[type='text'] {
+        width: 11rem;
+      }
+
+      .control .default {
+        grid-area: default;
+        font-size: 0.75rem;
+        color: #6c757d;
+      }
+
+      .display-controls {
+        max-width: 26rem;
+        margin-bottom: 0.75rem;
+      }
+
+      footer {
+        padding: 1.5rem 2rem;
+        font-size: 0.85rem;
+        color: #6c757d;
+        border-top: 1px solid #dee2e6;
+        text-align: center;
+      }
+
+      footer a {
+        color: #0d6efd;
+        text-decoration: none;
+      }
+
+      footer a:hover {
+        text-decoration: underline;
+      }
+
+      /* The page follows the diagrams' theme (set by the theme control). */
+      :root[data-theme='dark'] body {
+        background: #121316;
+        color: #e4e6e8;
+      }
+      :root[data-theme='dark'] section,
+      :root[data-theme='dark'] .controls {
+        background: #1c1d20;
+        border-color: #3a3d42;
+      }
+      :root[data-theme='dark'] .controls .control {
+        border-top-color: #3a3d42;
+      }
+      :root[data-theme='dark'] .controls summary {
+        color: #c9cbce;
+      }
+      :root[data-theme='dark'] section h2 {
+        color: #c9cbce;
+        border-bottom-color: #3a3d42;
+      }
+
+      @media (max-width: 640px) {
+        header {
+          padding: 1rem;
+        }
+        main {
+          padding: 1rem;
+        }
+        section {
+          padding: 0.75rem;
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-ByLsQdkj.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>MemProt2D</h1>
+      <p>Membrane protein 2D topology viewer — development demo</p>
+    </header>
+    <main class="layout">
+      <aside class="controls">
+        <details open>
+          <summary>Parameters</summary>
+          <p>
+            Each control sets one <code>&lt;topology-display&gt;</code> attribute on every diagram
+            below; hover a control for what it does. <code>selection</code> is set per diagram.
+            <button type="button" id="controls-reset">Reset to defaults</button>
+          </p>
+          <div id="controls"></div>
+          <p class="distortions-control">
+            <label>
+              <input type="checkbox" id="distortions" autocomplete="off" checked />
+              MemProtMD bilayer distortions
+            </label>
+            <span id="distortions-status" role="status"></span>
+          </p>
+        </details>
+      </aside>
+      <div class="protein-grid">
+        <section>
+          <h2>OmpC Osmoporin (2J1N) — β-barrel, thesis fig 2.10</h2>
+          <topology-display id="td-2j1n"></topology-display>
+        </section>
+        <section>
+          <h2>A2A Adenosine Receptor with engineered G-protein (5G53) — thesis fig 2.10</h2>
+          <topology-display id="td-5g53"></topology-display>
+        </section>
+        <section>
+          <h2>OmpF Porin (3K19) — β-barrel</h2>
+          <topology-display id="td-3k19"></topology-display>
+        </section>
+        <section>
+          <h2>OmpF Porin (2OMF)</h2>
+          <topology-display id="td-2omf"></topology-display>
+        </section>
+        <section>
+          <h2>Alpha-Hemolysin (7AHL)</h2>
+          <topology-display id="td-7ahl"></topology-display>
+        </section>
+      </div>
+    </main>
+    <footer>
+      <p id="build-info"></p>
+      <p>
+        Structure data from <a href="https://opm.phar.umich.edu">OPM</a>
+        (Lomize et al.), bilayer distortions from
+        <a href="https://memprotmd.bioch.ox.ac.uk">MemProtMD</a> (Newport et al.) and
+        <a href="https://pdb-redo.eu">PDB-REDO</a> (Vriend et al.; copyright-free). Underlying PDB
+        entries: <a href="https://www.wwpdb.org/about/usage-policies">wwPDB CC0</a>.
+      </p>
+    </footer>
+  </body>
+</html>
