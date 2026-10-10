@@ -152,9 +152,9 @@ describe('SequenceRenderer', () => {
     expect(r.svg.querySelector('text[data-res]')).toBeNull();
   });
 
-  it('starts the line at the gutter when the slab starts off screen', () => {
+  it('puts the chain on one line across the full width of the box', () => {
     const r = new SequenceRenderer(source(), { wrap: null }, LIGHT_THEME);
-    // Scrolled 100 px: the slab runs from -50 to 250 on screen.
+    // Scrolled 100 px: the slab (-50 to 250 on screen) doesn't limit the line.
     r.configure(420, 100);
     r.render(UNWRAP_END);
     const xs = [...r.svg.querySelectorAll('polyline')].flatMap((p) =>
@@ -164,7 +164,7 @@ describe('SequenceRenderer', () => {
         .map((xy) => Number(xy.split(',')[0])),
     );
     expect(Math.min(...xs)).toBeCloseTo(12, 1);
-    expect(Math.max(...xs)).toBeCloseTo(250, 1);
+    expect(Math.max(...xs)).toBeCloseTo(420 - 12, 1);
   });
 
   it('picks up new options and themes on the next configure and render', () => {

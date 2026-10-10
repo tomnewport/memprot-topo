@@ -160,15 +160,11 @@ export class SequenceRenderer {
       f: p.f,
     }));
     this.trace = trace;
-    // The rows unwrap onto one line, squeezed to fit the membrane slab where
-    // it is on screen, otherwise the box.
+    // The rows unwrap onto one line across the full width of the box.
     const o = this.src.origin2d;
-    const slabX0 = o.x + this.src.slab.x0 * o.pxPerA + this.offset.x;
-    const slabX1 = o.x + this.src.slab.x1 * o.pxPerA + this.offset.x;
-    const right = this.layout.width - SEQ.gutterRightPx;
     this.transition = new SequenceTransition(trace, this.layout, {
-      x0: slabX0 >= 0 && slabX0 < right ? slabX0 : SEQ.gutterRightPx,
-      x1: Math.min(slabX1, right),
+      x0: SEQ.gutterRightPx,
+      x1: this.layout.width - SEQ.gutterRightPx,
       // The first (collapsed) row stays put and the others snake up to join it.
       y: this.layout.rows.length > 0 ? compactCentre(0) : o.y + this.offset.y,
     });

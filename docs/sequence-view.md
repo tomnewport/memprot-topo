@@ -59,7 +59,7 @@ the lines flatten, wrap, then expand):
 2. **Unwrap.** The rows snake together into one line, first row first: the
    first row stays where it is and shrinks along x, and each following row
    rises to join the end of the one before, so the whole chain ends up on one
-   line that fits the box (or the membrane slab, where that is on screen).
+   line across the full width of the box.
    While they move, a faint curve joins each row's end to the next row's
    start.
 3. **Fold.** A wave runs from the left-most residue to the right; as it
