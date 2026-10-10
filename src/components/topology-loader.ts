@@ -4,6 +4,7 @@ import { parseDsspMmcif } from '../parser/dssp-mmcif.js';
 import { mergeProteinData } from '../parser/merge.js';
 import { parseDistortions, type MembraneDistortions } from '../membrane/distortions.js';
 import { TopologyDisplay } from './topology-display.js';
+import type { TracksConfig } from '../tracks/types.js';
 
 const STYLES = `
   :host { display: block; font-family: sans-serif; padding: 0.5rem; }
@@ -25,6 +26,7 @@ const FORWARDED = [
   'structure-strand-thickness',
   'structure-grid-spacing',
   'structure-membrane-style',
+  'tracks',
 ];
 
 export class TopologyLoader extends HTMLElement {
@@ -34,6 +36,7 @@ export class TopologyLoader extends HTMLElement {
   private _simId: string | null = null;
   /** URL of a MemProtMD bilayer-distortions file for the structure. */
   private _distortionsUrl: string | null = null;
+  private _tracks: TracksConfig | string | null = null;
   private _generation = 0;
   private _abortController: AbortController | null = null;
   private _styleEl: HTMLStyleElement;
@@ -51,8 +54,12 @@ export class TopologyLoader extends HTMLElement {
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
     if (oldValue === value) return;
     if (FORWARDED.includes(name)) {
-      const display = this._contentEl.querySelector('topology-display');
+      const display = this._contentEl.querySelector<TopologyDisplay>('topology-display');
       if (display) forward(this, display, name);
+      // The attribute beats the loader's script child (handed on as a property).
+      if (display && name === 'tracks' && this._tracks === null) {
+        display.tracks = this.tracksForDisplay();
+      }
       return;
     }
     if (name === 'pdb-id') this._pdbId = value;
@@ -90,9 +97,34 @@ export class TopologyLoader extends HTMLElement {
     this._contentEl.replaceChildren(errDiv, detailDiv);
   }
 
+  /**
+   * Data tracks for the display (issue #83), as `<topology-display>`'s
+   * `tracks` takes them. A `tracks` attribute or a
+   * `<script type="application/json" slot="tracks">` child of the loader
+   * works too.
+   */
+  get tracks(): TracksConfig | string | null {
+    return this._tracks;
+  }
+
+  set tracks(value: TracksConfig | string | null) {
+    this._tracks = value ?? null;
+    const display = this._contentEl.querySelector<TopologyDisplay>('topology-display');
+    if (display) display.tracks = this.tracksForDisplay();
+  }
+
+  /** The property, else a script child's text (the attribute is forwarded as is). */
+  private tracksForDisplay(): TracksConfig | string | null {
+    if (this._tracks !== null) return this._tracks;
+    if (this.hasAttribute('tracks')) return null;
+    return this.querySelector(':scope > script[slot="tracks"]')?.textContent ?? null;
+  }
+
   private renderData(data: ProteinData, distortions: MembraneDistortions | null) {
     const display = document.createElement('topology-display') as TopologyDisplay;
     for (const name of FORWARDED) forward(this, display, name);
+    const tracks = this.tracksForDisplay();
+    if (tracks !== null) display.tracks = tracks;
     if (distortions) display.distortions = distortions;
     display.proteinData = data;
     this._contentEl.replaceChildren(display);

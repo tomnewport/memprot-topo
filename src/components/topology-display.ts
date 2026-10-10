@@ -46,6 +46,7 @@ import {
   repaint,
   resolveThemeName,
   themeCss,
+  VIRIDIS,
   type Theme,
   type ThemeInput,
   type ThemeName,
@@ -91,6 +92,9 @@ import {
   type TopologySelection,
 } from './selection.js';
 import { sequenceLanes, type SequenceTrack } from './sequence-lanes.js';
+import { DataTracks } from './data-tracks.js';
+import { AMINO_ACID_COLOURS as CHEMISTRY_COLOURS } from './residue-data.js';
+import type { TracksConfig } from '../tracks/types.js';
 
 export { DEFAULT_MIN_HELIX_LENGTH, DEFAULT_MIN_STRAND_LENGTH, effectiveSsSegments };
 export { DEFAULT_TRANSITION_MS, parseSelection };
@@ -225,6 +229,7 @@ export class TopologyDisplay extends HTMLElement {
     'theme',
     'theme-light',
     'theme-dark',
+    'tracks',
   ];
 
   /** Add or replace a named theme (see {@link registerTheme}). */
@@ -267,6 +272,15 @@ export class TopologyDisplay extends HTMLElement {
   private _seq: SequenceController | null = null;
   /** Extra data lanes for the sequence view (see {@link sequenceTracks}). */
   private _sequenceTracks: SequenceTrack[] = [];
+  /** Data tracks (issue #83): the configuration, its loaded sources and their resolution. */
+  private readonly _tracks = new DataTracks({
+    redraw: () => {
+      if (this._data && this.isConnected) this.render({ keepView: true });
+    },
+    warn: (m) => console.warn(`topology-display: tracks: ${m}`),
+  });
+  /** Where the tracks configuration came from: the property beats the attribute, which beats a script child. */
+  private _tracksFrom: 'property' | 'attribute' | 'script' | null = null;
   /** Moves the view between dimensions and keeps the view switch in step. */
   private readonly _dimension = new DimensionController({
     element: this,
@@ -402,7 +416,7 @@ export class TopologyDisplay extends HTMLElement {
     const palettesChanged =
       old.dataScale.join() !== theme.dataScale.join() ||
       old.dataCategories.join() !== theme.dataCategories.join();
-    if (palettesChanged && this._residueColours) {
+    if (palettesChanged && (this._residueColours || this._tracks.active)) {
       this.render({ keepView: true });
       return;
     }
@@ -649,6 +663,17 @@ export class TopologyDisplay extends HTMLElement {
       this.render({ keepView: true });
       return;
     }
+    if (name === 'tracks') {
+      if (this._tracksFrom === 'property') return;
+      if (value === null) {
+        this._tracksFrom = null;
+        this.readTracksScript();
+      } else {
+        this._tracksFrom = 'attribute';
+        this._tracks.set(value);
+      }
+      return;
+    }
     if (name === 'colour-scale' || name === 'colour-domain' || name === 'colour-label') {
       this.render({ keepView: true });
       return;
@@ -846,6 +871,7 @@ export class TopologyDisplay extends HTMLElement {
   }
 
   connectedCallback() {
+    if (this._tracksFrom === null) this.readTracksScript();
     this.listenForThemes();
     // The colour scheme may have changed while disconnected.
     this.applyTheme();
@@ -1230,6 +1256,23 @@ export class TopologyDisplay extends HTMLElement {
       this._sequenceTracks,
       this._theme.dataScale,
     );
+    const dataTheme = readDataTheme(this, {
+      scale: this._theme.dataScale,
+      categories: this._theme.dataCategories,
+    });
+    sequence.tracks = this._tracks.resolve(
+      selectedChain.chainId,
+      sequence.residues,
+      this._data.chains,
+      sequence.z,
+      sequence.membrane,
+      {
+        dataScale: dataTheme.scale,
+        dataCategories: dataTheme.categories,
+        viridis: VIRIDIS,
+        aminoAcids: CHEMISTRY_COLOURS,
+      },
+    );
     const seq = new SequenceController(
       scroll,
       svg,
@@ -1373,8 +1416,12 @@ export class TopologyDisplay extends HTMLElement {
 
   /** Residue data styling for `chainId`, or undefined when there is none. */
   private chainDisplayData(chainId: string): ChainDisplayData | undefined {
+    // The page's own residue data wins over the tracks configuration's `chain`.
+    const fromTracks = this._data ? this._tracks.chainStyle(this._data.chains) : null;
+    const colours = this._residueColours ?? fromTracks?.colours ?? null;
+    const widthValues = this._residueWidths ?? fromTracks?.widths ?? null;
     const colouring = resolveColouring(
-      this._residueColours,
+      colours,
       {
         scale: this.getAttribute('colour-scale'),
         domain: this.getAttribute('colour-domain'),
@@ -1385,8 +1432,8 @@ export class TopologyDisplay extends HTMLElement {
         categories: this._theme.dataCategories,
       }),
     );
-    const widths = widthFactors(this._residueWidths, chainId);
-    const chainColoured = !!this._residueColours?.[chainId] && colouring !== null;
+    const widths = widthFactors(widthValues, chainId);
+    const chainColoured = !!colours?.[chainId] && colouring !== null;
     if (!chainColoured && widths.size === 0) return undefined;
     return {
       style: {
@@ -1527,6 +1574,38 @@ export class TopologyDisplay extends HTMLElement {
   set sequenceTracks(tracks: SequenceTrack[] | null) {
     this._sequenceTracks = Array.isArray(tracks) ? tracks : [];
     this.render({ keepView: true });
+  }
+
+  /**
+   * Data tracks (issue #83): where per-residue data comes from, what it
+   * means, and how the sequence view draws it, as an object or JSON text.
+   * See docs/data-tracks.md. Setting it overrides the `tracks` attribute and
+   * a `<script type="application/json" slot="tracks">` child; null goes back
+   * to those.
+   */
+  get tracks(): TracksConfig | string | null {
+    return this._tracks.value;
+  }
+
+  set tracks(value: TracksConfig | string | null) {
+    if (value === null || value === undefined) {
+      this._tracksFrom = null;
+      const attr = this.getAttribute('tracks');
+      if (attr !== null) {
+        this._tracksFrom = 'attribute';
+        this._tracks.set(attr);
+      } else this.readTracksScript();
+      return;
+    }
+    this._tracksFrom = 'property';
+    this._tracks.set(value);
+  }
+
+  /** Take the configuration from a `<script type="application/json" slot="tracks">` child, if any. */
+  private readTracksScript(): void {
+    const script = this.querySelector(':scope > script[slot="tracks"]');
+    this._tracksFrom = script ? 'script' : null;
+    this._tracks.set(script?.textContent ?? null);
   }
 }
 

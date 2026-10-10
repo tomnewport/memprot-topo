@@ -1,4 +1,5 @@
 import type { SecondaryStructureType } from '../types.js';
+import type { ResolvedTracks } from '../tracks/resolve.js';
 
 /** One residue of the displayed chain, in chain order. */
 export interface SeqResidue {
@@ -62,6 +63,8 @@ export interface SequenceSource {
   /** Per-residue colour of the chain itself (as in 2-D), if any. */
   colourAt: ((i: number) => string | undefined) | null;
   lanes: SeqLane[];
+  /** Data tracks (issue #83) above and below each row, and how the letters are drawn. */
+  tracks?: ResolvedTracks | null;
   /** Element body geometry in px (the 2-D view's). */
   halfWidthPx: number;
   arrowHalfWidthPx: number;

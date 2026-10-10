@@ -4,6 +4,8 @@ import { SequenceRenderer } from '../../../src/sequence/renderer.js';
 import { UNWRAP_END } from '../../../src/sequence/transition.js';
 import type { SequenceSource, TracePoint } from '../../../src/sequence/types.js';
 import { DARK_THEME, LIGHT_THEME } from '../../../src/theme/index.js';
+import type { ResolvedTracks } from '../../../src/tracks/resolve.js';
+import { formatNumber } from '../../../src/sequence/tracks-draw.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const N = 30;
@@ -178,6 +180,209 @@ describe('SequenceRenderer', () => {
     const r = new SequenceRenderer(source({ trace: [] }), { wrap: 10 }, LIGHT_THEME);
     r.configure(420, 0);
     expect(() => r.render(0.9)).not.toThrow();
+  });
+});
+
+/** One of every kind of track, above and below the letters. */
+function tracks(over: Partial<ResolvedTracks> = {}): ResolvedTracks {
+  const v = (f: (i: number) => number) => Array.from({ length: N }, (_, i) => f(i));
+  return {
+    above: [
+      {
+        kind: 'heatmap',
+        residueAxis: true,
+        rowHeight: 7,
+        rows: [
+          { label: 'Heads', colours: v((i) => i).map((i) => (i % 2 ? '#00ff00' : undefined)) },
+          'divider',
+          { label: 'Tails', colours: v(() => 0).map(() => '#0000ff') },
+        ],
+        legend: { stops: ['#000000', '#ffffff'], domain: [0, 1], unit: 'frac' },
+      },
+      {
+        kind: 'heatmap',
+        residueAxis: false,
+        rowHeight: 3,
+        rows: [{ label: 'thin', colours: v(() => 0).map(() => '#abcdef') }],
+        legend: null,
+      },
+      {
+        kind: 'area',
+        label: 'Contacts',
+        residueAxis: false,
+        height: 40,
+        layers: [
+          { label: 'Up', colour: '#ff00ff', side: 'above', y0: v(() => 0), y1: v((i) => i / N) },
+          { label: 'Down', colour: '#00ffff', side: 'below', y0: v(() => 0), y1: v(() => -0.5) },
+        ],
+        domain: [-1, 1],
+        curve: 'step',
+        axis: true,
+        legend: true,
+      },
+      {
+        kind: 'area',
+        residueAxis: false,
+        height: 20,
+        layers: [
+          { label: 'Only', colour: '#ff8800', side: 'above', y0: v(() => 0), y1: v(() => 1) },
+        ],
+        domain: [0, 1],
+        curve: 'smooth',
+        axis: false,
+        legend: false,
+      },
+    ],
+    below: [
+      {
+        kind: 'line',
+        label: 'Displacement from bilayer centre (nm)',
+        residueAxis: false,
+        height: 40,
+        lines: [{ label: 'z', colour: '#123456', values: v((i) => (i === 4 ? NaN : i - 15)) }],
+        references: [
+          { label: 'Upper', values: v(() => 20) },
+          { values: v(() => -20) },
+          { label: 'gone', values: v(() => NaN) },
+        ],
+        domain: [-20, 20],
+        ticks: [-20, 0, 20],
+        unit: 'nm',
+        curve: 'step',
+        axis: true,
+        legend: true,
+      },
+      {
+        kind: 'line',
+        residueAxis: false,
+        height: 20,
+        lines: [{ label: 'none', colour: '#654321', values: v(() => NaN) }],
+        references: [],
+        domain: [0, 1],
+        ticks: [0, 1],
+        curve: 'smooth',
+        axis: false,
+        legend: false,
+      },
+      {
+        kind: 'features',
+        label: 'Sites',
+        residueAxis: false,
+        lanes: 2,
+        features: [
+          { from: 8, to: 12, label: 'Pore', colour: '#aa0000', lane: 0 },
+          { from: 25, to: 25, colour: '#bb0000', lane: 1 },
+        ],
+      },
+      {
+        kind: 'ss',
+        label: 'MD SS',
+        residueAxis: false,
+        types: v((i) => i).map((i) =>
+          i < 4 ? 'helix' : i < 9 ? 'strand' : i < 20 ? 'coil' : undefined,
+        ),
+      },
+    ],
+    letters: true,
+    letterColour: (i) => (i === 0 ? '#ee1100' : undefined),
+    ...over,
+  };
+}
+
+describe('SequenceRenderer with data tracks', () => {
+  it('draws every kind of track on every row, with legends and axes in a wider gutter', () => {
+    const plain = new SequenceRenderer(source(), { wrap: 10 }, LIGHT_THEME);
+    plain.configure(800, 0);
+    const r = new SequenceRenderer(source({ tracks: tracks() }), { wrap: 10 }, LIGHT_THEME);
+    r.configure(800, 0);
+    r.render(0);
+    const layout = r.sequenceLayout!;
+    expect(layout.extras.gutterLeft).toBeGreaterThan(plain.sequenceLayout!.extras.gutterLeft);
+    expect(layout.extras.above).toBeGreaterThan(0);
+    expect(layout.extras.below).toBeGreaterThan(0);
+    // The rows make room for the tracks.
+    expect(layout.height).toBeGreaterThan(plain.sequenceLayout!.height + 3 * 200);
+    const svg = r.svg;
+    // Heatmap cells: residues 1, 3, …, 29 green, every residue blue.
+    expect(svg.querySelectorAll('rect[fill="#00ff00"]')).toHaveLength(15);
+    expect(svg.querySelectorAll('rect[fill="#0000ff"]')).toHaveLength(N);
+    // A colour bar per row, labelled with its unit.
+    expect(svg.querySelectorAll('rect[fill="#ffffff"]').length).toBe(3 * 12);
+    const texts = [...svg.querySelectorAll('text')].map((t) => t.textContent);
+    expect(texts).toContain('1 frac');
+    // Row labels, but not for rows too thin to label.
+    expect(texts.filter((t) => t?.startsWith('Heads'))).toHaveLength(3);
+    expect(texts.some((t) => t?.startsWith('thin'))).toBe(false);
+    // Areas, both sides of the baseline, and swatches.
+    expect(svg.querySelectorAll('path[fill="#ff00ff"]')).toHaveLength(3);
+    expect(svg.querySelectorAll('path[fill="#00ffff"]')).toHaveLength(3);
+    expect(svg.querySelectorAll('path[fill="#ff8800"]')).toHaveLength(3);
+    expect(svg.querySelectorAll('rect[fill="#ff00ff"]')).toHaveLength(3);
+    // Lines, broken where a value is missing, and reference lines with labels.
+    expect(svg.querySelectorAll('path[stroke="#123456"]')).toHaveLength(3);
+    expect(svg.querySelector('path[stroke="#654321"]')).toBeNull();
+    expect(texts.filter((t) => t === 'Upper')).toHaveLength(3);
+    expect(texts).not.toContain('gone');
+    // A wrapped label with the whole text in its tooltip.
+    const wrapped = [...svg.querySelectorAll('text')].find((t) =>
+      t.querySelector('title')?.textContent?.startsWith('Displacement'),
+    )!;
+    expect(wrapped.querySelectorAll('tspan')).toHaveLength(2);
+    // Features: the pore spans rows 0 and 1 (residues 8–12), labelled on both.
+    expect(svg.querySelectorAll('rect[fill="#aa0000"]')).toHaveLength(2);
+    expect(texts.filter((t) => t === 'Pore')).toHaveLength(2);
+    expect(svg.querySelectorAll('rect[fill="#bb0000"]')).toHaveLength(1);
+    // Secondary structure strips: a helix, a strand and coil.
+    expect(svg.querySelectorAll('rect[rx="2"]').length).toBeGreaterThan(0);
+    // Residue axes under the first heatmap, numbered at multiples of 10.
+    expect(texts.filter((t) => t === '110' || t === '120' || t === '130')).toHaveLength(3);
+    // Letters: one coloured, all bold.
+    const letters = svg.querySelector('g[font-size="11"]')!;
+    expect(letters.getAttribute('font-weight')).toBe('600');
+    expect(svg.querySelector('text[data-res="101"]')!.getAttribute('fill')).toBe('#ee1100');
+    expect(svg.querySelector('text[data-res="102"]')!.getAttribute('fill')).toBeNull();
+  });
+
+  it('keeps the row furniture between frames until the layout or theme changes', () => {
+    const r = new SequenceRenderer(source({ tracks: tracks() }), { wrap: 10 }, LIGHT_THEME);
+    r.configure(800, 0);
+    r.render(0);
+    const first = r.svg.querySelector('rect[fill="#0000ff"]')!.parentElement!;
+    r.render(0.02);
+    expect(r.svg.querySelector('rect[fill="#0000ff"]')!.parentElement).toBe(first);
+    r.setTheme(DARK_THEME);
+    r.render(0.02);
+    expect(r.svg.querySelector('rect[fill="#0000ff"]')!.parentElement).not.toBe(first);
+  });
+
+  it('hides the letters when the tracks say so', () => {
+    const r = new SequenceRenderer(
+      source({ tracks: tracks({ letters: false, letterColour: null }) }),
+      { wrap: 10 },
+      LIGHT_THEME,
+    );
+    r.configure(800, 0);
+    r.render(0);
+    expect(r.svg.querySelector('text[data-res]')).toBeNull();
+  });
+
+  it('lays out as without tracks when there are none to draw', () => {
+    const plain = new SequenceRenderer(source(), { wrap: 10 }, LIGHT_THEME);
+    plain.configure(800, 0);
+    const empty = new SequenceRenderer(
+      source({ tracks: tracks({ above: [], below: [] }) }),
+      { wrap: 10 },
+      LIGHT_THEME,
+    );
+    empty.configure(800, 0);
+    expect(empty.sequenceLayout!.height).toBe(plain.sequenceLayout!.height);
+  });
+
+  it('formats numbers to three significant figures', () => {
+    expect(formatNumber(1.23456)).toBe('1.23');
+    expect(formatNumber(-0.0001)).toBe('-0.0001');
+    expect(formatNumber(-0)).toBe('0');
+    expect(formatNumber(0.1 + 0.2)).toBe('0.3');
   });
 });
 

@@ -7,3 +7,5 @@ export * from './orientation/index.js';
 export * from './contacts/index.js';
 export * from './membrane/index.js';
 export * from './theme/index.js';
+export type * from './tracks/types.js';
+export { parseTracksConfig } from './tracks/config.js';

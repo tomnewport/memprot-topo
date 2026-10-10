@@ -365,6 +365,14 @@ export const DEMO_CONTROLS: DemoControl[] = [
     scope: 'each',
     description: 'Per-residue width factors (JSON: chain → residue → factor; 1 normal, 0 a line).',
   },
+  {
+    attribute: 'tracks',
+    kind: 'text',
+    default: '',
+    placeholder: '{"sources":{…},"series":{…},"tracks":[…]}',
+    scope: 'each',
+    description: 'Data tracks for the sequence view (JSON; see docs/data-tracks.md).',
+  },
 ];
 
 /** The value an input shows when its display has `value` for the attribute. */

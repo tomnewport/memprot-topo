@@ -12,7 +12,18 @@ import {
   type OutlinePoint,
 } from '../components/ss-outline.js';
 import { paint, type Paint, type Theme } from '../theme/index.js';
-import { laneTop, layoutSequence, residuesPerRow, SEQ, type SequenceLayout } from './layout.js';
+import {
+  laneTop,
+  layoutSequence,
+  NO_EXTRAS,
+  residuesPerRow,
+  rowHeight,
+  SEQ,
+  type RowExtras,
+  type SequenceLayout,
+} from './layout.js';
+import { gutterFor, stackHeight, TRACK, type Gutter } from '../tracks/geometry.js';
+import { drawTracks } from './tracks-draw.js';
 import {
   ease,
   indexAt,
@@ -91,6 +102,11 @@ export class SequenceRenderer {
   private readonly dashed: Range[];
   /** The stretch of the sequence the topology draws. */
   private readonly drawn: Range;
+  /** Row room for the data tracks, and the gutter's columns. */
+  private readonly extras: RowExtras;
+  private readonly gutter: Gutter | null;
+  /** Membrane shading, row numbers, lanes and tracks: built once per layout and theme. */
+  private furniture: SVGGElement | null = null;
 
   constructor(
     private readonly src: SequenceSource,
@@ -108,14 +124,29 @@ export class SequenceRenderer {
     this.dashed = [...src.dashed].sort((a, b) => a[0] - b[0]);
     const n = src.trace.length;
     this.drawn = n > 0 ? [src.trace[0].f, src.trace[n - 1].f] : [0, 0];
+    const tracks = src.tracks;
+    if (tracks && tracks.above.length + tracks.below.length > 0) {
+      this.gutter = gutterFor([...tracks.above, ...tracks.below]);
+      const above = stackHeight(tracks.above);
+      const below = stackHeight(tracks.below);
+      this.extras = {
+        above: above > 0 ? above + TRACK.gapPx : 0,
+        below: below > 0 ? below + TRACK.gapPx : 0,
+        gutterLeft: this.gutter.width,
+      };
+    } else {
+      this.gutter = null;
+      this.extras = NO_EXTRAS;
+    }
   }
 
   /** Fit to a container `width` with the 2-D picture scrolled to `scroll0`. */
   configure(width: number, scroll0: number): void {
     this.width = width;
     const n = this.src.residues.length;
-    const perRow = residuesPerRow(width, this.options.wrap);
-    this.layout = layoutSequence(n, perRow, this.src.lanes.length, width);
+    const perRow = residuesPerRow(width, this.options.wrap, this.extras.gutterLeft);
+    this.layout = layoutSequence(n, perRow, this.src.lanes.length, width, this.extras);
+    this.furniture = null;
     this.offset = { x: -(this.src.frame2d.minX + scroll0), y: -this.src.frame2d.minY };
     const trace = this.src.trace.map((p) => ({
       x: p.x + this.offset.x,
@@ -143,6 +174,7 @@ export class SequenceRenderer {
 
   setTheme(theme: Theme): void {
     this.theme = theme;
+    this.furniture = null;
   }
 
   /** The configured layout (after {@link configure}). */
@@ -228,12 +260,23 @@ export class SequenceRenderer {
     this.add(mid, { stroke: 'midplane', 'stroke-width': 'midplaneWidth' }, g);
   }
 
-  /** Membrane shading, row numbers and the data lanes. */
+  /** Membrane shading, row numbers, the data lanes and the data tracks. */
   private drawRowFurniture(layout: SequenceLayout, alpha: number): void {
-    const g = this.add(el('g', { opacity: alpha.toFixed(3) }));
-    g.setAttribute('pointer-events', 'none');
-    const { residues, z, membrane, lanes } = this.src;
+    // Built once per layout and theme: a heatmap can be thousands of cells,
+    // and the furniture is redrawn every frame while it fades.
+    if (!this.furniture) {
+      this.furniture = el('g');
+      this.furniture.setAttribute('pointer-events', 'none');
+      this.buildFurniture(this.furniture, layout);
+    }
+    this.furniture.setAttribute('opacity', alpha.toFixed(3));
+    this.svg.appendChild(this.furniture);
+  }
+
+  private buildFurniture(g: SVGGElement, layout: SequenceLayout): void {
+    const { residues, z, membrane, lanes, tracks } = this.src;
     const cell = SEQ.cellPx;
+    const gutterLeft = layout.extras.gutterLeft;
     for (const row of layout.rows) {
       // Membrane: residues the 2-D layout puts inside the slab.
       let start = -1;
@@ -255,7 +298,7 @@ export class SequenceRenderer {
         }
       }
       const num = el('text', {
-        x: SEQ.gutterLeftPx - 8,
+        x: gutterLeft - 8,
         y: row.y + SEQ.letterBaselinePx,
         'text-anchor': 'end',
         'font-size': 10,
@@ -265,6 +308,11 @@ export class SequenceRenderer {
       lanes.forEach((lane, k) =>
         this.drawLane(g, layout, row.first, row.last, row.y + laneTop(k), lane),
       );
+      if (tracks && this.gutter) {
+        const frame = { theme: this.theme, layout, row, residues, gutter: this.gutter };
+        drawTracks(g, tracks.above, row.y - layout.extras.above, frame);
+        drawTracks(g, tracks.below, row.y + rowHeight(lanes.length) + TRACK.gapPx, frame);
+      }
     }
   }
 
@@ -284,7 +332,7 @@ export class SequenceRenderer {
     this.add(bg, { fill: 'surface', stroke: 'border' }, g);
     bg.setAttribute('stroke-width', '0.5');
     const label = el('text', {
-      x: SEQ.gutterLeftPx - 8,
+      x: layout.extras.gutterLeft - 8,
       y: top + H / 2 + 3,
       'text-anchor': 'end',
       'font-size': 8.5,
@@ -432,10 +480,13 @@ export class SequenceRenderer {
 
   /** One-letter codes above the chain, peeling away as each row leaves for the topology. */
   private drawLetters(layout: SequenceLayout, frames: ChunkFrame[]): void {
+    if (this.src.tracks && !this.src.tracks.letters) return;
+    const colourAt = this.src.tracks?.letterColour ?? null;
     const g = this.add(el('g', { 'text-anchor': 'middle', 'font-size': SEQ.letterFontPx }), {
       fill: 'text',
       'font-family': 'monoFontFamily',
     });
+    if (colourAt) g.setAttribute('font-weight', '600');
     const lift = SEQ.cartoonPx - SEQ.letterBaselinePx;
     for (const fr of frames) {
       const alpha = 1 - ease(fr.unwrap / 0.4);
@@ -448,6 +499,8 @@ export class SequenceRenderer {
         const text = el('text', { x: p.x.toFixed(2), y: (p.y - lift).toFixed(2) });
         text.textContent = res.code;
         text.dataset.res = residueKey(res);
+        const c = colourAt?.(i);
+        if (c) text.setAttribute('fill', c);
         const title = el('title');
         title.textContent = `${res.code} ${res.resSeq}${res.iCode}`;
         text.appendChild(title);

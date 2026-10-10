@@ -270,3 +270,50 @@ describe('TopologyLoader', () => {
     expect(aborted).toBe(true);
   });
 });
+
+describe('TopologyLoader tracks', () => {
+  beforeEach(() => vi.stubGlobal('fetch', makeFetchMock()));
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  const display = (el: TopologyLoader) =>
+    el.shadowRoot!.querySelector<TopologyDisplay>('topology-display')!;
+
+  it('hands the display its property, attribute or script child', async () => {
+    const el = new TopologyLoader();
+    const script = document.createElement('script');
+    script.type = 'application/json';
+    script.slot = 'tracks';
+    script.textContent = '{"tracks":[]}';
+    el.appendChild(script);
+    el.setAttribute('pdb-id', '1abc');
+    document.body.appendChild(el);
+    await flushPromises();
+    expect(display(el).tracks).toBe('{"tracks":[]}');
+
+    el.setAttribute('tracks', '{"chain":{}}');
+    expect(display(el).tracks).toBe('{"chain":{}}');
+    el.removeAttribute('tracks');
+    expect(display(el).tracks).toBe('{"tracks":[]}');
+
+    const cfg = { tracks: [] };
+    el.tracks = cfg;
+    expect(el.tracks).toBe(cfg);
+    expect(display(el).tracks).toBe(cfg);
+    el.tracks = null;
+    expect(el.tracks).toBeNull();
+    expect(display(el).tracks).toBe('{"tracks":[]}');
+  });
+
+  it('passes a property set before loading to the display it makes', async () => {
+    const el = new TopologyLoader();
+    const cfg = { tracks: [] };
+    el.tracks = cfg;
+    el.setAttribute('pdb-id', '1abc');
+    document.body.appendChild(el);
+    await flushPromises();
+    expect(display(el).tracks).toBe(cfg);
+  });
+});
