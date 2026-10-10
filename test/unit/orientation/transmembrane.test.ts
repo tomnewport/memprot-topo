@@ -3,6 +3,7 @@ import {
   isTransmembrane,
   selectTransmembraneChains,
 } from '../../../src/orientation/transmembrane.js';
+import { membraneCore } from '../../../src/membrane/model.js';
 import type { Calpha, ChainData } from '../../../src/types.js';
 
 function ca(z: number, i = 0): Calpha {
@@ -37,6 +38,34 @@ describe('isTransmembrane', () => {
 
   it('returns false for an empty chain', () => {
     expect(isTransmembrane([])).toBe(false);
+  });
+
+  it('uses the given membrane core over the threshold', () => {
+    const calphas = [ca(-8), ca(0), ca(8)];
+    expect(isTransmembrane(calphas, { core: { upper: 7, lower: -7 }, threshold: 12 })).toBe(true);
+  });
+
+  it('follows the core of a thin (30 Å) membrane', () => {
+    // Core ±7 Å: a chain reaching ±8 Å crosses it, though not the default ±12 Å.
+    const calphas = [ca(-8), ca(0), ca(8)];
+    const core = membraneCore({ upper: 15, lower: -15 });
+    expect(isTransmembrane(calphas, { core })).toBe(true);
+    expect(isTransmembrane(calphas)).toBe(false);
+  });
+
+  it('follows the core of a thick (50 Å) membrane', () => {
+    // Core ±17 Å: a chain reaching ±15 Å crosses the default core, not this one.
+    const calphas = [ca(-15), ca(0), ca(15)];
+    const core = membraneCore({ upper: 25, lower: -25 });
+    expect(isTransmembrane(calphas, { core })).toBe(false);
+    expect(isTransmembrane(calphas)).toBe(true);
+  });
+
+  it('tests each leaflet of an asymmetric membrane separately', () => {
+    // Leaflets at +26 and −14 Å: core edges at +18 and −6 Å.
+    const core = membraneCore({ upper: 26, lower: -14 });
+    expect(isTransmembrane([ca(-7), ca(19)], { core })).toBe(true);
+    expect(isTransmembrane([ca(-13), ca(13)], { core })).toBe(false);
   });
 });
 

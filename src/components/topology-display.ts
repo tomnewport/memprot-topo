@@ -28,7 +28,7 @@ import { SEQ } from '../sequence/layout.js';
 import {
   DEFAULT_BULK,
   DEFAULT_MEMBRANE_DETAIL,
-  MEMBRANE_CORE_HALF,
+  membraneCore,
   MEMBRANE_DETAILS,
   membraneAtDetail,
   parseDistortions,
@@ -1071,7 +1071,11 @@ export class TopologyDisplay extends HTMLElement {
 
     // Pick a default chain: largest transmembrane chain, falling back to the
     // largest chain overall if nothing crosses the bilayer.
-    const autoPick = selectTransmembraneChains(chainsWithCoords, { max: 1 });
+    const membraneCoreEdges = membraneCore(this.membrane?.bulk ?? DEFAULT_BULK);
+    const autoPick = selectTransmembraneChains(chainsWithCoords, {
+      max: 1,
+      core: membraneCoreEdges,
+    });
     const defaultId = autoPick.selected[0]?.chainId ?? chainsWithCoords[0]?.chainId ?? null;
     // A `selection` naming a chain in this protein shows that chain; otherwise
     // the last chain picked, then the default.
@@ -1186,7 +1190,7 @@ export class TopologyDisplay extends HTMLElement {
     this._scrollBox = box;
     const scroll = box.scroll;
     const core = chainsWithCoords.flatMap((c) =>
-      c.calphas.filter((ca) => Math.abs(ca.z) < MEMBRANE_CORE_HALF),
+      c.calphas.filter((ca) => ca.z > membraneCoreEdges.lower && ca.z < membraneCoreEdges.upper),
     );
     const membrane = this.membrane!;
     const loopOptions = this.loopOptions;
