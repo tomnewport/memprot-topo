@@ -4,8 +4,7 @@
  * Each control writes its attribute on the displays it targets; a control at
  * its default removes the attribute, so the component's own default applies.
  * `DEMO_CONTROLS` must cover every observed attribute except `protein-data`
- * (enforced by a unit test), so new attributes need an entry here. Attributes
- * styled only in CSS, such as `fit`, aren't observed and need adding by hand.
+ * (enforced by a unit test), so new attributes need an entry here.
  */
 import { DEFAULT_MORPH_OPTIONS } from './morph/options.js';
 import { DEFAULT_MEMBRANE_STYLE, MEMBRANE_STYLES } from './morph/membrane-style.js';
@@ -83,16 +82,15 @@ export type DemoControl = ToggleControl | NumberControl | SelectControl | TextCo
 
 export const DEMO_CONTROLS: DemoControl[] = [
   {
-    attribute: 'debug-loops',
-    kind: 'toggle',
-    default: false,
-    on: 'on',
-    off: 'off',
+    attribute: 'debug',
+    kind: 'select',
+    default: 'none',
+    options: ['none', 'loops'],
     scope: 'all',
-    description: 'Draw loop control points for debugging.',
+    description: 'Debug drawing (not stable API): loops draws loop control points.',
   },
   {
-    attribute: 'loop-extreme-points',
+    attribute: 'loop-extremes',
     kind: 'toggle',
     default: true,
     on: 'on',
@@ -172,17 +170,17 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Residues per row in the sequence view; 0 fits whole blocks of ten to the width.',
   },
   {
-    attribute: 'morph-sweep',
+    attribute: 'transition-sweep',
     kind: 'number',
     default: DEFAULT_MORPH_OPTIONS.sweep,
     min: 0,
     max: 1,
     step: 0.05,
     scope: 'all',
-    description: '3-D morph rolling-wave width (fraction of chain); 0 rolls all at once.',
+    description: '2-D → 3-D rolling-wave width (fraction of chain); 0 rolls all at once.',
   },
   {
-    attribute: 'morph-projection',
+    attribute: 'structure-projection',
     kind: 'select',
     default: 'isometric',
     options: ['isometric', 'perspective'],
@@ -190,7 +188,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Projection of the finished 3-D view.',
   },
   {
-    attribute: 'morph-strand-width',
+    attribute: 'structure-strand-width',
     kind: 'number',
     default: DEFAULT_MORPH_OPTIONS.strandWidth,
     min: 0.5,
@@ -200,7 +198,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Strand ribbon width in the 3-D view (Å).',
   },
   {
-    attribute: 'morph-strand-thickness',
+    attribute: 'structure-strand-thickness',
     kind: 'number',
     default: DEFAULT_MORPH_OPTIONS.strandThickness,
     min: 0.1,
@@ -210,7 +208,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Strand ribbon thickness in the 3-D view (Å).',
   },
   {
-    attribute: 'morph-grid-spacing',
+    attribute: 'structure-grid-spacing',
     kind: 'number',
     default: 0,
     min: 0,
@@ -220,7 +218,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Membrane grid spacing in the 3-D view (Å, at least 2); 0 sizes it from the disc.',
   },
   {
-    attribute: 'morph-membrane-style',
+    attribute: 'structure-membrane-style',
     kind: 'select',
     default: DEFAULT_MEMBRANE_STYLE,
     options: [...MEMBRANE_STYLES],
@@ -229,7 +227,7 @@ export const DEMO_CONTROLS: DemoControl[] = [
       'Membrane in the 3-D view: a square grid, rings and spokes that follow the protein near it, or a surface coloured by height.',
   },
   {
-    attribute: 'icon-bandwidth',
+    attribute: 'chain-icon-bandwidth',
     kind: 'number',
     default: 0,
     min: 0,
@@ -312,7 +310,6 @@ export const DEMO_CONTROLS: DemoControl[] = [
     description: 'Theme for a dark system colour scheme (when theme is auto).',
   },
   {
-    // CSS-only (`:host([fit])`), so not in observedAttributes.
     attribute: 'fit',
     kind: 'select',
     default: 'width',

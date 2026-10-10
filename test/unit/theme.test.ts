@@ -243,12 +243,12 @@ describe('<topology-display> theming', () => {
   it('builds the 3-D shading from the same tokens and keeps the 3-D view', async () => {
     registerTheme('test-3d', { extends: 'dark', strand: '#ff0000', strandEdge: '#00ff00' });
     const el = mount([syntheticBarrel({ n: 8 })]);
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const root = el.shadowRoot!;
     const before = root.querySelector('.svg-scroll svg')!;
     expect(before.classList.contains('morph-svg')).toBe(true);
     el.setAttribute('theme', 'test-3d');
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
     const after = root.querySelector('.svg-scroll svg')!;
     expect(after.classList.contains('morph-svg')).toBe(true);
     const scene = (el as unknown as { _morphSource: { scene: { style: Record<string, string> } } })

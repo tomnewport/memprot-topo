@@ -28,12 +28,8 @@ afterEach(() => {
 });
 
 describe('demo controls', () => {
-  it('has a control for every observed attribute except protein-data, plus fit', () => {
-    // `fit` is CSS-only, so it isn't observed; listed by hand.
-    const expected = [
-      ...TopologyDisplay.observedAttributes.filter((a) => a !== 'protein-data'),
-      'fit',
-    ];
+  it('has a control for every observed attribute except protein-data', () => {
+    const expected = TopologyDisplay.observedAttributes.filter((a) => a !== 'protein-data');
     expect(DEMO_CONTROLS.map((c) => c.attribute).sort()).toEqual([...expected].sort());
   });
 
@@ -58,22 +54,22 @@ describe('demo controls', () => {
     contacts.dispatchEvent(new Event('input'));
     for (const d of displays) expect(d.hasAttribute('show-contacts')).toBe(false);
 
-    const extreme = input(panel, 'loop-extreme-points') as HTMLInputElement;
+    const extreme = input(panel, 'loop-extremes') as HTMLInputElement;
     expect(extreme.checked).toBe(true);
     extreme.checked = false;
     extreme.dispatchEvent(new Event('input'));
-    for (const d of displays) expect(d.getAttribute('loop-extreme-points')).toBe('off');
+    for (const d of displays) expect(d.getAttribute('loop-extremes')).toBe('off');
 
-    const width = input(panel, 'morph-strand-width');
+    const width = input(panel, 'structure-strand-width');
     expect(width.value).toBe(String(DEFAULT_MORPH_OPTIONS.strandWidth));
     width.value = '5';
     width.dispatchEvent(new Event('input'));
-    for (const d of displays) expect(d.getAttribute('morph-strand-width')).toBe('5');
+    for (const d of displays) expect(d.getAttribute('structure-strand-width')).toBe('5');
 
-    const projection = input(panel, 'morph-projection');
+    const projection = input(panel, 'structure-projection');
     projection.value = 'perspective';
     projection.dispatchEvent(new Event('input'));
-    for (const d of displays) expect(d.getAttribute('morph-projection')).toBe('perspective');
+    for (const d of displays) expect(d.getAttribute('structure-projection')).toBe('perspective');
   });
 
   it('picks a theme for every display; auto removes it', () => {
@@ -106,12 +102,12 @@ describe('demo controls', () => {
 
   it('resets every control and attribute to its default', () => {
     const { panel, displays, reset } = setup();
-    const sweep = input(panel, 'morph-sweep');
+    const sweep = input(panel, 'transition-sweep');
     sweep.value = '0';
     sweep.dispatchEvent(new Event('input'));
-    expect(displays[0].getAttribute('morph-sweep')).toBe('0');
+    expect(displays[0].getAttribute('transition-sweep')).toBe('0');
     reset();
-    expect(displays[0].hasAttribute('morph-sweep')).toBe(false);
+    expect(displays[0].hasAttribute('transition-sweep')).toBe(false);
     expect(sweep.value).toBe(String(DEFAULT_MORPH_OPTIONS.sweep));
   });
 });

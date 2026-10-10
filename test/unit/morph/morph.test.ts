@@ -783,7 +783,7 @@ describe('<topology-display> 3-D morph', () => {
     expect(labels).toEqual(['1D', '2D', '3D']);
     expect(root.querySelector('.morph-toggle')?.textContent).toBe('3D');
     expect(root.querySelector('input[type=range]')).toBeNull();
-    expect(el.morphProgress).toBe(0);
+    expect(el.transitionProgress).toBe(0);
     expect(el.dimension).toBe(2);
   });
 
@@ -822,16 +822,16 @@ describe('<topology-display> 3-D morph', () => {
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
     const svg2d = root.querySelector('.svg-scroll svg');
-    await el.setMorphProgress(0.5);
+    await el.setTransitionProgress(0.5);
     const morph = root.querySelector('.svg-scroll svg');
     expect(morph).not.toBe(svg2d);
     expect(morph?.classList.contains('morph-svg')).toBe(true);
     expect(root.querySelector('.morph-toggle')?.getAttribute('aria-pressed')).toBe('true');
     // Loops are drawn as tubes in 3-D; every coordinate stays finite.
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
     expect(ds.join('')).not.toMatch(/NaN|Infinity/);
-    await el.setMorphProgress(0);
+    await el.setTransitionProgress(0);
     expect(root.querySelector('.svg-scroll svg')).toBe(svg2d);
     expect(root.querySelector('.morph-toggle')?.getAttribute('aria-pressed')).toBe('false');
   });
@@ -844,7 +844,7 @@ describe('<topology-display> 3-D morph', () => {
   /** Every path coordinate of the shown SVG is finite at each τ. */
   async function expectFiniteFrames(el: TopologyDisplay): Promise<void> {
     for (const tau of [0.3, 0.6, 1]) {
-      await el.setMorphProgress(tau);
+      await el.setTransitionProgress(tau);
       const ds = [...el.shadowRoot!.querySelectorAll('.svg-scroll svg path')].map(
         (p) => p.getAttribute('d') ?? '',
       );
@@ -856,70 +856,70 @@ describe('<topology-display> 3-D morph', () => {
   it('loads the morph code only when the 3-D view is first asked for', async () => {
     const el = mount(hairpinChain());
     expect((el as unknown as Internals)._morph).toBeNull();
-    await el.setMorphProgress(0.2);
+    await el.setTransitionProgress(0.2);
     expect((el as unknown as Internals)._morph).not.toBeNull();
   });
 
-  it('takes the strand ribbon size from morph-strand-width and morph-strand-thickness', () => {
+  it('takes the strand ribbon size from structure-strand-width and structure-strand-thickness', () => {
     type WithOptions = { _morphSource: { options: Record<string, number> } | null };
     const el = mount(hairpinChain());
     const opts = () => (el as unknown as WithOptions)._morphSource!.options;
     expect(opts().strandWidth).toBeUndefined();
-    el.setAttribute('morph-strand-width', '10');
-    el.setAttribute('morph-strand-thickness', '2.5');
+    el.setAttribute('structure-strand-width', '10');
+    el.setAttribute('structure-strand-thickness', '2.5');
     expect(opts().strandWidth).toBe(10);
     expect(opts().strandThickness).toBe(2.5);
     // The arrowhead keeps its default proportion to the ribbon (4.65 / 2.85).
     expect(opts().arrowWidth).toBeCloseTo((10 * 4.65) / 2.85);
-    el.setAttribute('morph-strand-width', '-1');
+    el.setAttribute('structure-strand-width', '-1');
     expect(opts().strandWidth).toBeUndefined();
   });
 
-  it('sets the membrane grid spacing from morph-grid-spacing, in place', async () => {
+  it('sets the membrane grid spacing from structure-grid-spacing, in place', async () => {
     type WithNet = { _morph: { renderer: { net: { spacing: number } } | null } | null };
     const el = mount(hairpinChain());
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const spacing = () => (el as unknown as WithNet)._morph!.renderer!.net.spacing;
     const auto = spacing();
     expect(auto).toBeGreaterThanOrEqual(4);
     expect(auto).toBeLessThanOrEqual(8);
-    el.setAttribute('morph-grid-spacing', '3');
+    el.setAttribute('structure-grid-spacing', '3');
     expect(spacing()).toBe(3);
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
     // At least 2 Å.
-    el.setAttribute('morph-grid-spacing', '0.5');
+    el.setAttribute('structure-grid-spacing', '0.5');
     expect(spacing()).toBe(2);
     // At most the disc's radius: two lines across.
-    el.setAttribute('morph-grid-spacing', '10000');
+    el.setAttribute('structure-grid-spacing', '10000');
     expect(spacing()).toBeLessThan(100);
     expect(
       (el as unknown as { _morph: { renderer: { net: { upper: unknown[] } } } })._morph.renderer.net
         .upper,
     ).toHaveLength(2);
-    el.setAttribute('morph-grid-spacing', 'auto');
+    el.setAttribute('structure-grid-spacing', 'auto');
     expect(spacing()).toBe(auto);
   });
 
-  it('draws the membrane as polar lines or a coloured surface from morph-membrane-style, in place', async () => {
+  it('draws the membrane as polar lines or a coloured surface from structure-membrane-style, in place', async () => {
     type Net = { style: string; mesh: unknown; upper: unknown[] };
     type WithNet = { _morph: { renderer: { net: Net } } };
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
     // Annular leaflets that differ from the bulk, so the surface has colours.
     el.setAttribute('membrane-annular-upper', '15');
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const net = () => (el as unknown as WithNet)._morph.renderer.net;
     const finite = () => {
       const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
       expect(ds.join('')).not.toMatch(/NaN|Infinity/);
     };
     expect(net().style).toBe('grid');
-    el.setAttribute('morph-membrane-style', 'polar');
+    el.setAttribute('structure-membrane-style', 'polar');
     expect(net().style).toBe('polar');
     expect(net().upper.length).toBeGreaterThan(0);
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
     finite();
-    el.setAttribute('morph-membrane-style', 'surface');
+    el.setAttribute('structure-membrane-style', 'surface');
     expect(net().style).toBe('surface');
     expect(net().mesh).not.toBeNull();
     finite();
@@ -931,7 +931,7 @@ describe('<topology-display> 3-D morph', () => {
       )
       .map((p) => p.getAttribute('fill'));
     expect(new Set(fills).size).toBeGreaterThan(2);
-    el.setAttribute('morph-membrane-style', 'wobbly');
+    el.setAttribute('structure-membrane-style', 'wobbly');
     expect(net().style).toBe('grid');
   });
 
@@ -940,12 +940,12 @@ describe('<topology-display> 3-D morph', () => {
     const root = el.shadowRoot!;
     el.setAttribute('membrane-upper', '15');
     el.setAttribute('membrane-lower', '-15');
-    el.setAttribute('morph-membrane-style', 'surface');
-    await el.setMorphProgress(1);
+    el.setAttribute('structure-membrane-style', 'surface');
+    await el.setTransitionProgress(1);
     const fills = async (annularUpper: number, annularLower: number) => {
       el.setAttribute('membrane-annular-upper', String(annularUpper));
       el.setAttribute('membrane-annular-lower', String(annularLower));
-      await el.setMorphProgress(1);
+      await el.setTransitionProgress(1);
       const out = [...root.querySelectorAll('.svg-scroll svg > g:first-of-type path')]
         .filter((p) => p.getAttribute('display') !== 'none')
         .map((p) => p.getAttribute('fill')?.match(/^rgb\((\d+), ?(\d+), ?(\d+)\)$/))
@@ -1057,7 +1057,7 @@ describe('<topology-display> 3-D morph', () => {
     it('switches at once while the view moves, and finishes a blend when the view leaves 2-D', async () => {
       const { el, tops } = setUp();
       // Have the 3-D code loaded, so the transition starts on the next frame.
-      await el.setMorphProgress(0);
+      await el.setTransitionProgress(0);
       now = 5000;
       el.setAttribute('membrane-detail', 'bulk');
       const bulk = tops();
@@ -1081,13 +1081,13 @@ describe('<topology-display> 3-D morph', () => {
 
     it('blends the 3-D membrane, and stops cleanly when the style changes', async () => {
       const { el } = setUp();
-      await el.setMorphProgress(1);
+      await el.setTransitionProgress(1);
       const internals = () => (el as unknown as Internals3d)._morph;
       const flat = zs(internals().renderer.drawnNet);
       now = 5000;
       el.setAttribute('membrane-detail', 'bulk');
       await settle();
-      expect(el.morphProgress).toBe(1);
+      expect(el.transitionProgress).toBe(1);
       const target = zs(internals().renderer.net);
       expect(target).not.toEqual(flat);
       tick(5000);
@@ -1095,17 +1095,17 @@ describe('<topology-display> 3-D morph', () => {
       tick(5000 + BLEND / 2);
       expect(internals().blending).toBe(true);
       // A new style is a new membrane: the blend ends.
-      el.setAttribute('morph-membrane-style', 'polar');
+      el.setAttribute('structure-membrane-style', 'polar');
       expect(internals().blending).toBe(false);
       expect(internals().renderer.drawnNet).toBe(internals().renderer.net);
       tick(5000 + BLEND);
       expect(frames.size).toBe(0);
-      expect(el.morphProgress).toBe(1);
+      expect(el.transitionProgress).toBe(1);
     });
 
     it('does not blend with transition-time 0, reduced motion or no change in detail', async () => {
       const { el } = setUp();
-      await el.setMorphProgress(1);
+      await el.setTransitionProgress(1);
       el.setAttribute('transition-time', '0');
       el.setAttribute('membrane-detail', 'bulk');
       await settle();
@@ -1126,7 +1126,7 @@ describe('<topology-display> 3-D morph', () => {
       }));
       el.setAttribute('membrane-detail', 'annular');
       await settle();
-      await el.setMorphProgress(0);
+      await el.setTransitionProgress(0);
       el.setAttribute('membrane-detail', 'bulk');
       await settle();
       expect(frames.size).toBe(0);
@@ -1136,15 +1136,15 @@ describe('<topology-display> 3-D morph', () => {
   it('changes 3-D settings in place, keeping the 3-D view', async () => {
     const el = mount(hairpinChain());
     const root = el.shadowRoot!;
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const controller = (el as unknown as Internals)._morph;
     const before = root.querySelector('.svg-scroll svg');
-    el.setAttribute('morph-projection', 'perspective');
-    el.setAttribute('morph-strand-width', '6');
-    el.setAttribute('morph-sweep', '0');
+    el.setAttribute('structure-projection', 'perspective');
+    el.setAttribute('structure-strand-width', '6');
+    el.setAttribute('transition-sweep', '0');
     // Same controller and progress; a new 3-D picture.
     expect((el as unknown as Internals)._morph).toBe(controller);
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
     const after = root.querySelector('.svg-scroll svg');
     expect(after).not.toBe(before);
     expect(after?.classList.contains('morph-svg')).toBe(true);
@@ -1152,17 +1152,17 @@ describe('<topology-display> 3-D morph', () => {
     const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
     expect(ds.join('')).not.toMatch(/NaN|Infinity/);
     // Back to 2-D shows the original drawing.
-    await el.setMorphProgress(0);
+    await el.setTransitionProgress(0);
     expect(root.querySelector('.svg-scroll svg')?.classList.contains('morph-svg')).toBe(false);
   });
 
   it('keeps the 3-D view when a 2-D drawing attribute changes', async () => {
     const el = mount(hairpinChain());
-    await el.setMorphProgress(0.6);
-    el.setAttribute('debug-loops', 'on');
+    await el.setTransitionProgress(0.6);
+    el.setAttribute('debug', 'loops');
     // The redraw restores the view once the (already loaded) morph code resolves.
     await new Promise((r) => setTimeout(r, 0));
-    expect(el.morphProgress).toBeCloseTo(0.6);
+    expect(el.transitionProgress).toBeCloseTo(0.6);
     const svg = el.shadowRoot!.querySelector('.svg-scroll svg');
     expect(svg?.classList.contains('morph-svg')).toBe(true);
     expect(el.dimension).toBeCloseTo(2.6);
@@ -1175,41 +1175,41 @@ describe('<topology-display> 3-D morph', () => {
       pdbId: 'tst1',
       chains: [hairpinChain(), { ...hairpinChain(), chainId: 'B' }],
     };
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     el.setAttribute('selection', 'B');
     await new Promise((r) => setTimeout(r, 0));
     expect(el.selection?.chainId).toBe('B');
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
   });
 
-  it('redraws only the chain picker when icon-bandwidth changes', async () => {
+  it('redraws only the chain picker when chain-icon-bandwidth changes', async () => {
     const el = new TopologyDisplay();
     document.body.appendChild(el);
     el.proteinData = {
       pdbId: 'tst1',
       chains: [hairpinChain(), { ...hairpinChain(), chainId: 'B' }],
     };
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const root = el.shadowRoot!;
     const picker = root.querySelector('.chain-picker');
     const svg = root.querySelector('.svg-scroll svg');
     root.querySelector<HTMLButtonElement>('.chain-picker button')!.focus();
-    el.setAttribute('icon-bandwidth', '4');
+    el.setAttribute('chain-icon-bandwidth', '4');
     expect(root.querySelector('.chain-picker')).not.toBe(picker);
     expect(root.querySelectorAll('.chain-picker')).toHaveLength(1);
     expect(root.querySelector('.svg-scroll svg')).toBe(svg);
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
     expect(root.activeElement).toBe(root.querySelector('.chain-picker button'));
   });
 
   it('keeps the 3-D view for a new protein until resetView()', async () => {
     const el = mount(hairpinChain());
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     el.proteinData = { pdbId: 'tst2', chains: [hairpinChain()] };
     await new Promise((r) => setTimeout(r, 0));
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
     el.resetView();
-    expect(el.morphProgress).toBe(0);
+    expect(el.transitionProgress).toBe(0);
     expect(el.shadowRoot!.querySelector('.svg-scroll svg')?.classList.contains('morph-svg')).toBe(
       false,
     );
@@ -1217,33 +1217,33 @@ describe('<topology-display> 3-D morph', () => {
 
   it('keeps the 3-D view when residue data changes', async () => {
     const el = mount(hairpinChain());
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     el.residueColours = { A: { 1: 0.2, 2: 0.8 } };
     el.setAttribute('residue-widths', '{"A":{"1":1.5}}');
     el.setAttribute('colour-label', 'Conservation');
     await new Promise((r) => setTimeout(r, 0));
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
   });
 
   it('keeps the 3-D view when the membrane changes', async () => {
     const el = mount(hairpinChain());
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     el.setAttribute('membrane-upper', '22');
     el.setAttribute('membrane-annular-lower', '-16');
     el.distortions = null;
     await new Promise((r) => setTimeout(r, 0));
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
     expect(el.membrane!.bulk.upper).toBe(22);
   });
 
   it('ignores re-assigning the same protein data', async () => {
     const el = mount(hairpinChain());
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     const controller = (el as unknown as Internals)._morph;
     const data = el.proteinData;
     el.proteinData = data;
     expect((el as unknown as Internals)._morph).toBe(controller);
-    expect(el.morphProgress).toBe(1);
+    expect(el.transitionProgress).toBe(1);
   });
 
   it('jumps straight to 3-D when reduced motion is preferred', async () => {
@@ -1255,7 +1255,7 @@ describe('<topology-display> 3-D morph', () => {
     try {
       const el = mount(hairpinChain());
       await el.toggle3d();
-      expect(el.morphProgress).toBe(1);
+      expect(el.transitionProgress).toBe(1);
     } finally {
       spy.mockRestore();
     }
@@ -1322,9 +1322,9 @@ describe('<topology-display> 3-D morph', () => {
         .filter((g) => g.getAttribute('display') !== 'none')
         .map((g) => g.getAttribute('opacity'))
         .filter((o): o is string => o !== null);
-    await el.setMorphProgress(0.05);
+    await el.setTransitionProgress(0.05);
     expect(groupOpacities().length).toBeGreaterThan(0);
-    await el.setMorphProgress(1);
+    await el.setTransitionProgress(1);
     expect(groupOpacities()).toEqual([]);
     await expectFiniteFrames(el);
   });

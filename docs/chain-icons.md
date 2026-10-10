@@ -38,9 +38,9 @@ faint layout grid shows on hover and on the selected chain.
 
 ## Attributes
 
-| Attribute        | Default                     | Meaning                                                                                |
-| ---------------- | --------------------------- | -------------------------------------------------------------------------------------- |
-| `icon-bandwidth` | 0 (plain per-row histogram) | σ in Å of the smoothing over the per-row counts; one row is half a membrane thickness. |
+| Attribute              | Default                     | Meaning                                                                                |
+| ---------------------- | --------------------------- | -------------------------------------------------------------------------------------- |
+| `chain-icon-bandwidth` | 0 (plain per-row histogram) | σ in Å of the smoothing over the per-row counts; one row is half a membrane thickness. |
 
 ## Membrane datum
 
