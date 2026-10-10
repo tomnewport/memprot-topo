@@ -1,5 +1,6 @@
 /**
- * Colour key for the surface membrane style: the colour bands, the thickness
+ * Colour key for the membrane coloured by thickness (the surface style, or
+ * grid and polar lines coloured by thickness): the colour bands, the thickness
  * change at which the colour saturates, and the range the membrane actually
  * spans, so a strongly distorted bilayer that reads as one solid colour says
  * how far past the end of the scale it goes.
@@ -7,12 +8,7 @@
 
 import { mixRgb, type RGB, rgbStr } from './colour.js';
 import { Pooled } from './engine.js';
-import {
-  SURFACE_ALPHA,
-  SURFACE_BANDS,
-  SURFACE_RANGE,
-  type SurfaceShading,
-} from './membrane-layer.js';
+import { SURFACE_BANDS, SURFACE_RANGE, type SurfaceShading } from './membrane-layer.js';
 import type { View3DStyle } from './types.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -60,6 +56,18 @@ export function rangeNote(range: [number, number] | null): string | null {
   return `spans ${signedA(lo)} to ${signedA(hi)} Å`;
 }
 
+/** What the key shows: each band as drawn, and the range the membrane spans. */
+export interface KeyContent {
+  /** Colour of each band as it looks over the background. */
+  swatches: RGB[];
+  range: [number, number] | null;
+}
+
+/** Each band's colour at opacity `alpha` over `ground`. */
+export function swatchesOver(colours: RGB[], ground: RGB, alpha: number): RGB[] {
+  return colours.map((c) => mixRgb(ground, c, alpha));
+}
+
 /** The key, drawn in the bottom-left corner of the visible picture. */
 export class SurfaceKey {
   readonly el: SVGGElement;
@@ -94,24 +102,24 @@ export class SurfaceKey {
   }
 
   /**
-   * Show the key at opacity `alpha` for `surface` (hidden when null), in the
+   * Show the key at opacity `alpha` for `content` (hidden when null), in the
    * corner of the visible picture: `left` is its scroll offset, `height` the
    * picture's height.
    */
   draw(
-    surface: SurfaceShading | null,
+    content: KeyContent | null,
     alpha: number,
     style: View3DStyle,
     ground: RGB,
     left: number,
     height: number,
   ): void {
-    if (!surface || alpha < 0.001) {
+    if (!content || alpha < 0.001) {
       this.g.set('display', 'none');
       return;
     }
     this.g.set('display', null);
-    const note = rangeNote(changeRange(surface));
+    const note = rangeNote(content.range);
     const barW = SURFACE_BANDS * SWATCH.w;
     const w = Math.max(barW, textW(CAPTION), note ? textW(note) : 0) + 2 * PAD;
     const h = PAD + LINE + SWATCH.h + LINE + (note ? LINE : 0) + PAD - 2;
@@ -126,14 +134,13 @@ export class SurfaceKey {
     this.back.set('height', String(h));
     this.back.set('fill', rgbStr(ground));
     this.back.set('fill-opacity', '0.85');
-    // Each band as it looks on the upper leaflet over the background.
     const barY = PAD + LINE - 2;
     this.swatches.forEach((s, i) => {
       s.set('x', String(PAD + i * SWATCH.w));
       s.set('y', String(barY));
       s.set('width', String(SWATCH.w));
       s.set('height', String(SWATCH.h));
-      s.set('fill', rgbStr(mixRgb(ground, surface.colours[i], SURFACE_ALPHA.upper)));
+      s.set('fill', rgbStr(content.swatches[i]));
     });
     this.caption.set('x', String(PAD));
     this.caption.set('y', String(PAD + FONT_PX - 2));

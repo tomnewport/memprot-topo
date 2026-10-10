@@ -114,6 +114,12 @@ surface but adds lines to every frame.
 | `polar`                    | Rings and spokes: rings follow the protein's outline near it and become circles further out. |
 | `surface`                  | A translucent surface per leaflet, coloured by its rise or drop from the bulk plane.         |
 
+With `structure-membrane-colour="thickness"` the grid or polar lines are
+coloured by the same thickness change as the surface (below): each segment
+takes the band at its midpoint, from the plain line colour at the bulk
+thickness towards `membraneThinned` or `membraneThickened`, with the same key.
+The default, `plain`, draws them in one colour.
+
 The polar rings are spaced by `structure-grid-spacing`. The first follows the
 protein-lipid interface, taken as 4 Å out from the drawn protein's
 membrane-spanning samples, and the next ones keep a constant distance from it

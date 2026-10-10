@@ -18,8 +18,11 @@ import type { View3DOptions } from '../view3d/options.js';
 import type { Fishnet } from '../view3d/net.js';
 import { PROJECTIONS } from '../view3d/projections.js';
 import {
+  DEFAULT_MEMBRANE_COLOUR,
   DEFAULT_MEMBRANE_STYLE,
+  MEMBRANE_COLOURS,
   MEMBRANE_STYLES,
+  type MembraneColour,
   type MembraneStyle,
 } from '../view3d/membrane-style.js';
 import type { SequenceSource } from '../sequence/types.js';
@@ -217,6 +220,7 @@ export class TopologyDisplay extends HTMLElement {
     'structure-strand-thickness',
     'structure-grid-spacing',
     'structure-membrane-style',
+    'structure-membrane-colour',
     'chain-icon-bandwidth',
     'fit',
     'min-helix-length',
@@ -652,7 +656,8 @@ export class TopologyDisplay extends HTMLElement {
       name === 'structure-strand-width' ||
       name === 'structure-strand-thickness' ||
       name === 'structure-grid-spacing' ||
-      name === 'structure-membrane-style'
+      name === 'structure-membrane-style' ||
+      name === 'structure-membrane-colour'
     ) {
       // 3-D only: update the 3-D view in place, keeping its view.
       if (this._view3dSource) {
@@ -828,6 +833,17 @@ export class TopologyDisplay extends HTMLElement {
       : DEFAULT_MEMBRANE_STYLE;
   }
 
+  /**
+   * How the 3-D view colours the grid and polar lines
+   * (`structure-membrane-colour`); `plain` unless valid.
+   */
+  private get structureMembraneColour(): MembraneColour {
+    const v = this.getAttribute('structure-membrane-colour');
+    return (MEMBRANE_COLOURS as readonly string[]).includes(v ?? '')
+      ? (v as MembraneColour)
+      : DEFAULT_MEMBRANE_COLOUR;
+  }
+
   /** Assemble the 3-D view options from the component's attributes. */
   private get view3dOptions(): Partial<View3DOptions> {
     return {
@@ -836,6 +852,7 @@ export class TopologyDisplay extends HTMLElement {
       ...this.structureStrandOptions,
       gridSpacing: this.structureGridSpacing,
       membraneStyle: this.structureMembraneStyle,
+      membraneColour: this.structureMembraneColour,
     };
   }
 

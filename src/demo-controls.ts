@@ -7,7 +7,12 @@
  * (enforced by a unit test), so new attributes need an entry here.
  */
 import { DEFAULT_VIEW3D_OPTIONS } from './view3d/options.js';
-import { DEFAULT_MEMBRANE_STYLE, MEMBRANE_STYLES } from './view3d/membrane-style.js';
+import {
+  DEFAULT_MEMBRANE_COLOUR,
+  DEFAULT_MEMBRANE_STYLE,
+  MEMBRANE_COLOURS,
+  MEMBRANE_STYLES,
+} from './view3d/membrane-style.js';
 import { DEFAULT_BULK, DEFAULT_MEMBRANE_DETAIL, MEMBRANE_DETAILS } from './membrane/model.js';
 import { registerTheme } from './theme/index.js';
 import {
@@ -225,6 +230,15 @@ export const DEMO_CONTROLS: DemoControl[] = [
     scope: 'all',
     description:
       'Membrane in the 3-D view: a square grid, rings and spokes that follow the protein near it, or a surface coloured by height.',
+  },
+  {
+    attribute: 'structure-membrane-colour',
+    kind: 'select',
+    default: DEFAULT_MEMBRANE_COLOUR,
+    options: [...MEMBRANE_COLOURS],
+    scope: 'all',
+    description:
+      'Colour of the grid or polar lines in the 3-D view: plain, or by how much thinner (red) or thicker (blue) the bilayer is than the bulk.',
   },
   {
     attribute: 'chain-icon-bandwidth',

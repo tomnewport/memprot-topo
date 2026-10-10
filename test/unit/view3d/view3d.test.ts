@@ -996,6 +996,41 @@ describe('<topology-display> 3-D view', () => {
     expect(key()?.getAttribute('display') ?? 'none').toBe('none');
   });
 
+  it('colours the grid lines by thickness from structure-membrane-colour, with the key', async () => {
+    const el = mount(hairpinChain());
+    const root = el.shadowRoot!;
+    el.setAttribute('membrane-upper', '15');
+    el.setAttribute('membrane-lower', '-15');
+    // 6 Å thicker next to the protein.
+    el.setAttribute('membrane-annular-upper', '18');
+    el.setAttribute('membrane-annular-lower', '-18');
+    await el.setTransitionProgress(1);
+    const key = () => root.querySelector('.svg-scroll svg .surface-key');
+    const strokes = () =>
+      new Set(
+        [...root.querySelectorAll('.svg-scroll svg path')]
+          .map((p) => p.getAttribute('stroke'))
+          .filter((c): c is string => !!c),
+      );
+    const plain = strokes();
+    expect(key()).toBeNull();
+    for (const style of ['grid', 'polar']) {
+      el.setAttribute('structure-membrane-style', style);
+      el.setAttribute('structure-membrane-colour', 'thickness');
+      expect(el.transitionProgress).toBe(1);
+      expect(key()!.getAttribute('display')).toBeNull();
+      // Blue-leaning lines where the bilayer is thicker.
+      const blue = [...strokes()]
+        .filter((c) => !plain.has(c))
+        .map((c) => c.match(/^rgb\((\d+), ?(\d+), ?(\d+)\)$/))
+        .filter((m) => m !== null)
+        .filter((m) => Number(m[3]) > Number(m[1]));
+      expect(blue.length).toBeGreaterThan(0);
+      el.setAttribute('structure-membrane-colour', 'plain');
+      expect(key()).toBeNull();
+    }
+  });
+
   describe('membrane-detail blending', () => {
     // Animation frames run by hand, at a clock the test sets.
     let frames: Map<number, FrameRequestCallback>;
