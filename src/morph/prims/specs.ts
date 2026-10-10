@@ -19,3 +19,10 @@ export const SEAM_TR: OpSpec = { layer: 1, key: 's-tr', kind: 'stroke', linecap:
 export const SEAM_BL: OpSpec = { layer: 1, key: 's-bl', kind: 'stroke', linecap: 'butt' };
 export const SEAM_BR: OpSpec = { layer: 1, key: 's-br', kind: 'stroke', linecap: 'butt' };
 export const SEAM_X: OpSpec = { layer: 1, key: 's-x', kind: 'stroke', linecap: 'butt' };
+
+/** Samples either side used for a helix's on-screen axis direction in 3-D. */
+export const AXIS_BASELINE = 8;
+/** A cylinder gradient group spans at most this turn on screen (cos 2.5°). */
+export const GROUP_COS = Math.cos((2.5 * Math.PI) / 180);
+/** A strand face gradient spans at most this turn on screen (cos 10°). */
+export const STRAND_GROUP_COS = Math.cos((10 * Math.PI) / 180);
