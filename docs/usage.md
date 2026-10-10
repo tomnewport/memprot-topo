@@ -59,6 +59,17 @@ page needs network access to both. While loading it shows "Loading …"; on
 failure it shows the error. Changing `pdb-id`, `sim-id`, `distortions` or
 `ss-310` reloads.
 
+MemProtMD renumbers residues from 1 and writes every protomer on one chain,
+often with a blank chain ID. The loader matches the residues against the
+deposited entry's (from the DSSP file's per-residue records), so the drawing
+has the deposited chains and author numbering, and each copy of a chain in the
+simulated assembly gets the next chain ID the entry doesn't use (2OMF's trimer
+is drawn as chains A–C, each numbered as chain A). If the residues don't match,
+the structure is drawn as MemProtMD numbered it, with a console warning. The
+structure is centred on the bilayer simulated with it, read from the lipids in
+`at.pdb` (see [membrane.md](membrane.md#the-structure-files-own-membrane)), so
+no distortions file is needed to place it.
+
 `theme`, `theme-light`, `theme-dark`, `membrane-detail`, `transition-time`,
 `transition-sweep` and the `structure-*` attributes are passed through to the
 `<topology-display>` it creates. Other display attributes are not; to use

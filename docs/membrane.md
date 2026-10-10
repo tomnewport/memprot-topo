@@ -87,15 +87,16 @@ dropped below its bulk plane (see [view-3d.md](view-3d.md)).
 
 ## Placing the membrane
 
-There are three ways, and they combine: each leaflet position comes from the
+There are four ways, and they combine: each leaflet position comes from the
 attribute if set, otherwise from the distortions file, otherwise from the
-default.
+lipids in the structure file, otherwise from the default.
 
 | Mode             | How                                                    | Bulk                        | Annular                                 | Local               |
 | ---------------- | ------------------------------------------------------ | --------------------------- | --------------------------------------- | ------------------- |
-| Default          | nothing                                                | ±20 Å                       | = bulk                                  | none                |
 | Explicit         | `membrane-upper`, `membrane-lower` and the annular two | as given                    | as given, else = bulk                   | none                |
 | Distortions file | the `distortions` property (or the loader's attribute) | the file's reference planes | mean local height under the TM residues | the file's surfaces |
+| Structure lipids | `proteinData.membrane.bilayer` (the loader sets it)    | the phosphate planes        | = bulk                                  | none                |
+| Default          | nothing                                                | ±20 Å                       | = bulk                                  | none                |
 
 All positions are in Å from the bulk midplane, positive up.
 
@@ -112,8 +113,44 @@ the five MemProtMD files described below have bulk thicknesses of 39.2–40.5 Å
 It is the headgroup surface, not the hydrophobic boundary (OPM's ±12–15 Å).
 
 The membrane as drawn, at `membrane-detail`, is readable as `element.membrane`
-(`{ bulk, annular, surfaces, shift }`); at the default `local` detail that is
-the membrane resolved as above.
+(`{ bulk, annular, surfaces, shift, halfThickness }`); at the default `local`
+detail that is the membrane resolved as above. `halfThickness` is OPM's
+hydrophobic half-thickness when the structure file gives it, otherwise null;
+it is reported, not drawn.
+
+## The structure file's own membrane
+
+`proteinData.membrane` carries what the structure file says about its
+membrane; `parseStructureMembrane(text)` reads it from a PDB file:
+
+- **`bilayer`**: from the lipids, when the file has them (MemProtMD's
+  `at.pdb`, which is the whole simulated system in the simulation-box frame,
+  z along the membrane normal). The phosphates (atom `P`, `P8` or Martini's
+  `PO4`, in residues with no Cα) are split about their midplane; each bulk
+  leaflet is the median z of its phosphates more than 20 Å in the membrane
+  plane from every Cα (all of them, if that leaves fewer than 10), and the
+  midplane is halfway between. The structure is shifted onto that midplane
+  (`shift` = −midplane). A file with fewer than 10 phosphates in either
+  leaflet has none.
+- **`halfThickness`**: OPM's `REMARK 1/2 of bilayer thickness`, the
+  hydrophobic half-thickness (Å). It doesn't move the structure: OPM files
+  are already centred on their membrane.
+
+Raw PDB or mmCIF files carry neither; they are drawn as given, against the
+default membrane.
+
+On the four MemProtMD `at.pdb` files fetched for issue #24 (no `at.pdb` was
+fetched for 7AHL), the bulk leaflets read from the phosphates match the
+distortions files' within 0.4 Å:
+
+| PDB  | Midplane from the lipids | Bulk from the lipids | Distortions file midplane / bulk |
+| ---- | ------------------------ | -------------------- | -------------------------------- |
+| 2J1N | 51.77                    | ±19.55               | 55.00 / ±19.70                   |
+| 2OMF | 47.96                    | ±19.97               | 60.59 / ±20.25                   |
+| 3K19 | 50.48                    | ±20.22               | 53.36 / ±20.14                   |
+| 5G53 | 91.67                    | ±20.41               | 89.57 / ±20.03                   |
+
+The midplanes do not match: see [Frames](#frames).
 
 ## Distortions files
 
@@ -181,6 +218,16 @@ that frame, trying in turn:
 
 1. already centred on the midplane (no shift);
 2. in the box frame (shifted by −midplane, so that z = 0 is the bulk midplane).
+
+A structure that carries its own bilayer (see above) is tried only on that
+bilayer's midplane. The distortions files share the xy of the simulation's
+structure files, but not always their z: the midplane of each `at.pdb`'s own
+phosphates is 3.2, 12.6 and 2.9 Å below the distortions file's for 2J1N, 2OMF
+and 3K19, and 2.1 Å above it for 5G53. In `at.pdb` the protein and the lipids
+are one frame (no lipid heavy atom within 1.5 Å of a protein one, in 2J1N and
+2OMF), so the lipids are the better guide to where the protein sits, and the
+surfaces are drawn relative to them. Why the files differ is not known; the
+distortions files average a trajectory and `at.pdb` is a single frame.
 
 A placement fits when at least 6 Cα lie in the core of the file's bulk bilayer
 (more than 8 Å inside both leaflets) and their

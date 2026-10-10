@@ -1,4 +1,5 @@
 import type { MembraneDistortions } from './distortions.js';
+import type { StructureMembrane } from './structure.js';
 import type { LeafletSurface } from './surface.js';
 import type { LeafletPair } from './types.js';
 
@@ -79,10 +80,15 @@ export interface Membrane {
   surfaces: { upper: LeafletSurface; lower: LeafletSurface } | null;
   /**
    * z (Å) added to the structure's coordinates to bring it into the
-   * membrane frame (bulk midplane at z = 0). 0 unless a distortions file
-   * says the structure is still in the simulation-box frame.
+   * membrane frame (bulk midplane at z = 0). 0 unless a distortions file or
+   * the structure's own lipids say it is still in the simulation-box frame.
    */
   shift: number;
+  /**
+   * OPM's hydrophobic half-thickness (Å) when the structure file gives it;
+   * null otherwise. Reported, not drawn.
+   */
+  halfThickness: number | null;
 }
 
 /**
@@ -97,11 +103,16 @@ export interface Membrane {
  * no Cα near z = 0, so it fails the first; a structure in another frame
  * (e.g. OPM, which centres the protein on the origin and rotates it) fails
  * both. This tells frames apart; it does not fine-tune a small xy offset.
+ * `shifts` replaces the two placements tried.
  */
-export function alignToDistortions(calphas: Point3[], d: MembraneDistortions): number | null {
+export function alignToDistortions(
+  calphas: Point3[],
+  d: MembraneDistortions,
+  shifts: readonly number[] = [0, -d.midplane],
+): number | null {
   const tolerance = Math.max(8, 0.15 * d.radius);
   const core = membraneCore(d.bulk);
-  for (const shift of [0, -d.midplane]) {
+  for (const shift of shifts) {
     let n = 0;
     let sx = 0;
     let sy = 0;
@@ -149,34 +160,46 @@ function annularFromSurfaces(
 
 /**
  * Settle the membrane for a structure. Each leaflet position comes from, in
- * order: the explicit setting, the distortions file, the default. Bulk
- * defaults to {@link DEFAULT_BULK}; annular defaults to the bulk. With a
- * distortions file the structure is lined up with it (see
+ * order: the explicit setting, the distortions file, the bilayer in the
+ * structure file itself (`structure.bilayer`, MemProtMD's lipids), the
+ * default. Bulk defaults to {@link DEFAULT_BULK}; annular defaults to the
+ * bulk. With a distortions file the structure is lined up with it (see
  * {@link alignToDistortions}); if it lines up, the annular positions are the
  * mean local surface under its membrane-spanning residues and the local
  * surfaces are kept, otherwise only the file's bulk positions are used.
+ * A structure that carries its bilayer is shifted onto that bilayer's
+ * midplane, and only that placement is tried against a distortions file:
+ * MemProtMD's distortions files share the xy of the simulation's structure
+ * files but not always their z (the midplanes differ by up to 13 Å), so the
+ * lipids in the structure file are the better guide to where it sits.
  *
  * @param calphas every Cα of the structure, in its input frame.
+ * @param structure what the structure file says about its membrane.
  */
 export function resolveMembrane(
   settings: MembraneSettings,
   distortions: MembraneDistortions | null,
   calphas: Point3[],
+  structure: StructureMembrane | null = null,
 ): Membrane {
-  const shift = distortions ? alignToDistortions(calphas, distortions) : null;
+  const own = structure?.bilayer ?? null;
+  const aligned = distortions
+    ? alignToDistortions(calphas, distortions, own ? [-own.midplane] : undefined)
+    : null;
+  const shift = aligned ?? (own ? -own.midplane : 0);
   const fileBulk = distortions?.bulk;
   const bulk: LeafletPair = {
-    upper: settings.bulk?.upper ?? fileBulk?.upper ?? DEFAULT_BULK.upper,
-    lower: settings.bulk?.lower ?? fileBulk?.lower ?? DEFAULT_BULK.lower,
+    upper: settings.bulk?.upper ?? fileBulk?.upper ?? own?.bulk.upper ?? DEFAULT_BULK.upper,
+    lower: settings.bulk?.lower ?? fileBulk?.lower ?? own?.bulk.lower ?? DEFAULT_BULK.lower,
   };
   const surfaces =
-    distortions && shift !== null ? { upper: distortions.upper, lower: distortions.lower } : null;
-  const fromSurface = surfaces ? annularFromSurfaces(calphas, shift ?? 0, bulk, surfaces) : {};
+    distortions && aligned !== null ? { upper: distortions.upper, lower: distortions.lower } : null;
+  const fromSurface = surfaces ? annularFromSurfaces(calphas, shift, bulk, surfaces) : {};
   const annular: LeafletPair = {
     upper: settings.annular?.upper ?? fromSurface.upper ?? bulk.upper,
     lower: settings.annular?.lower ?? fromSurface.lower ?? bulk.lower,
   };
-  return { bulk, annular, surfaces, shift: shift ?? 0 };
+  return { bulk, annular, surfaces, shift, halfThickness: structure?.halfThickness ?? null };
 }
 
 /**
