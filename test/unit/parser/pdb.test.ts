@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePdb } from '../../../src/parser/pdb.js';
+import { parsePdb, parsePdbBackbone } from '../../../src/parser/pdb.js';
 import MEMPROTMD_AT from '../../../examples/2omf_default_dppc-at.pdb?raw';
 
 const SAMPLE_PDB = `\
@@ -153,5 +153,38 @@ describe('parsePdb with a blank chain column', () => {
       'ATOM      3  CA  GLY C   1       0.000   0.000  20.000  1.00  0.00           C',
     ].join('\n');
     expect(parsePdb(text).map((c) => c.chainId)).toEqual(['A', 'B', 'C']);
+  });
+});
+
+describe('parsePdbBackbone', () => {
+  it('reads N, Cα, C and O per residue: first altloc, terminal OT1 as O, Cα-less residues dropped', () => {
+    const text = [
+      'ATOM      1  N   GLY A   1       0.000   0.000   0.000  1.00  0.00           N',
+      'ATOM      2  CA  GLY A   1       1.000   0.000   0.000  1.00  0.00           C',
+      'ATOM      3  C   GLY A   1       2.000   0.000   0.000  1.00  0.00           C',
+      'ATOM      4  O   GLY A   1       2.000   1.000   0.000  1.00  0.00           O',
+      'ATOM      5  N  ASER A   2       3.000   0.000   0.000  0.50  0.00           N',
+      'ATOM      6  N  BSER A   2       9.000   9.000   9.000  0.50  0.00           N',
+      'ATOM      7  CA  SER A   2       4.000   0.000   0.000  1.00  0.00           C',
+      'ATOM      8  C   SER A   2       5.000   0.000   0.000  1.00  0.00           C',
+      'ATOM      9  OT1 SER A   2       5.000   1.000   0.000  1.00  0.00           O',
+      'HETATM   10  O   HOH A 900       0.000   0.000  20.000  1.00  0.00           O',
+    ].join('\n');
+    const [chain] = parsePdbBackbone(text);
+    expect(chain.chainId).toBe('A');
+    expect(chain.residues.map((r) => [r.resSeq, r.resName])).toEqual([
+      [1, 'GLY'],
+      [2, 'SER'],
+    ]);
+    expect(chain.residues[1].n).toEqual({ x: 3, y: 0, z: 0 });
+    expect(chain.residues[1].o).toEqual({ x: 5, y: 1, z: 0 });
+  });
+
+  it("lists the same residues as parsePdb for 2OMF's MemProtMD file", () => {
+    const backbone = parsePdbBackbone(MEMPROTMD_AT);
+    const chains = parsePdb(MEMPROTMD_AT);
+    expect(backbone.map((c) => [c.chainId, c.residues.length])).toEqual(
+      chains.map((c) => [c.chainId, c.calphas.length]),
+    );
   });
 });

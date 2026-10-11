@@ -4,6 +4,7 @@ import { TopologyDisplay } from '../../../src/components/topology-display.js';
 import { syntheticDistortions } from '../fixtures/distortions.js';
 import OMF_AT from '../../../examples/2omf_default_dppc-at.pdb?raw';
 import OMF_DSSP from '../../../examples/2omf.dssp.cif?raw';
+import G53_PDB from '../../../examples/5g53.pdb?raw';
 
 // Minimal PDB with 11 CA atoms spanning z = -20 to +20 (simulates a TM helix).
 const MINIMAL_PDB = `\
@@ -259,21 +260,67 @@ describe('TopologyLoader', () => {
     expect(errorEl).not.toBeNull();
   });
 
-  it('renders an error when the DSSP fetch fails', async () => {
+  it('computes the secondary structure on the coordinates, unless ss-source is pdb-redo', async () => {
+    vi.stubGlobal('fetch', makeFetchMock(G53_PDB, MINIMAL_MMCIF));
+    const computed = attach(new TopologyLoader());
+    computed.setAttribute('pdb-id', '5g53');
+    const filed = attach(new TopologyLoader());
+    filed.setAttribute('ss-source', 'pdb-redo');
+    filed.setAttribute('pdb-id', '5g53');
+
+    await flushPromises();
+
+    const helices = (el: TopologyLoader) =>
+      (el.shadowRoot!.querySelector('topology-display') as TopologyDisplay)
+        .proteinData!.chains[0].segments.filter((s) => s.type === 'helix')
+        .map((s) => [s.start, s.end]);
+    // The file names one helix, A 1-11; 5G53's coordinates give its seven TM helices and more.
+    expect(helices(filed)).toEqual([[1, 11]]);
+    expect(helices(computed).length).toBeGreaterThan(7);
+  });
+
+  it("draws a full-backbone structure in its own numbering when PDB-REDO can't be reached", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('pdb-redo.eu')) {
+        return Promise.resolve({ ok: false, status: 503, statusText: 'Service Unavailable' });
+      }
+      return Promise.resolve({ ok: true, text: () => Promise.resolve(G53_PDB) });
+    });
+    const el = attach(new TopologyLoader());
+    el.setAttribute('pdb-id', '5g53');
+
+    await flushPromises();
+
+    const display = el.shadowRoot!.querySelector('topology-display') as TopologyDisplay;
+    expect(display.proteinData!.chains[0].segments.length).toBeGreaterThan(7);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/503/));
+    warn.mockRestore();
+  });
+
+  it('renders an error when the DSSP fetch fails for a Cα-only structure, or ss-source is pdb-redo', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     fetchMock.mockImplementation((url: string) => {
       if ((url as string).includes('pdb-redo.eu')) {
         return Promise.resolve({ ok: false, status: 503, statusText: 'Service Unavailable' });
       }
-      return Promise.resolve({ ok: true, text: () => Promise.resolve(MINIMAL_PDB) });
+      const text = url.includes('5g53') ? G53_PDB : MINIMAL_PDB;
+      return Promise.resolve({ ok: true, text: () => Promise.resolve(text) });
     });
 
-    const el = attach(new TopologyLoader());
-    el.setAttribute('pdb-id', '9bad');
+    const caOnly = attach(new TopologyLoader());
+    caOnly.setAttribute('pdb-id', '9bad');
+    const filed = attach(new TopologyLoader());
+    filed.setAttribute('ss-source', 'pdb-redo');
+    filed.setAttribute('pdb-id', '5g53');
 
     await flushPromises();
 
-    const errorEl = el.shadowRoot!.querySelector('.error');
-    expect(errorEl).not.toBeNull();
+    expect(caOnly.shadowRoot!.querySelector('.error')).not.toBeNull();
+    expect(filed.shadowRoot!.querySelector('.error-detail')!.textContent).toMatch(
+      /DSSP fetch failed/,
+    );
+    warn.mockRestore();
   });
 
   it('aborts the previous request when pdb-id changes before fetch completes', () => {

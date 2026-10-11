@@ -52,12 +52,20 @@ is a separate chunk, loaded the first time the 3-D view is shown.
 | `sim-id`      | MemProtMD simulation ID. Default `<pdb-id>_default_dppc`.                                                  |
 | `distortions` | URL of a MemProtMD bilayer-distortions file. Optional; if it fails to load, the default membrane is drawn. |
 | `ss-310`      | `helix` draws DSSP's 3₁₀ helices as helices. By default they are coil, as are polyproline II stretches.    |
+| `ss-source`   | `pdb-redo` draws PDB-REDO's DSSP for the deposited entry. By default DSSP is computed on `at.pdb` itself.  |
 
 The loader fetches the simulation's `at.pdb` from
-`memprotmd.bioch.ox.ac.uk` and the entry's DSSP from `pdb-redo.eu`, so the
-page needs network access to both. While loading it shows "Loading …"; on
-failure it shows the error. Changing `pdb-id`, `sim-id`, `distortions` or
-`ss-310` reloads.
+`memprotmd.bioch.ox.ac.uk` and the entry's DSSP from `pdb-redo.eu`. The
+helices, strands and β-ladders are computed with DSSP on the simulated
+structure's own backbone (see
+[secondary-structure.md](secondary-structure.md#dssp-on-the-drawn-structure)),
+so they match the coordinates drawn; PDB-REDO's file is used for the deposited
+chains and numbering, and for the secondary structure only with
+`ss-source="pdb-redo"` or when `at.pdb` has no full backbone. If PDB-REDO
+can't be reached, the structure is still drawn, in MemProtMD's numbering, with
+a console warning; with `ss-source="pdb-redo"` or a Cα-only file that is an
+error. While loading it shows "Loading …"; on failure it shows the error.
+Changing `pdb-id`, `sim-id`, `distortions`, `ss-310` or `ss-source` reloads.
 
 MemProtMD renumbers residues from 1 and writes every protomer on one chain,
 often with a blank chain ID. The loader matches the residues against the

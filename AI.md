@@ -11,6 +11,7 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | Component                            | Status       | Notes                                                                               |
 | ------------------------------------ | ------------ | ----------------------------------------------------------------------------------- |
 | `src/parser/`                        | AI-generated | PDB Cα and DSSP mmCIF parsers, merged into `ProteinData`.                           |
+| `src/secondary-structure/`           | AI-generated | DSSP (helices, bridges, ladders) on a structure's backbone, as DSSP 4 (#79).        |
 | `src/orientation/`                   | AI-generated | Transmembrane chain detection and default chain choice.                             |
 | `src/unroll/`                        | AI-generated | Arc-length unroll, B-spline fit and helix/strand axis projection (not `barrel.ts`). |
 | `src/contacts/`                      | AI-generated | β-sheet partner detection and β-barrel geometry (n, shear, tilt). Human-reviewed.   |
