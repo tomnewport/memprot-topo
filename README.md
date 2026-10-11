@@ -46,7 +46,7 @@ Once released, you can embed MemProt2D in any web page with a single script tag:
 - [docs/chain-icons.md](docs/chain-icons.md) — chain-picker icons and `chain-icon-bandwidth`
 - [docs/sizing.md](docs/sizing.md) — `fit` attribute and the scrolling diagram box
 - [docs/selection.md](docs/selection.md) — the `selection` attribute and selection events
-- [docs/secondary-structure.md](docs/secondary-structure.md) — `min-helix-length` and `min-strand-length`
+- [docs/secondary-structure.md](docs/secondary-structure.md) — where secondary structure comes from, which DSSP classes are drawn, `ss-310`, `min-helix-length` and `min-strand-length`
 - [docs/residue-data.md](docs/residue-data.md) — per-residue colours, widths and the colour legend
 - [docs/data-tracks.md](docs/data-tracks.md) — data tracks from PDB and CSV files: heatmaps, areas, lines and features in the sequence view
 - [docs/membrane.md](docs/membrane.md) — membrane leaflet positions and MemProtMD distortions files

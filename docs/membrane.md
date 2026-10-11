@@ -289,3 +289,20 @@ residues and may put every chain in one, in another order, so chains are
 matched by residue-name sequence and, for identical chains, the assignment
 that superposes best is kept. A demo protein without a transform would be left
 unchanged, and the demo says so.
+
+## References
+
+- Lomize MA, Pogozheva ID, Joo H, Mosberg HI, Lomize AL (2012). OPM database
+  and PPM web server: resources for positioning of proteins in membranes.
+  _Nucleic Acids Res._ 40(D1):D370–D376. https://doi.org/10.1093/nar/gkr703
+- Stansfeld PJ, Goose JE, Caffrey M, et al. (2015). MemProtMD: automated
+  insertion of membrane protein structures into explicit lipid membranes.
+  _Structure_ 23(7):1350–1361. https://doi.org/10.1016/j.str.2015.05.006
+- Newport TD, Sansom MSP, Stansfeld PJ (2019). The MemProtMD database: a
+  resource for membrane-embedded protein structures and their lipid
+  interactions. _Nucleic Acids Res._ 47(D1):D390–D397.
+  https://doi.org/10.1093/nar/gky1047
+- Kabsch W (1976). A solution for the best rotation to relate two sets of
+  vectors. _Acta Cryst._ A32:922–923.
+  https://doi.org/10.1107/S0567739476001873 (the superposition behind the
+  demo's OPM → MemProtMD transforms).
