@@ -28,8 +28,8 @@ off a flag that is on by default.
 | `transition-sweep`                                                                                        | `0.35`      | Rolling-wave width of the 2-D → 3-D transition. See [view-3d.md](view-3d.md).    |
 | `structure-projection`                                                                                    | `isometric` | `isometric` or `perspective`.                                                    |
 | `structure-strand-width`, `structure-strand-thickness`                                                    | 2.85, 1.0 Å | Strand ribbon size in 3-D.                                                       |
-| `structure-grid-spacing`                                                                                  | auto        | Membrane grid spacing in 3-D, Å.                                                 |
-| `structure-membrane-style`                                                                                | `grid`      | `grid`, `polar` or `surface`.                                                    |
+| `structure-grid-spacing`                                                                                  | `1`         | Membrane grid or polar line spacing in 3-D, Å; `auto` sizes it from the disc.    |
+| `structure-membrane-style`                                                                                | `polar`     | `polar`, `grid` or `surface`.                                                    |
 | `structure-membrane-colour`                                                                               | `plain`     | `plain` or `thickness`: red/blue lines. See [view-3d.md](view-3d.md).            |
 | `membrane-upper`, `membrane-lower`, `membrane-annular-upper`, `membrane-annular-lower`, `membrane-detail` | from data   | See [membrane.md](membrane.md).                                                  |
 | `min-helix-length`, `min-strand-length`                                                                   | 4           | See [secondary-structure.md](secondary-structure.md).                            |

@@ -23,6 +23,7 @@ import type { View3DOptions } from '../view3d/options.js';
 import type { Fishnet } from '../view3d/net.js';
 import { PROJECTIONS } from '../view3d/projections.js';
 import {
+  DEFAULT_GRID_SPACING,
   DEFAULT_MEMBRANE_COLOUR,
   DEFAULT_MEMBRANE_STYLE,
   MEMBRANE_COLOURS,
@@ -843,15 +844,17 @@ export class TopologyDisplay extends HTMLElement {
 
   /**
    * Spacing (Å) of the 3-D membrane grid (`structure-grid-spacing`), at least
-   * 2 Å; unset, `auto` or invalid gives 0, which sizes it from the membrane
-   * disc (an eighth of its radius, 4–8 Å).
+   * 1 Å; unset or invalid gives the default (1 Å), and `auto` or `0` gives 0,
+   * which sizes it from the membrane disc (an eighth of its radius, 4–8 Å).
    */
   private get structureGridSpacing(): number {
-    const v = Number.parseFloat(this.getAttribute('structure-grid-spacing') ?? '');
-    return Number.isFinite(v) && v > 0 ? v : 0;
+    const raw = this.getAttribute('structure-grid-spacing')?.trim();
+    if (raw === 'auto') return 0;
+    const v = Number.parseFloat(raw ?? '');
+    return Number.isFinite(v) && v >= 0 ? v : DEFAULT_GRID_SPACING;
   }
 
-  /** How the 3-D view draws the leaflets (`structure-membrane-style`); `grid` unless valid. */
+  /** How the 3-D view draws the leaflets (`structure-membrane-style`); `polar` unless valid. */
   private get structureMembraneStyle(): MembraneStyle {
     const v = this.getAttribute('structure-membrane-style');
     return (MEMBRANE_STYLES as readonly string[]).includes(v ?? '')

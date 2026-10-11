@@ -4,6 +4,7 @@
  */
 
 import {
+  DEFAULT_GRID_SPACING,
   DEFAULT_MEMBRANE_COLOUR,
   DEFAULT_MEMBRANE_STYLE,
   type MembraneColour,
@@ -37,8 +38,8 @@ export interface View3DOptions {
    */
   sweep: number;
   /**
-   * Spacing (Å) of the membrane's grid lines; 0 picks it from the size of
-   * the membrane disc ({@link fishnetSpacing}).
+   * Spacing (Å) of the membrane's grid or polar lines; 0 picks it from the
+   * size of the membrane disc ({@link fishnetSpacing}).
    */
   gridSpacing: number;
   /** How the leaflets are drawn: grid or polar lines, or a coloured surface. */
@@ -58,7 +59,7 @@ export const DEFAULT_VIEW3D_OPTIONS: View3DOptions = {
   elevation: Math.atan(1 / Math.SQRT2),
   fov: 0,
   sweep: 0.35,
-  gridSpacing: 0,
+  gridSpacing: DEFAULT_GRID_SPACING,
   membraneStyle: DEFAULT_MEMBRANE_STYLE,
   membraneColour: DEFAULT_MEMBRANE_COLOUR,
 };
