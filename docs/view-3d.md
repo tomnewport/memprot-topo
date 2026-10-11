@@ -267,9 +267,9 @@ finished 3-D view stays vector (and exportable).
   the depth snap that preserves the 2-D drawing order near t = 0 fades out by
   t = 0.3.
 - Chain-break dashes match the 2-D figure at t = 0; in 3-D the pattern is laid
-  along the loop's length on screen and sized to the (much wider) line, so a
-  stretch pointing at the viewer doesn't bunch its dashes into a clump. The
-  price is that the dashes slide along the curve as the view turns.
+  along the loop's length in space and sized to the (much wider) line, so the
+  dashes stay pinned to the curve as the view turns. A stretch pointing at the
+  viewer bunches its dashes, as perspective foreshortens it.
 - Faded neighbouring chains (assembly barrels) start at the 2-D figure's
   translucency and become opaque by t = 0.3, with colours lightened so they
   look the same over white. Translucent pieces of one element overlap slightly
