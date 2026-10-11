@@ -23,10 +23,12 @@
  * N→C direction alternates, but the shear coils every strand the same way, so
  * on the *unrolled* sheet all strands are parallel slanted bars.
  *
- * This module recovers that picture from Cα coordinates alone:
+ * This module recovers that picture from Cα coordinates and, when the DSSP
+ * file has them, DSSP's own β-ladders:
  *  1. extract each β-strand and estimate its axis by PCA,
- *  2. pair strands that sit at β-sheet spacing with enough residue contacts,
- *     classifying each pair parallel / antiparallel,
+ *  2. pair strands from DSSP's ladders (the hydrogen-bonded residue pairs) or,
+ *     without them, from Cα geometry: strands that sit at β-sheet spacing with
+ *     enough residue contacts, classified parallel / antiparallel by axis,
  *  3. walk the pairing graph to decide whether the sheet closes into a barrel,
  *     and report n, the shear number S, the mean tilt, and the barrel frame.
  *
@@ -34,7 +36,13 @@
  * barrel axis is taken to be z and the analysis is expressed relative to it.
  */
 
-import type { Calpha, ChainData, SecondaryStructureSegment } from '../types.js';
+import type {
+  BetaLadder,
+  Calpha,
+  ChainData,
+  ResidueRef,
+  SecondaryStructureSegment,
+} from '../types.js';
 import { residueKey, type ResidueKey } from '../residue-key.js';
 
 export interface Vec3 {
@@ -94,6 +102,18 @@ export interface BarrelAnalysisOptions {
    * that merely pass near each other at a steep angle). @default 0.5 (±60°)
    */
   minAxisDot?: number;
+  /**
+   * DSSP's β-ladders. When any of them pair the strands, pairing comes from
+   * them instead of the Cα geometry (the spacing, contact and axis options
+   * then don't apply). Strands tagged with a `chainId` match ladder residues
+   * on chain and number; untagged strands on number alone.
+   */
+  ladders?: readonly BetaLadder[];
+  /**
+   * Minimum bridges (residue pairs) across the ladders joining two strands
+   * for them to count as paired; drops DSSP's isolated bridges. @default 2
+   */
+  minLadderBridges?: number;
 }
 
 export interface BarrelAnalysis {
@@ -101,6 +121,8 @@ export interface BarrelAnalysis {
   pairings: StrandPairing[];
   /** True when the strands form a single closed cycle (the sheet closes). */
   closed: boolean;
+  /** Where the pairings came from: DSSP's ladders, or Cα geometry. */
+  pairingSource: 'dssp' | 'geometry';
   /** Strand indices in ring (or, for an open sheet, path) order. */
   ringOrder: number[];
   /** Number of strands in the ring/path. */
@@ -122,12 +144,13 @@ export interface BarrelAnalysis {
   cylindrical: boolean;
 }
 
-const DEFAULTS: Required<BarrelAnalysisOptions> = {
+const DEFAULTS: Required<Omit<BarrelAnalysisOptions, 'ladders'>> = {
   minSpacing: 3.5,
   maxSpacing: 6.5,
   contactCutoff: 5.5,
   minContacts: 3,
   minAxisDot: 0.5,
+  minLadderBridges: 2,
 };
 
 function median(values: number[]): number {
@@ -255,7 +278,7 @@ function dot3(a: Vec3, b: Vec3): number {
  * Test whether two strands are β-sheet neighbours and, if so, return the
  * pairing (orientation, spacing, residue contacts).  Returns null otherwise.
  */
-function pairOf(a: Strand, b: Strand, opts: Required<BarrelAnalysisOptions>): StrandPairing | null {
+function pairOf(a: Strand, b: Strand, opts: typeof DEFAULTS): StrandPairing | null {
   // Nearest neighbour distance for each Cα of `a` into `b`, plus the contact.
   const nearest: number[] = [];
   const contacts: ResidueContact[] = [];
@@ -308,6 +331,128 @@ export function pairStrands(
     }
   }
   return pairings;
+}
+
+const sameResidue = (c: Calpha, r: ResidueRef): boolean =>
+  c.resSeq === r.resSeq && c.iCode === r.iCode;
+
+/** The strand holding residue `r`, and its index in the strand's Cα; null if none. */
+function locate(strands: Strand[], r: ResidueRef): { strand: Strand; at: number } | null {
+  for (const strand of strands) {
+    if (strand.chainId !== undefined && strand.chainId !== r.chainId) continue;
+    const at = strand.calphas.findIndex((c) => sameResidue(c, r));
+    if (at >= 0) return { strand, at };
+  }
+  return null;
+}
+
+/**
+ * Strand pairings from DSSP's β-ladders. Each ladder's two sides are found in
+ * the strands (both ends of a side must lie in one strand), and its residues
+ * paired in order: side `a`'s k-th residue with the residue the same fraction
+ * of the way along side `b`, so a β-bulge, which makes one side longer, still
+ * pairs end to end. Ladders joining the same two strands are pooled; pairs
+ * with fewer than `minLadderBridges` residue pairs are dropped.
+ */
+export function pairStrandsFromLadders(
+  strands: Strand[],
+  ladders: readonly BetaLadder[],
+  options: Pick<BarrelAnalysisOptions, 'minLadderBridges'> = {},
+): StrandPairing[] {
+  const minBridges = options.minLadderBridges ?? DEFAULTS.minLadderBridges;
+  const byPair = new Map<string, StrandPairing & { votes: number }>();
+  for (const ladder of ladders) {
+    const a0 = locate(strands, ladder.a.start);
+    const a1 = locate(strands, ladder.a.end);
+    const b0 = locate(strands, ladder.b.start);
+    const b1 = locate(strands, ladder.b.end);
+    if (!a0 || !a1 || !b0 || !b1) continue;
+    if (a0.strand !== a1.strand || b0.strand !== b1.strand || a0.strand === b0.strand) continue;
+    const sa = a0.strand;
+    const sb = b0.strand;
+    const flip = sa.index > sb.index;
+    const n = a1.at - a0.at;
+    const contacts: ResidueContact[] = [];
+    for (let k = 0; k <= Math.abs(n); k++) {
+      const i = a0.at + Math.sign(n) * k;
+      const j = Math.round(b0.at + (n === 0 ? 0 : ((b1.at - b0.at) * k) / Math.abs(n)));
+      const ca = sa.calphas[i];
+      const cb = sb.calphas[j];
+      const [p, q] = flip ? [cb, ca] : [ca, cb];
+      contacts.push({
+        aResSeq: p.resSeq,
+        bResSeq: q.resSeq,
+        aKey: residueKey(p),
+        bKey: residueKey(q),
+        distance: dist(ca, cb),
+      });
+    }
+    const [ia, ib] = flip ? [sb.index, sa.index] : [sa.index, sb.index];
+    const key = `${ia}:${ib}`;
+    const vote = ladder.type === 'parallel' ? contacts.length : -contacts.length;
+    const pair = byPair.get(key);
+    if (pair) {
+      pair.contacts.push(...contacts);
+      pair.votes += vote;
+    } else {
+      byPair.set(key, {
+        a: ia,
+        b: ib,
+        orientation: ladder.type,
+        spacing: 0,
+        contacts,
+        votes: vote,
+      });
+    }
+  }
+
+  const pairings: StrandPairing[] = [];
+  for (const { votes, ...pair } of byPair.values()) {
+    if (pair.contacts.length < minBridges) continue;
+    pair.contacts.sort((x, y) => x.aResSeq - y.aResSeq);
+    pairings.push({
+      ...pair,
+      orientation: votes >= 0 ? 'parallel' : 'antiparallel',
+      spacing: median(pair.contacts.map((c) => c.distance)),
+    });
+  }
+  return pairings.sort((x, y) => x.a - y.a || x.b - y.b);
+}
+
+/**
+ * Pairings for an analysis: from DSSP's ladders when any pair the strands,
+ * otherwise from the Cα geometry.
+ */
+function pairingsFor(
+  strands: Strand[],
+  options: BarrelAnalysisOptions,
+): { pairings: StrandPairing[]; source: 'dssp' | 'geometry' } {
+  if (options.ladders && options.ladders.length > 0) {
+    const pairings = pairStrandsFromLadders(strands, options.ladders, options);
+    if (pairings.length > 0) return { pairings, source: 'dssp' };
+  }
+  return { pairings: pairStrands(strands, options), source: 'geometry' };
+}
+
+/** A chain's DSSP ladders with both sides in the chain itself. */
+export function chainLadders(chain: ChainData): BetaLadder[] {
+  return (chain.ladders ?? []).filter(
+    (l) => l.a.start.chainId === chain.chainId && l.b.start.chainId === chain.chainId,
+  );
+}
+
+/** Every chain's DSSP ladders, each once (chains share their cross-chain ladders). */
+export function assemblyLadders(chains: ChainData[]): BetaLadder[] {
+  const seen = new Set<string>();
+  const out: BetaLadder[] = [];
+  for (const chain of chains) {
+    for (const l of chain.ladders ?? []) {
+      if (seen.has(l.id)) continue;
+      seen.add(l.id);
+      out.push(l);
+    }
+  }
+  return out;
 }
 
 /**
@@ -388,6 +533,11 @@ function ringFromPairings(
       prev = cur;
       cur = next;
     }
+    // A cycle reads the same either way round: walk it towards the lower-
+    // numbered neighbour, so the order doesn't depend on how pairings arrived.
+    if (closedHere && order.length > 2 && order[1] > order[order.length - 1]) {
+      order.splice(1, order.length - 1, ...order.slice(1).reverse());
+    }
     if (closedHere && order.length > bestCycle.length) bestCycle = order;
     if (!closedHere && order.length > bestPath.length) bestPath = order;
   }
@@ -416,6 +566,8 @@ function meanRisePerResidue(strands: Strand[]): number {
 /**
  * Analyse a chain's β-strands: pair them, recover ring order, and — when they
  * close into a cylinder — report the barrel parameters (n, shear, tilt, frame).
+ * Pass the chain's DSSP ladders (`chainLadders`) as `options.ladders` to pair
+ * from them.
  *
  * The barrel axis is taken as the membrane normal (+z); coordinates must
  * already be in the membrane frame (see the `orientation` module).
@@ -438,7 +590,7 @@ export function analyseStrandSet(
   strands: Strand[],
   options: BarrelAnalysisOptions = {},
 ): BarrelAnalysis {
-  const pairings = pairStrands(strands, options);
+  const { pairings, source: pairingSource } = pairingsFor(strands, options);
   const axis: Vec3 = { x: 0, y: 0, z: 1 };
 
   // A barrel-wall strand hydrogen-bonds to a neighbour on each side, so it has
@@ -476,6 +628,7 @@ export function analyseStrandSet(
   const empty: BarrelAnalysis = {
     strands,
     pairings,
+    pairingSource,
     closed: false,
     ringOrder: order,
     strandCount: strands.length,
@@ -523,6 +676,7 @@ export function analyseStrandSet(
   return {
     strands,
     pairings,
+    pairingSource,
     closed,
     ringOrder: order,
     strandCount: n,
@@ -559,5 +713,6 @@ export function analyseAssemblyBarrel(
   chains: ChainData[],
   options: BarrelAnalysisOptions = {},
 ): BarrelAnalysis {
-  return analyseStrandSet(extractAssemblyStrands(chains), options);
+  const ladders = options.ladders ?? assemblyLadders(chains);
+  return analyseStrandSet(extractAssemblyStrands(chains), { ...options, ladders });
 }

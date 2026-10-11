@@ -61,7 +61,8 @@ of this is drawn (`membraneAtDetail`). `membrane/profile.ts` turns it into the
 - [`orientation/`](../src/orientation/) decides which chains cross the
   bilayer; the display shows the largest transmembrane chain unless
   `selection` names another. See [chain-selection.md](chain-selection.md).
-- [`contacts/`](../src/contacts/) pairs β-strands from Cα geometry and
+- [`contacts/`](../src/contacts/) pairs β-strands from DSSP's ladders (or,
+  without them, Cα geometry) and
   measures β-barrels (strand number, shear, tilt, axis), for single chains and
   for multi-chain assembly barrels. Whether a chain is a closed barrel decides
   how it is unrolled. See [beta-barrels.md](beta-barrels.md).

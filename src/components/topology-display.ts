@@ -1,6 +1,11 @@
 import type { ChainData, ProteinData } from '../types.js';
 import { selectTransmembraneChains } from '../orientation/index.js';
-import { analyseBarrel, analyseAssemblyBarrel, type BarrelAnalysis } from '../contacts/index.js';
+import {
+  analyseBarrel,
+  analyseAssemblyBarrel,
+  chainLadders,
+  type BarrelAnalysis,
+} from '../contacts/index.js';
 import {
   parseSeriesAttribute,
   readDataTheme,
@@ -1093,7 +1098,7 @@ export class TopologyDisplay extends HTMLElement {
       layout = layoutChain(
         chain,
         opts,
-        analysis ?? analyseBarrel(chain.calphas, chain.segments),
+        analysis ?? analyseBarrel(chain.calphas, chain.segments, { ladders: chainLadders(chain) }),
         showContacts,
         membrane,
         core,
@@ -1243,7 +1248,9 @@ export class TopologyDisplay extends HTMLElement {
     const helices = selectedChain.segments.filter((s) => s.type === 'helix').length;
     // Analyse the β-sheet topology once: it drives both the summary label and
     // the parallel-strand unwrap in the layout.
-    const analysis = analyseBarrel(selectedChain.calphas, selectedChain.segments);
+    const analysis = analyseBarrel(selectedChain.calphas, selectedChain.segments, {
+      ladders: chainLadders(selectedChain),
+    });
     // Count physical strands from the analysis (overlapping SHEET records are
     // merged there); raw segment counts over-report on real structures.
     const strands = analysis.strands.length;

@@ -1,4 +1,4 @@
-import type { Calpha } from '../types.js';
+import type { BetaLadder, Calpha } from '../types.js';
 import { mmcifCategory, parseMmcifLoops } from './mmcif-tokenizer.js';
 import type { RawChain, RawSSSegment } from './types.js';
 
@@ -118,6 +118,9 @@ function matchesAt(model: Calpha[], pos: number, chain: DepositedChain): boolean
  * @param dsspText PDB-REDO's DSSP mmCIF file for the deposited entry, in full
  *   (the trimmed `examples/*.dssp.cif` files have no per-residue records).
  * @param segments the segments `parseDsspMmcif` read from it.
+ * @param ladders the β-ladders `parseDsspLadders` read from it. A copy takes
+ *   the ladders within the chain it copies; ladders to other chains stay with
+ *   the first copy.
  * @returns null when the file has no per-residue records or some residue
  *   doesn't fall in a matching run.
  */
@@ -125,7 +128,8 @@ export function mapToDeposited(
   chains: RawChain[],
   dsspText: string,
   segments: RawSSSegment[],
-): { chains: RawChain[]; segments: RawSSSegment[] } | null {
+  ladders: BetaLadder[] = [],
+): { chains: RawChain[]; segments: RawSSSegment[]; ladders: BetaLadder[] } | null {
   const deposited = depositedChains(dsspText);
   if (!deposited) return null;
   const model = chains.flatMap((c) => c.calphas);
@@ -134,6 +138,7 @@ export function mapToDeposited(
   const taken = new Set(deposited.map((c) => c.chainId));
   const outChains: RawChain[] = [];
   const outSegments: RawSSSegment[] = [];
+  const outLadders: BetaLadder[] = [];
   let pos = 0;
   while (pos < model.length) {
     let best: DepositedChain | null = null;
@@ -150,7 +155,8 @@ export function mapToDeposited(
     if (!best) return null;
 
     let chainId = best.chainId;
-    if (used.has(chainId)) {
+    const copy = used.has(chainId);
+    if (copy) {
       const spare = SPARE_IDS.find((id) => !taken.has(id));
       if (!spare) return null;
       chainId = spare;
@@ -169,7 +175,21 @@ export function mapToDeposited(
     for (const s of segments) {
       if (s.chainId === best.chainId) outSegments.push({ ...s, chainId });
     }
+    const from = best.chainId;
+    for (const l of ladders) {
+      const inA = l.a.start.chainId === from;
+      const inB = l.b.start.chainId === from;
+      if (!copy) {
+        if (inA || inB) outLadders.push(l);
+      } else if (inA && inB) {
+        const side = (r: { start: BetaLadder['a']['start']; end: BetaLadder['a']['end'] }) => ({
+          start: { ...r.start, chainId },
+          end: { ...r.end, chainId },
+        });
+        outLadders.push({ ...l, id: `${l.id}:${chainId}`, a: side(l.a), b: side(l.b) });
+      }
+    }
     pos += best.residues.length;
   }
-  return { chains: outChains, segments: outSegments };
+  return { chains: outChains, segments: outSegments, ladders: outLadders };
 }

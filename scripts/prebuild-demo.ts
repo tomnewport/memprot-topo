@@ -3,7 +3,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { parsePdb } from '../src/parser/pdb.js';
-import { parseDsspMmcif } from '../src/parser/dssp-mmcif.js';
+import { parseDsspLadders, parseDsspMmcif } from '../src/parser/dssp-mmcif.js';
 import { mergeProteinData } from '../src/parser/merge.js';
 import type { ProteinData } from '../src/types.js';
 
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
       const [pdbText, dsspText] = await load();
       const chains = parsePdb(pdbText);
       const ssSegments = parseDsspMmcif(dsspText);
-      results[id] = mergeProteinData(id, chains, ssSegments);
+      results[id] = mergeProteinData(id, chains, ssSegments, parseDsspLadders(dsspText));
       const summary = results[id].chains.map((c) => `${c.chainId}:${c.residueCount}aa`).join(', ');
       console.log(`done (${summary})`);
     } catch (err) {

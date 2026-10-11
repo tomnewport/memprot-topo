@@ -44,19 +44,36 @@ rendering exploits.
 ## 2. Detecting the barrel — `src/contacts/`
 
 [`analyseBarrel`](../src/contacts/beta-sheet.ts) recovers the picture above from
-Cα alone (no atoms beyond Cα, in keeping with the project's input contract):
+the Cα and, when the DSSP file has them, DSSP's own β-ladders:
 
 1. **Extract strands.** One strand per _physical_ strand. Real PDB/DSSP SHEET
    records list a barrel strand once per sheet relationship, so the same strand
    appears several times as overlapping ranges (OmpF's annotation has 42 records
    for 16 strands); these are merged first. Each strand's axis is the dominant
    principal component of its Cα (PCA / power iteration), oriented N→C.
-2. **Pair strands.** For every pair, the median nearest-neighbour Cα–Cα distance
-   is computed. A pair counts as β-sheet neighbours when that spacing falls in
-   the sheet range (3.5–6.5 Å), there are enough residue contacts, and the axes
-   are roughly (anti)parallel. The sign of the axis dot product gives
-   **parallel vs antiparallel**; the per-residue contacts give the register and
-   drive the optional contact overlay.
+2. **Pair strands.** From DSSP's ladders (`_dssp_struct_ladder`, which
+   PDB-REDO's DSSP mmCIF carries) when there are any: each ladder is a run of
+   hydrogen-bonded residue pairs between two strands, with its type
+   (parallel or antiparallel). Ladders between the same two strands are
+   pooled, residues are paired end to end along each ladder (so a β-bulge
+   still pairs), and pairs with fewer than two bridges, DSSP's isolated
+   bridges, are dropped. Pass a chain's ladders with
+   `analyseBarrel(calphas, segments, { ladders: chainLadders(chain) })`;
+   `analyseAssemblyBarrel` pools every chain's ladders itself, including the
+   ones between chains. `pairingSource` says which method was used.
+
+   Without ladders (or when none of them land on the strands), pairing falls
+   back to the Cα geometry: for every pair, the median nearest-neighbour Cα–Cα
+   distance is computed, and a pair counts as β-sheet neighbours when that
+   spacing falls in the sheet range (3.5–6.5 Å), there are enough residue
+   contacts, and the axes are roughly (anti)parallel. The sign of the axis dot
+   product gives **parallel vs antiparallel**.
+
+   Either way, the per-residue contacts give the register and drive the
+   optional contact overlay. On the demo barrels the ladders give the
+   textbook shear numbers, OmpF (2OMF) S = 20 and α-hemolysin's stem (7AHL)
+   S = 14, where the Cα geometry gives 21 and 16.
+
 3. **Close the ring.** Only barrel-_wall_ strands — those with a partner on each
    side (≥2 pairings) — carry the ring, which drops short edge strands and any
    strands that fold _inside_ the barrel (OmpF's L3). Each wall strand keeps its

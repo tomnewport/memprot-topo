@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parsePdb } from '../../../src/parser/pdb.js';
-import { parseDsspMmcif } from '../../../src/parser/dssp-mmcif.js';
+import { parseDsspLadders, parseDsspMmcif } from '../../../src/parser/dssp-mmcif.js';
 import { mapToDeposited } from '../../../src/parser/memprotmd.js';
 import type { RawChain, RawSSSegment } from '../../../src/parser/types.js';
 import OMF_AT from '../../../examples/2omf_default_dppc-at.pdb?raw';
@@ -65,6 +65,17 @@ describe('mapToDeposited', () => {
         chainA.map((s) => ({ ...s, chainId: id })),
       );
     }
+  });
+
+  it("gives each copy of 2OMF's chain A the ladders within it", () => {
+    const ladders = parseDsspLadders(OMF_DSSP);
+    const mapped = mapToDeposited(parsePdb(OMF_AT), OMF_DSSP, parseDsspMmcif(OMF_DSSP), ladders)!;
+    for (const id of ['A', 'B', 'C']) {
+      const own = mapped.ladders.filter((l) => l.a.start.chainId === id);
+      expect(own).toHaveLength(ladders.length);
+      expect(own.every((l) => l.b.end.chainId === id)).toBe(true);
+    }
+    expect(new Set(mapped.ladders.map((l) => l.id)).size).toBe(3 * ladders.length);
   });
 
   it('takes unused chains of the same sequence before copying one, and the longest match', () => {

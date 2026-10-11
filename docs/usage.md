@@ -83,14 +83,19 @@ the loader's shadow root, so a listener on the loader also hears them.
 <topology-display selection="A" dimension="2"></topology-display>
 
 <script type="module">
-  import { parsePdb, parseDsspMmcif, mergeProteinData } from 'memprot2d';
+  import { parsePdb, parseDsspMmcif, parseDsspLadders, mergeProteinData } from 'memprot2d';
 
   const [pdb, dssp] = await Promise.all([
     fetch('/data/5g53.pdb').then((r) => r.text()),
     fetch('/data/5g53.dssp.cif').then((r) => r.text()),
   ]);
   const view = document.querySelector('topology-display');
-  view.proteinData = mergeProteinData('5g53', parsePdb(pdb), parseDsspMmcif(dssp));
+  view.proteinData = mergeProteinData(
+    '5g53',
+    parsePdb(pdb),
+    parseDsspMmcif(dssp),
+    parseDsspLadders(dssp),
+  );
 </script>
 ```
 
@@ -119,6 +124,7 @@ interface ChainData {
   residueCount: number; // residues with a Cα
   segments: SecondaryStructureSegment[];
   calphas: Calpha[]; // in chain order
+  ladders?: BetaLadder[]; // DSSP's β-ladders touching this chain
 }
 
 interface SecondaryStructureSegment {
@@ -142,6 +148,9 @@ the event details are all author numbering, as in the PDB file.
 `parseDsspMmcif` reads the `auth_*` columns so that it matches `parsePdb`.
 It keeps DSSP's α and π helices and its strands; 3₁₀ helices only with
 `parseDsspMmcif(text, { helix310: true })`, and polyproline II never.
+`parseDsspLadders` reads DSSP's β-ladders (`_dssp_struct_ladder`), the
+hydrogen-bonded strand pairs; with them, strands are paired from DSSP rather
+than from Cα spacing ([beta-barrels.md](beta-barrels.md)). They are optional.
 
 Re-assigning the same object is a no-op; assign a new object to redraw.
 

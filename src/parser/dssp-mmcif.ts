@@ -1,4 +1,5 @@
 import { mmcifCategory, parseMmcifLoops } from './mmcif-tokenizer.js';
+import type { BetaLadder, ResidueRef } from '../types.js';
 import type { RawSSSegment } from './types.js';
 
 export interface DsspParseOptions {
@@ -72,4 +73,42 @@ export function parseDsspMmcif(content: string, options: DsspParseOptions = {}):
   }
 
   return segments;
+}
+
+/** A residue from a ladder row's `<end>_<side>` auth columns, or null if any is missing. */
+function ladderResidue(
+  row: Record<string, string>,
+  end: 'beg' | 'end',
+  side: 1 | 2,
+): ResidueRef | null {
+  const chainId = row[`${end}_${side}_auth_asym_id`];
+  const seq = parseInt(row[`${end}_${side}_auth_seq_id`] ?? '', 10);
+  if (!chainId || chainId === '.' || chainId === '?' || isNaN(seq)) return null;
+  const ins = row[`pdbx_${end}_${side}_PDB_ins_code`];
+  return { chainId, resSeq: seq, iCode: !ins || ins === '?' || ins === '.' ? '' : ins };
+}
+
+/**
+ * DSSP's β-ladders (`_dssp_struct_ladder`), in author numbering: the
+ * hydrogen-bonded strand pairs DSSP found (#79). Empty when the file has no
+ * ladder records (PDB-REDO's DSSP mmCIF has them; deposited mmCIF does not).
+ */
+export function parseDsspLadders(content: string): BetaLadder[] {
+  const ladders: BetaLadder[] = [];
+  for (const row of mmcifCategory(parseMmcifLoops(content), '_dssp_struct_ladder')) {
+    const type = row['type'];
+    if (type !== 'parallel' && type !== 'anti-parallel') continue;
+    const a0 = ladderResidue(row, 'beg', 1);
+    const a1 = ladderResidue(row, 'end', 1);
+    const b0 = ladderResidue(row, 'beg', 2);
+    const b1 = ladderResidue(row, 'end', 2);
+    if (!a0 || !a1 || !b0 || !b1) continue;
+    ladders.push({
+      id: row['id'] ?? String(ladders.length),
+      type: type === 'parallel' ? 'parallel' : 'antiparallel',
+      a: { start: a0, end: a1 },
+      b: { start: b0, end: b1 },
+    });
+  }
+  return ladders;
 }

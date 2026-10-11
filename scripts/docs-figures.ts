@@ -38,7 +38,8 @@ for (const key of [
   g[key] = (dom.window as unknown as Record<string, unknown>)[key];
 }
 
-const { parsePdb, parseDsspMmcif, mergeProteinData } = await import('../src/parser/index.js');
+const { parsePdb, parseDsspMmcif, parseDsspLadders, mergeProteinData } =
+  await import('../src/parser/index.js');
 await import('../src/index.js');
 const { isTransmembrane } = await import('../src/orientation/index.js');
 const { DEMO_DISTORTIONS, inSimulationFrame } = await import('../src/demo-distortions.js');
@@ -52,6 +53,7 @@ function protein(id: string): ProteinData {
     id,
     parsePdb(read(`examples/${id}.pdb`)),
     parseDsspMmcif(read(`examples/${id}.dssp.cif`)),
+    parseDsspLadders(read(`examples/${id}.dssp.cif`)),
   );
 }
 
