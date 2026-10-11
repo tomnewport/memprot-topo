@@ -28,6 +28,7 @@ All significant AI-assisted contributions must be disclosed in the pull request 
 | `src/components/data-tracks.ts`      | AI-generated | Loads and resolves the data tracks for `<topology-display>` (issue #83).            |
 | `src/layout/`                        | AI-generated | Pure chain layout; the 2-D, 3-D and sequence views are built from it (issue #34).   |
 | `src/components/render-2d.ts`        | AI-generated | Paints a chain layout as the 2-D topology SVG (issue #34).                          |
+| `src/components/svg-export.ts`       | AI-generated | Standalone SVG export of the 1-D and 2-D views, and its options panel (issue #25).  |
 | `src/components/topology-display.ts` | AI-generated | The `<topology-display>` web component: attributes, chain choice and the views.     |
 | `src/components/topology-loader.ts`  | AI-generated | The `<topology-loader>` web component: fetches MemProtMD and PDB-REDO data.         |
 | `src/components/chain-picker.ts`     | AI-generated | Chain-picker labels and markup.                                                     |

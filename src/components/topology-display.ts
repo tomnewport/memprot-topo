@@ -50,6 +50,7 @@ import {
   repaint,
   resolveThemeName,
   themeCss,
+  themeNames,
   VIRIDIS,
   type Theme,
   type ThemeInput,
@@ -75,9 +76,17 @@ import {
   buildChainLabels,
   chainLabelNode,
   iconColours,
+  pickerIcons,
   renderChainPicker,
   type ChainLabel,
 } from './chain-picker.js';
+import { exportSvg } from './svg-export.js';
+import {
+  createExportButton,
+  downloadSvg,
+  renderExportPanel,
+  type ExportChoice,
+} from './export-panel.js';
 import { STYLES } from './topology-styles.js';
 import { FullscreenController, type FullscreenChangeDetail } from './fullscreen.js';
 import {
@@ -324,7 +333,14 @@ export class TopologyDisplay extends HTMLElement {
   /** The chain picker, when the protein has more than one chain. */
   private _picker: HTMLElement | null = null;
   /** Chain and 2-D svg currently on screen, for in-place selection updates. */
-  private _shown: { chain: ChainData; svg: SVGSVGElement } | null = null;
+  private _shown: {
+    chain: ChainData;
+    svg: SVGSVGElement;
+    /** What the SVG export draws from. */
+    layout: ChainLayout;
+    sequence: SequenceSource;
+    display: ChainDisplayData | undefined;
+  } | null = null;
   /** SS element under the pointer or focus, so hover events fire once each. */
   private _hovered: Element | null = null;
   /** `selection` value last written by a user pick or click, not the page. */
@@ -980,6 +996,91 @@ export class TopologyDisplay extends HTMLElement {
     return this._fs.toggle();
   }
 
+  /**
+   * The displayed chain's 1-D sequence or 2-D topology as the text of a
+   * standalone SVG file (issue #25), or null before a chain is shown.
+   * `dimension` defaults to the 1-D or 2-D view nearest the one shown;
+   * `theme` to the theme in use, and `chainIcons` to whether the chain picker
+   * is shown. The 3-D view is not exported.
+   */
+  exportSvg({
+    dimension,
+    theme = this._themeName,
+    chainIcons = this._picker !== null,
+    background = true,
+  }: {
+    dimension?: 1 | 2;
+    theme?: ThemeName;
+    chainIcons?: boolean;
+    background?: boolean;
+  } = {}): string | null {
+    const shown = this._shown;
+    if (!shown || !this._data) return null;
+    const dim = dimension ?? (this._dimension.position < 0.5 ? 1 : 2);
+    let icons = null;
+    if (chainIcons) {
+      const chains = this.chainsWithCoords();
+      const labels = buildChainLabels(chains);
+      const set = pickerIcons(chains, labels, shown.chain.chainId, {
+        membrane: this.iconMembrane,
+        smoothing: this.iconBandwidth / (this.iconMembrane.thickness / 2),
+      });
+      icons = {
+        maxDensity: set.maxDensity,
+        icons: set.icons.map((icon) => ({
+          shape: icon.shape,
+          label: { base: icon.base, suffix: null },
+          selected: icon.selected,
+        })),
+      };
+    }
+    const width =
+      this._scrollBox?.scroll.clientWidth || Number(shown.svg.getAttribute('width')) || 0;
+    return exportSvg(
+      dim === 1
+        ? { dimension: 1, sequence: shown.sequence, width, options: this.sequenceOptions }
+        : { dimension: 2, layout: shown.layout, display: shown.display },
+      getTheme(theme) ?? this._theme,
+      { icons, background },
+    );
+  }
+
+  /** A file name for the export of the shown chain: `<pdb>-<chain>-<n>d.svg`. */
+  private exportFileName(dimension: 1 | 2): string {
+    const safe = (s: string) => s.replace(/[^\w.-]+/g, '_');
+    const pdb = safe(this._data?.pdbId || 'protein');
+    const chain = safe(this._shown?.chain.chainId ?? '');
+    return `${pdb}-${chain}-${dimension}d.svg`;
+  }
+
+  /** Open the export options under the view bar, or close them. */
+  private toggleExportPanel(bar: HTMLDivElement): void {
+    const button = bar.querySelector<HTMLButtonElement>('.export-button');
+    const close = (refocus: boolean): void => {
+      bar.querySelector('.export-panel')?.remove();
+      button?.setAttribute('aria-expanded', 'false');
+      if (refocus) button?.focus();
+    };
+    if (bar.querySelector('.export-panel')) {
+      close(false);
+      return;
+    }
+    const panel = renderExportPanel({
+      themes: themeNames(),
+      initial: { theme: this._themeName, chainIcons: this._picker !== null, background: true },
+      onExport: (choice: ExportChoice) => {
+        const dimension = this._dimension.position < 0.5 ? 1 : 2;
+        const text = this.exportSvg({ ...choice, dimension });
+        if (text) downloadSvg(text, this.exportFileName(dimension));
+        close(true);
+      },
+      onClose: () => close(true),
+    });
+    bar.appendChild(panel);
+    button?.setAttribute('aria-expanded', 'true');
+    panel.querySelector('select')?.focus();
+  }
+
   /** Follow the system colour scheme, and themes (re-)registered by name. */
   private listenForThemes(): void {
     if (this._unlisten) return;
@@ -1304,17 +1405,18 @@ export class TopologyDisplay extends HTMLElement {
       assembly,
       analysis,
     );
+    const display = this.chainDisplayData(selectedChain.chainId);
     const { svg, scene, sequence, decor2d } = renderChainViews(
       selectedChain,
       layout,
       membrane,
       this._theme,
       loopOptions.showPoints,
-      this.chainDisplayData(selectedChain.chainId),
+      display,
     );
     scroll.appendChild(svg);
     box.observe(svg);
-    this._shown = { chain: selectedChain, svg };
+    this._shown = { chain: selectedChain, svg, layout, sequence, display };
     // The 2-D band blends only while the 2-D topology is shown and still.
     const still2d =
       !this._dimension.animating &&
@@ -1326,7 +1428,7 @@ export class TopologyDisplay extends HTMLElement {
     sequence.lanes = sequenceLanes(
       selectedChain.chainId,
       sequence.residues,
-      this.chainDisplayData(selectedChain.chainId)?.style.colour,
+      display?.style.colour,
       this.getAttribute('colour-label') || 'Colour',
       this.numberedTracks(),
       this._theme.dataScale,
@@ -1357,10 +1459,11 @@ export class TopologyDisplay extends HTMLElement {
       decor2d,
     );
     this._seq = seq;
-    const bar = renderViewBar(
+    const bar: HTMLDivElement = renderViewBar(
       scene !== null,
       (dimension) => (this.dimension = dimension),
       () => void this.loadView3D().then((m) => m?.precompute()),
+      createExportButton(() => this.toggleExportPanel(bar)),
       this._fs.createButton(),
     );
     seq.onChange = () => this._dimension.sync(bar);

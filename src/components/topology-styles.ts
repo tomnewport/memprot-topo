@@ -182,6 +182,7 @@ export const STYLES = `
     stroke-opacity: 1;
     stroke-width: calc(var(--mp-selection-width) + 2.5px);
   }
+  .export-button,
   .fullscreen-button {
     margin-left: auto;
     display: inline-flex;
@@ -195,12 +196,42 @@ export const STYLES = `
     color: var(--mp-accent);
     cursor: pointer;
   }
+  .export-button + .fullscreen-button { margin-left: 0; }
+  .export-button:disabled { opacity: 0.45; cursor: default; }
+  .export-button:not(:disabled):hover,
   .fullscreen-button:hover { background: color-mix(in srgb, var(--mp-accent) 8%, var(--mp-background)); }
+  .export-button:focus-visible,
   .fullscreen-button:focus-visible {
     outline: 2px solid var(--mp-accent);
     outline-offset: 1px;
   }
+  .export-button svg,
   .fullscreen-button svg { width: 0.9rem; height: 0.9rem; }
+  /* SVG export options (issue #25): a row of its own under the view bar. */
+  .export-panel {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.9rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--mp-surface);
+    border: 1px solid var(--mp-border);
+    border-radius: var(--mp-corner-radius);
+    color: var(--mp-text);
+  }
+  .export-panel label { display: inline-flex; align-items: center; gap: 0.25rem; }
+  .export-panel select,
+  .export-panel button {
+    font: inherit;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--mp-accent);
+    border-radius: var(--mp-corner-radius);
+    background: var(--mp-background);
+    color: var(--mp-accent);
+  }
+  .export-panel select { border-color: var(--mp-border); color: var(--mp-text); }
+  .export-panel .export-download { margin-left: auto; background: var(--mp-accent); color: var(--mp-accent-text); }
   /* Full screen (issue #73): the element covers the screen and the diagram
      box takes the space the controls above it leave. The box is scaled to
      fit (see TopologyDisplay.fitFullscreen) and scrolls both ways. */

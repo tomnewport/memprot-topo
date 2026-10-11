@@ -83,6 +83,25 @@ describe('DimensionController', () => {
     expect(bar.classList.contains('is-3d')).toBe(true);
     expect(seen).toEqual([3]);
   });
+  it('disables SVG export, and closes its panel, in 3-D', () => {
+    const exportButton = document.createElement('button');
+    exportButton.className = 'export-button';
+    const bar = renderViewBar(
+      true,
+      () => undefined,
+      () => undefined,
+      exportButton,
+    );
+    const panel = document.createElement('form');
+    panel.className = 'export-panel';
+    bar.appendChild(panel);
+    host(1, 0, {}).sync(bar);
+    expect(exportButton.disabled).toBe(false);
+    expect(bar.querySelector('.export-panel')).not.toBeNull();
+    host(1, 0.2, {}).sync(bar);
+    expect(exportButton.disabled).toBe(true);
+    expect(bar.querySelector('.export-panel')).toBeNull();
+  });
 });
 
 describe('renderViewBar', () => {

@@ -5,6 +5,7 @@ import {
   iconZOuter,
   maxIconDensity,
   renderChainIcon,
+  type ChainIconShape,
   type IconColours,
   type IconMembrane,
 } from './chain-icon.js';
@@ -73,6 +74,49 @@ export function chainLabelNode(lbl: ChainLabel): HTMLSpanElement {
   return span;
 }
 
+/** One icon of the chain picker: a chain, or the copies of one chain. */
+export interface PickerIcon {
+  /** The letter shared by the copies. */
+  base: string;
+  /** Indices into `chains` of the copies, in order. */
+  members: number[];
+  /** The copy the icon shows: the selected one, or the first. */
+  shown: number;
+  shape: ChainIconShape | null;
+  selected: boolean;
+}
+
+/**
+ * The chain picker's icons: copies of the same chain (A(I), A(II), …) share
+ * one icon, which shows the selected copy, or the first if none is. Densities
+ * are on one scale, `maxDensity`.
+ */
+export function pickerIcons(
+  chains: ChainData[],
+  chainLabels: Map<string, ChainLabel>,
+  selectedId: string,
+  icon: { membrane: IconMembrane; smoothing: number },
+): { icons: PickerIcon[]; maxDensity: number } {
+  const zOuter = iconZOuter(chains, icon.membrane);
+  const shapes = chains.map((c) => chainIconShape(c, icon.membrane, icon.smoothing, zOuter));
+  const groups = new Map<string, number[]>();
+  chains.forEach((c, i) => {
+    const base = chainLabels.get(c.chainId)!.base;
+    groups.set(base, [...(groups.get(base) ?? []), i]);
+  });
+  const icons = [...groups].map(([base, members]): PickerIcon => {
+    const shown = members.find((i) => chains[i].chainId === selectedId) ?? members[0];
+    return {
+      base,
+      members,
+      shown,
+      shape: shapes[shown],
+      selected: chains[shown].chainId === selectedId,
+    };
+  });
+  return { icons, maxDensity: maxIconDensity(shapes) };
+}
+
 export function renderChainPicker(
   chains: ChainData[],
   chainLabels: Map<string, ChainLabel>,
@@ -85,23 +129,10 @@ export function renderChainPicker(
   container.className = 'chain-picker';
   container.setAttribute('role', 'group');
 
-  const zOuter = iconZOuter(chains, icon.membrane);
-  const shapes = chains.map((c) => chainIconShape(c, icon.membrane, icon.smoothing, zOuter));
-  const maxDensity = maxIconDensity(shapes);
-
-  // Copies of the same chain (A(I), A(II), …) share one icon; a dropdown picks
-  // the copy. The icon shows the selected copy, or the first if none is.
-  const groups = new Map<string, number[]>();
-  chains.forEach((c, i) => {
-    const base = chainLabels.get(c.chainId)!.base;
-    groups.set(base, [...(groups.get(base) ?? []), i]);
-  });
-
-  for (const [base, members] of groups) {
-    const shownIdx = members.find((i) => chains[i].chainId === selectedId) ?? members[0];
-    const chain = chains[shownIdx];
+  const { icons, maxDensity } = pickerIcons(chains, chainLabels, selectedId, icon);
+  for (const { base, members, shown, shape, selected: isSelected } of icons) {
+    const chain = chains[shown];
     const lbl = chainLabels.get(chain.chainId)!;
-    const isSelected = chain.chainId === selectedId;
 
     const group = document.createElement('div');
     group.className = 'chain-group';
@@ -112,9 +143,7 @@ export function renderChainPicker(
     button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     button.setAttribute('aria-label', `Select chain ${lbl.text} (${chain.residueCount} residues)`);
     button.title = `Chain ${lbl.text} · ${chain.residueCount} aa`;
-    button.appendChild(
-      renderChainIcon(shapes[shownIdx], maxDensity, { base, suffix: null }, colours),
-    );
+    button.appendChild(renderChainIcon(shape, maxDensity, { base, suffix: null }, colours));
     button.addEventListener('click', () => onSelect(chain.chainId));
     group.appendChild(button);
 
@@ -126,7 +155,7 @@ export function renderChainPicker(
         const option = document.createElement('option');
         option.value = chains[i].chainId;
         option.textContent = chainLabels.get(chains[i].chainId)!.suffix ?? '';
-        option.selected = i === shownIdx;
+        option.selected = i === shown;
         select.appendChild(option);
       }
       select.addEventListener('change', () => onSelect(select.value));
