@@ -880,27 +880,35 @@ describe('<topology-display> 3-D view', () => {
     const el = mount(hairpinChain());
     await el.setTransitionProgress(1);
     const spacing = () => (el as unknown as WithNet)._view3d!.renderer!.net.spacing;
+    // 1 Å unless set.
+    expect(spacing()).toBe(1);
+    el.setAttribute('structure-grid-spacing', 'auto');
     const auto = spacing();
     expect(auto).toBeGreaterThanOrEqual(4);
     expect(auto).toBeLessThanOrEqual(8);
+    el.setAttribute('structure-grid-spacing', '0');
+    expect(spacing()).toBe(auto);
     el.setAttribute('structure-grid-spacing', '3');
     expect(spacing()).toBe(3);
     expect(el.transitionProgress).toBe(1);
-    // At least 2 Å.
+    // At least 1 Å.
     el.setAttribute('structure-grid-spacing', '0.5');
-    expect(spacing()).toBe(2);
-    // At most the disc's radius: two lines across.
+    expect(spacing()).toBe(1);
+    // At most the disc's radius: two square-grid lines across.
+    el.setAttribute('structure-membrane-style', 'grid');
     el.setAttribute('structure-grid-spacing', '10000');
     expect(spacing()).toBeLessThan(100);
     expect(
       (el as unknown as { _view3d: { renderer: { net: { upper: unknown[] } } } })._view3d.renderer
         .net.upper,
     ).toHaveLength(2);
-    el.setAttribute('structure-grid-spacing', 'auto');
-    expect(spacing()).toBe(auto);
+    el.setAttribute('structure-grid-spacing', 'wobbly');
+    expect(spacing()).toBe(1);
+    el.removeAttribute('structure-grid-spacing');
+    expect(spacing()).toBe(1);
   });
 
-  it('draws the membrane as polar lines or a coloured surface from structure-membrane-style, in place', async () => {
+  it('draws the membrane as a square grid or a coloured surface from structure-membrane-style, in place', async () => {
     type Net = { style: string; mesh: unknown; upper: unknown[] };
     type WithNet = { _view3d: { renderer: { net: Net } } };
     const el = mount(hairpinChain());
@@ -913,9 +921,9 @@ describe('<topology-display> 3-D view', () => {
       const ds = [...root.querySelectorAll('.svg-scroll svg path')].map((p) => p.getAttribute('d'));
       expect(ds.join('')).not.toMatch(/NaN|Infinity/);
     };
-    expect(net().style).toBe('grid');
-    el.setAttribute('structure-membrane-style', 'polar');
     expect(net().style).toBe('polar');
+    el.setAttribute('structure-membrane-style', 'grid');
+    expect(net().style).toBe('grid');
     expect(net().upper.length).toBeGreaterThan(0);
     expect(el.transitionProgress).toBe(1);
     finite();
@@ -932,7 +940,7 @@ describe('<topology-display> 3-D view', () => {
       .map((p) => p.getAttribute('fill'));
     expect(new Set(fills).size).toBeGreaterThan(2);
     el.setAttribute('structure-membrane-style', 'wobbly');
-    expect(net().style).toBe('grid');
+    expect(net().style).toBe('polar');
   });
 
   it('colours the surface by how much thinner or thicker the bilayer is than the bulk', async () => {

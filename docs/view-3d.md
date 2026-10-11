@@ -113,17 +113,19 @@ Neighbouring barrel strands are ≈ 4.8 Å apart, so the default leaves a gap
 between ribbons and keeps arrowheads from cutting into the next strand. The
 issue's suggested ~10 × 2.5 Å works, but the strands then overlap heavily.
 
-`structure-grid-spacing` sets the membrane grid's spacing in Å (from 2 Å up to
-the disc's radius; unset, `auto` or `0` sizes it from the membrane disc, an
-eighth of its radius within 4–8 Å). A finer grid shows more of the local
-surface but adds lines to every frame.
+`structure-grid-spacing` sets the spacing of the membrane's grid or polar lines
+in Å (from 1 Å up to the disc's radius; default 1 Å; `auto` or `0` sizes it
+from the membrane disc, an eighth of its radius within 4–8 Å). A finer grid
+shows more of the local surface but adds lines to every frame: at 1 Å a
+leaflet carries roughly ten to twenty times the points of the 4–8 Å automatic
+spacing.
 
 `structure-membrane-style` picks how the leaflets are drawn:
 
 | `structure-membrane-style` | Drawn                                                                                        |
 | -------------------------- | -------------------------------------------------------------------------------------------- |
-| `grid` (default)           | A square grid of lines, `structure-grid-spacing` apart.                                      |
-| `polar`                    | Rings and spokes: rings follow the protein's outline near it and become circles further out. |
+| `polar` (default)          | Rings and spokes: rings follow the protein's outline near it and become circles further out. |
+| `grid`                     | A square grid of lines, `structure-grid-spacing` apart.                                      |
 | `surface`                  | A translucent surface per leaflet, coloured by its rise or drop from the bulk plane.         |
 
 With `structure-membrane-colour="thickness"` the grid or polar lines are
@@ -215,8 +217,8 @@ finished 3-D view stays vector (and exportable).
   across the element. The rims are depth-sorted with the protein, so the near
   rim passes in front of whatever lies behind it and marks the edge of the
   tint.
-- Each leaflet also carries a fishnet: a square grid of thin lines over its
-  disc (4–8 Å apart by default; see `structure-grid-spacing` above), depth-sorted
+- Each leaflet also carries a fishnet: thin lines over its disc (polar rings
+  and spokes by default, 1 Å apart; see `structure-grid-spacing` above), depth-sorted
   with the protein like the rims, so the membrane stays visible without hiding
   the protein. The net follows the leaflet's height: the local surface from a
   distortions file (averaged over 1.5 grid cells, kept within 6–12 Å), or
@@ -234,7 +236,7 @@ finished 3-D view stays vector (and exportable).
   (`BULK_MARGIN` in `src/view3d/net.ts`). Inside that ring the net eases to
   the bulk over the outer fifth. It grows out of the flat planes as the sheets
   fade in. The tinted sheets stay at the bulk planes. With
-  `structure-membrane-style="polar"` the lines are rings and spokes instead, and
+  `structure-membrane-style="grid"` the lines are a square grid instead, and
   with `"surface"` the sheets themselves follow the heights and are coloured
   by them (see above). See [membrane.md](membrane.md).
 - Consecutive sections of the same element are merged into one path whenever

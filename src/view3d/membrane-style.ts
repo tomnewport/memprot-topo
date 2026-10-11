@@ -6,7 +6,10 @@
  */
 export type MembraneStyle = 'grid' | 'polar' | 'surface';
 export const MEMBRANE_STYLES: readonly MembraneStyle[] = ['grid', 'polar', 'surface'];
-export const DEFAULT_MEMBRANE_STYLE: MembraneStyle = 'grid';
+export const DEFAULT_MEMBRANE_STYLE: MembraneStyle = 'polar';
+
+/** Default spacing (Å) of the grid or polar lines; 0 would size it from the disc. */
+export const DEFAULT_GRID_SPACING = 1;
 
 /**
  * How the grid and polar lines are coloured: one plain colour, or by how much

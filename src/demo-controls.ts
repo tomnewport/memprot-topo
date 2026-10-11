@@ -215,12 +215,13 @@ export const DEMO_CONTROLS: DemoControl[] = [
   {
     attribute: 'structure-grid-spacing',
     kind: 'number',
-    default: 0,
+    default: DEFAULT_VIEW3D_OPTIONS.gridSpacing,
     min: 0,
     max: 20,
-    step: 2,
+    step: 1,
     scope: 'all',
-    description: 'Membrane grid spacing in the 3-D view (Å, at least 2); 0 sizes it from the disc.',
+    description:
+      'Membrane grid or polar line spacing in the 3-D view (Å, at least 1); 0 sizes it from the disc.',
   },
   {
     attribute: 'structure-membrane-style',

@@ -58,7 +58,7 @@ export const NET_DARKEN = 0.5;
 export const NET_SMOOTHING = 6;
 export const NET_SMOOTHING_MAX = 12;
 /** Finest membrane grid spacing (Å) a page can ask for; finer would slow every frame. */
-export const MIN_GRID_SPACING = 2;
+export const MIN_GRID_SPACING = 1;
 /** Largest RMS misfit (Å) between the scene's sample positions and the finished pose for local heights to be used. */
 export const NET_FIT_RMS = 1.5;
 

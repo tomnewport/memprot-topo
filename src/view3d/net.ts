@@ -10,7 +10,7 @@
  */
 
 import { levelLines, resample } from './contour.js';
-import { DEFAULT_MEMBRANE_STYLE, type MembraneStyle } from './membrane-style.js';
+import type { MembraneStyle } from './membrane-style.js';
 
 /**
  * Leaflet height (Å) at a world point, averaged over `radius` Å, or null
@@ -40,7 +40,10 @@ export interface FishnetInput {
   spacing?: number;
   /** Width (Å) of the flat bulk ring at the rim. Default 0. */
   margin?: number;
-  /** Default {@link DEFAULT_MEMBRANE_STYLE}. */
+  /**
+   * Default `grid`, the simplest net; the component passes its own default
+   * ({@link DEFAULT_MEMBRANE_STYLE}).
+   */
   style?: MembraneStyle;
 }
 
@@ -154,7 +157,7 @@ export function fishnetSpacing(r: number): number {
 export function buildFishnet(input: FishnetInput): Fishnet {
   const { radius: r } = input;
   const spacing = input.spacing ?? fishnetSpacing(r);
-  const style = input.style ?? DEFAULT_MEMBRANE_STYLE;
+  const style = input.style ?? 'grid';
   const shape = proteinShape(input.protein, input.centre);
   const inner = r - Math.min(r, input.margin ?? 0);
   const field = heightField(input, shape, inner);
