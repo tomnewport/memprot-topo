@@ -1,10 +1,11 @@
 import type { ProteinData } from '../types.js';
-import { parsePdb } from '../parser/pdb.js';
-import { parseDsspMmcif } from '../parser/dssp-mmcif.js';
+import { parsePdb, parsePdbBackbone } from '../parser/pdb.js';
+import { parseDsspLadders, parseDsspMmcif } from '../parser/dssp-mmcif.js';
 import { mergeProteinData } from '../parser/merge.js';
 import { mapToDeposited } from '../parser/memprotmd.js';
 import { parseDistortions, type MembraneDistortions } from '../membrane/distortions.js';
 import { parseStructureMembrane } from '../membrane/structure.js';
+import { structureSecondaryStructure } from '../secondary-structure/index.js';
 import { TopologyDisplay } from './topology-display.js';
 import type { TracksConfig } from '../tracks/types.js';
 
@@ -35,7 +36,14 @@ const FORWARDED = [
 ];
 
 export class TopologyLoader extends HTMLElement {
-  static observedAttributes = ['pdb-id', 'sim-id', 'distortions', 'ss-310', ...FORWARDED];
+  static observedAttributes = [
+    'pdb-id',
+    'sim-id',
+    'distortions',
+    'ss-310',
+    'ss-source',
+    ...FORWARDED,
+  ];
 
   private _pdbId: string | null = null;
   private _simId: string | null = null;
@@ -168,44 +176,63 @@ export class TopologyLoader extends HTMLElement {
           })
       : Promise.resolve(null);
 
-    try {
-      const [pdbResp, dsspResp] = await Promise.all([
-        fetch(pdbUrl, { signal: controller.signal }),
-        fetch(dsspUrl, { signal: controller.signal }),
-      ]);
+    // PDB-REDO's DSSP gives the deposited chains and numbering; by default the
+    // secondary structure itself is computed on the simulated structure, so
+    // the DSSP file is needed only when that can't be done.
+    const fromPdbRedo = this.getAttribute('ss-source') === 'pdb-redo';
+    const dsspLoad: Promise<string | null> = fetch(dsspUrl, { signal: controller.signal })
+      .then(async (resp) => {
+        if (!resp.ok) throw new Error(`DSSP fetch failed: ${resp.status} ${resp.statusText}`);
+        return resp.text();
+      })
+      .catch((err: unknown) => {
+        if (fromPdbRedo || (err as { name?: string })?.name === 'AbortError') throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`topology-loader: ${message}; drawing in MemProtMD's numbering`);
+        return null;
+      });
+    // Read below; this only keeps a failure seen first by the PDB fetch quiet.
+    dsspLoad.catch(() => {});
 
+    try {
+      const pdbResp = await fetch(pdbUrl, { signal: controller.signal });
       if (!pdbResp.ok) {
         throw new Error(`PDB fetch failed: ${pdbResp.status} ${pdbResp.statusText}`);
       }
-      if (!dsspResp.ok) {
-        throw new Error(`DSSP fetch failed: ${dsspResp.status} ${dsspResp.statusText}`);
-      }
-
       const [pdbText, dsspText, distortions] = await Promise.all([
         pdbResp.text(),
-        dsspResp.text(),
+        dsspLoad,
         distortionsLoad,
       ]);
 
       if (myGen !== this._generation || !this.isConnected) return;
 
+      const helix310 = this.getAttribute('ss-310') === 'helix';
       const chains = parsePdb(pdbText);
-      const ssSegments = parseDsspMmcif(dsspText, {
-        helix310: this.getAttribute('ss-310') === 'helix',
-      });
+      const ssSegments = dsspText ? parseDsspMmcif(dsspText, { helix310 }) : [];
+      const ladders = dsspText ? parseDsspLadders(dsspText) : [];
       // MemProtMD renumbers from 1 and runs the protomers together: put them
       // back into the deposited chains and numbering the DSSP is keyed on.
-      const mapped = mapToDeposited(chains, dsspText, ssSegments);
-      if (!mapped && dsspText.includes('_dssp_struct_summary.')) {
+      const mapped = dsspText ? mapToDeposited(chains, dsspText, ssSegments, ladders) : null;
+      if (dsspText && !mapped && dsspText.includes('_dssp_struct_summary.')) {
         console.warn(
           `topology-loader: couldn't match ${pdbId}'s residues to the deposited entry; ` +
             'its secondary structure may not line up',
         );
       }
+      const drawn = mapped?.chains ?? chains;
+      // Null for a Cα-only structure: PDB-REDO's assignment is used instead.
+      const computed = fromPdbRedo
+        ? null
+        : structureSecondaryStructure(parsePdbBackbone(pdbText), drawn, { helix310 });
+      if (!computed && !dsspText) {
+        throw new Error(`no secondary structure for ${pdbId}: the structure has no full backbone`);
+      }
       const proteinData = mergeProteinData(
         pdbId,
-        mapped?.chains ?? chains,
-        mapped?.segments ?? ssSegments,
+        drawn,
+        computed?.segments ?? mapped?.segments ?? ssSegments,
+        computed?.ladders ?? mapped?.ladders ?? ladders,
       );
       // at.pdb carries the bilayer: it puts the box-frame structure on its midplane.
       proteinData.membrane = parseStructureMembrane(pdbText);

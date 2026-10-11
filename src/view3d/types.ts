@@ -89,6 +89,11 @@ export interface View3DElement {
   order: number;
   /** Author residue range it stands for in the selection; absent for faded (context) elements. */
   selectable?: ResidueSpan;
+  /**
+   * A strand of an open β-sheet: the sheet's unit normal at the strand, in
+   * the frame of `positions`. Polyline mode turns the strand's face to it.
+   */
+  sheetNormal?: Vec;
 }
 
 /** Inclusive author residue-number range. */

@@ -76,6 +76,7 @@ export function build3d(
       faded: e.faded,
       order: e.order,
       selectable: e.selectable,
+      sheetNormal: e.sheetNormal,
     })),
     loops: layout.loops.map((l) => ({
       points: l.points.map((p) => ({ arc: p.arc, z: p.z })),

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { mergeProteinData } from '../../../src/parser/merge.js';
 import type { RawChain, RawSSSegment } from '../../../src/parser/types.js';
+import type { BetaLadder } from '../../../src/types.js';
 
 describe('mergeProteinData', () => {
   const chainA: RawChain = {
@@ -76,5 +77,26 @@ describe('mergeProteinData', () => {
   it('handles empty chains array', () => {
     const result = mergeProteinData('1abc', [], ssSegments);
     expect(result.chains).toHaveLength(0);
+  });
+
+  it('gives each chain the ladders touching it, and none to a chain without', () => {
+    const r = (chainId: string, resSeq: number) => ({ chainId, resSeq, iCode: '' });
+    const ladders: BetaLadder[] = [
+      {
+        id: 'A',
+        type: 'antiparallel',
+        a: { start: r('A', 2), end: r('A', 3) },
+        b: { start: r('A', 9), end: r('A', 8) },
+      },
+      {
+        id: 'B',
+        type: 'parallel',
+        a: { start: r('A', 5), end: r('A', 5) },
+        b: { start: r('C', 1), end: r('C', 1) },
+      },
+    ];
+    const result = mergeProteinData('1abc', [chainA, chainB], ssSegments, ladders);
+    expect(result.chains[0].ladders!.map((l) => l.id)).toEqual(['A', 'B']);
+    expect(result.chains[1].ladders).toBeUndefined();
   });
 });

@@ -55,6 +55,12 @@ export interface ModelElement {
   withArrow: boolean;
   faded: boolean;
   order: number;
+  /**
+   * Polyline mode, open-sheet strands: the sheet normal at each sample g0..g1
+   * (stride 3), as components along the real chain path's tangent, its
+   * normal (tangent × ẑ) and ẑ, oriented to face the 2-D view's side.
+   */
+  sheetLocal?: Float64Array;
 }
 
 export interface ModelLoop {
@@ -498,6 +504,29 @@ export function buildView3DModel(
     const a0 = raw[Math.min(anchor, n - 2)];
     stepTheta = new Float64Array(n - 1);
     for (let k = 0; k < n - 1; k++) stepTheta[k] = raw[k] - a0;
+
+    // Open-sheet strands: the sheet normal in the real path's local frame, at
+    // the heading the curtain takes at each sample once rolled up.
+    scene.elements.forEach((e, i) => {
+      const nrm = e.sheetNormal;
+      const el = elements[i];
+      if (!nrm || e.type !== 'strand') return;
+      const local = new Float64Array((el.g1 - el.g0 + 1) * 3);
+      let facing = 0;
+      for (let g = el.g0; g <= el.g1; g++) {
+        const h = g === 0 ? raw[0] : g === n - 1 ? raw[n - 2] : 0.5 * (raw[g - 1] + raw[g]);
+        const c = Math.cos(h);
+        const sn = Math.sin(h);
+        const o = (g - el.g0) * 3;
+        local[o] = nrm.x * c + nrm.y * sn;
+        local[o + 1] = nrm.x * sn - nrm.y * c;
+        local[o + 2] = nrm.z;
+        facing += local[o + 1];
+      }
+      // A ribbon has two faces: take the normal on the 2-D view's side.
+      if (facing < 0) for (let k = 0; k < local.length; k++) local[k] = -local[k];
+      el.sheetLocal = local;
+    });
   }
 
   const loops: ModelLoop[] = [];

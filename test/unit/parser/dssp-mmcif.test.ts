@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { isHelixConfType, parseDsspMmcif } from '../../../src/parser/dssp-mmcif.js';
+import {
+  isHelixConfType,
+  parseDsspLadders,
+  parseDsspMmcif,
+} from '../../../src/parser/dssp-mmcif.js';
 
 const SAMPLE_MMCIF = `\
 data_DSSP
@@ -147,5 +151,38 @@ HELX_P H2 A 5 . A 15 .
     // First row has chainId '.' — should be skipped
     expect(segments).toHaveLength(1);
     expect(segments[0].chainId).toBe('A');
+  });
+});
+
+describe('parseDsspLadders', () => {
+  const omf = readFileSync(resolve(__dirname, '../../../examples/2omf.dssp.cif'), 'utf8');
+  const ahl = readFileSync(resolve(__dirname, '../../../examples/7ahl.dssp.cif'), 'utf8');
+
+  it("reads 2OMF's ladders in author numbering, antiparallel sides reversed", () => {
+    const ladders = parseDsspLadders(omf);
+    expect(ladders).toHaveLength(22);
+    expect(ladders[0]).toEqual({
+      id: 'A',
+      type: 'antiparallel',
+      a: {
+        start: { chainId: 'A', resSeq: 2, iCode: '' },
+        end: { chainId: 'A', resSeq: 6, iCode: '' },
+      },
+      b: {
+        start: { chainId: 'A', resSeq: 12, iCode: '' },
+        end: { chainId: 'A', resSeq: 9, iCode: '' },
+      },
+    });
+  });
+
+  it("keeps 7AHL's ladders between chains", () => {
+    const first = parseDsspLadders(ahl)[0];
+    expect(first.type).toBe('parallel');
+    expect(first.a.start).toEqual({ chainId: 'A', resSeq: 7, iCode: '' });
+    expect(first.b.start).toEqual({ chainId: 'B', resSeq: 14, iCode: '' });
+  });
+
+  it('returns nothing for a file without ladders', () => {
+    expect(parseDsspLadders(SAMPLE_MMCIF)).toEqual([]);
   });
 });

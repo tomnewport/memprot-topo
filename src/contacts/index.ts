@@ -1,6 +1,9 @@
 export {
   extractStrands,
   pairStrands,
+  pairStrandsFromLadders,
+  chainLadders,
+  assemblyLadders,
   analyseBarrel,
   analyseStrandSet,
   extractAssemblyStrands,

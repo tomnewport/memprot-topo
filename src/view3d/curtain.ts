@@ -33,14 +33,50 @@ export class Curtain {
   /**
    * World position of curtain point (u, z) offset by `n` along the normal and
    * `b` along the tangent. Writes x, y, z, heading into `out`.
+   *
+   * `range` limits the search to the nodes `[lo, hi]`, which needn't have
+   * increasing `U`: a polyline curtain folds back where the 2-D view draws a
+   * strand right to left (an open sheet's, issue #54), so the same `u` can lie
+   * on several parts of it, and a loop must be placed on its own part.
    */
-  place(u: number, z: number, n: number, b: number, out: Float64Array, o = 0): void {
+  place(
+    u: number,
+    z: number,
+    n: number,
+    b: number,
+    out: Float64Array,
+    o = 0,
+    range?: readonly [number, number],
+  ): void {
     const { U, X, Y, H } = this;
     const last = U.length - 1;
     let x: number;
     let y: number;
     let h: number;
-    if (last <= 0) {
+    if (range && last > 0) {
+      const lo = Math.max(0, Math.min(last, range[0]));
+      const hi = Math.max(lo, Math.min(last, range[1]));
+      let k = -1;
+      for (let j = lo; j < hi; j++) {
+        if ((u - U[j]) * (u - U[j + 1]) <= 0) {
+          k = j;
+          break;
+        }
+      }
+      if (k >= 0) {
+        const du = U[k + 1] - U[k];
+        const f = Math.abs(du) > 1e-12 ? (u - U[k]) / du : 0;
+        x = X[k] + f * (X[k + 1] - X[k]);
+        y = Y[k] + f * (Y[k + 1] - Y[k]);
+        h = H[k] + f * (H[k + 1] - H[k]);
+      } else {
+        // Beyond the range: run on straight from its nearer end.
+        const e = Math.abs(u - U[lo]) <= Math.abs(u - U[hi]) ? lo : hi;
+        h = H[e];
+        x = X[e] + (u - U[e]) * Math.cos(h);
+        y = Y[e] + (u - U[e]) * Math.sin(h);
+      }
+    } else if (last <= 0) {
       h = last === 0 ? H[0] : 0;
       x = (last === 0 ? X[0] : 0) + (u - (last === 0 ? U[0] : 0)) * Math.cos(h);
       y = (last === 0 ? Y[0] : 0) + (u - (last === 0 ? U[0] : 0)) * Math.sin(h);
@@ -165,7 +201,9 @@ export function computePose(model: View3DModel, tau: number, sweep: number, rigi
       const ts = 0.5 * (t[k] + t[k + 1]);
       const d = ud[k + 1] - ud[k];
       const r = ua[k + 1] - ua[k];
-      lam[k] = Math.max(0, d + ts * (r - d));
+      // A step the 2-D view draws right to left (a strand of an open sheet)
+      // starts negative: the curtain folds back there until it unrolls.
+      lam[k] = d + ts * (r - d);
     }
     // Step headings: the anchor step stays horizontal; every joint turns by
     // its real turn scaled by the progress at that joint.

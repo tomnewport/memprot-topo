@@ -43,7 +43,9 @@ off a flag that is on by default.
 
 ## `<topology-loader>` attributes
 
-`pdb-id`, `sim-id` and `distortions` choose what to load. `theme*`,
+`pdb-id`, `sim-id` and `distortions` choose what to load; `ss-310` and
+`ss-source` how its secondary structure is assigned (see
+[usage.md](usage.md#topology-loader-from-a-pdb-id)). `theme*`,
 `membrane-detail`, `transition-*`, `structure-*`, `scale`, `height` and `tracks` are passed through to the
 inner `<topology-display>`. The loader also takes the `tracks` property and a
 `<script type="application/json" slot="tracks">` child.

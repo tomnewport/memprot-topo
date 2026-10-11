@@ -4,8 +4,22 @@ import {
   pairStrands,
   analyseBarrel,
   analyseAssemblyBarrel,
+  pairStrandsFromLadders,
+  chainLadders,
 } from '../../../src/contacts/beta-sheet.js';
-import type { Calpha, ChainData, SecondaryStructureSegment } from '../../../src/types.js';
+import type {
+  BetaLadder,
+  Calpha,
+  ChainData,
+  SecondaryStructureSegment,
+} from '../../../src/types.js';
+import { parsePdb } from '../../../src/parser/pdb.js';
+import { parseDsspLadders, parseDsspMmcif } from '../../../src/parser/dssp-mmcif.js';
+import { mergeProteinData } from '../../../src/parser/merge.js';
+import OMF_PDB from '../../../examples/2omf.pdb?raw';
+import OMF_DSSP from '../../../examples/2omf.dssp.cif?raw';
+import AHL_PDB from '../../../examples/7ahl.pdb?raw';
+import AHL_DSSP from '../../../examples/7ahl.dssp.cif?raw';
 import { syntheticBarrel } from '../fixtures/barrel.js';
 
 /** Two parallel vertical strands a fixed distance apart in x (planar sheet). */
@@ -189,5 +203,110 @@ describe('analyseAssemblyBarrel', () => {
     expect(a.ringOrder).toHaveLength(8);
     // Ring strands are tagged with their source chain.
     expect(a.ringOrder.every((i) => a.strands[i].chainId !== undefined)).toBe(true);
+  });
+});
+
+const ref = (resSeq: number, chainId = 'A') => ({ chainId, resSeq, iCode: '' });
+const ladder = (
+  id: string,
+  type: BetaLadder['type'],
+  a: [number, number],
+  b: [number, number],
+): BetaLadder => ({
+  id,
+  type,
+  a: { start: ref(a[0]), end: ref(a[1]) },
+  b: { start: ref(b[0]), end: ref(b[1]) },
+});
+
+describe('pairStrandsFromLadders', () => {
+  // Residues 1–8 and 9–16, antiparallel: 1 pairs with 16, 8 with 9.
+  const anti = twoStrands(4.8, true);
+  const strands = extractStrands(anti.calphas, anti.segments);
+
+  it('pairs residues along the ladder, reversed for an antiparallel one', () => {
+    const [p] = pairStrandsFromLadders(strands, [ladder('A', 'antiparallel', [2, 6], [15, 11])]);
+    expect(p.orientation).toBe('antiparallel');
+    expect(p.contacts.map((c) => [c.aResSeq, c.bResSeq])).toEqual([
+      [2, 15],
+      [3, 14],
+      [4, 13],
+      [5, 12],
+      [6, 11],
+    ]);
+    expect(p.spacing).toBeGreaterThan(4.7);
+  });
+
+  it('orders a pair by strand index whichever side the ladder lists first', () => {
+    const [p] = pairStrandsFromLadders(strands, [ladder('A', 'antiparallel', [11, 15], [6, 2])]);
+    expect([p.a, p.b]).toEqual([0, 1]);
+    expect(p.contacts[0]).toMatchObject({ aResSeq: 2, bResSeq: 15 });
+  });
+
+  it('pairs a bulged ladder end to end and pools ladders between the same strands', () => {
+    const [p] = pairStrandsFromLadders(strands, [
+      ladder('A', 'antiparallel', [1, 3], [16, 13]),
+      ladder('B', 'antiparallel', [5, 6], [12, 11]),
+    ]);
+    expect(p.contacts.map((c) => [c.aResSeq, c.bResSeq])).toEqual([
+      [1, 16],
+      [2, 15],
+      [3, 13],
+      [5, 12],
+      [6, 11],
+    ]);
+  });
+
+  it('drops isolated bridges and ladders outside the strands', () => {
+    expect(
+      pairStrandsFromLadders(strands, [ladder('A', 'antiparallel', [3, 3], [14, 14])]),
+    ).toEqual([]);
+    expect(
+      pairStrandsFromLadders(strands, [ladder('A', 'antiparallel', [20, 22], [14, 12])]),
+    ).toEqual([]);
+  });
+});
+
+describe('analyseBarrel with DSSP ladders', () => {
+  it('uses the ladders when they pair the strands, else the Cα geometry', () => {
+    const anti = twoStrands(4.8, true);
+    const ladders = [ladder('A', 'antiparallel', [2, 6], [15, 11])];
+    expect(analyseBarrel(anti.calphas, anti.segments, { ladders }).pairingSource).toBe('dssp');
+    expect(analyseBarrel(anti.calphas, anti.segments).pairingSource).toBe('geometry');
+    const stray = [ladder('A', 'antiparallel', [40, 44], [60, 56])];
+    expect(analyseBarrel(anti.calphas, anti.segments, { ladders: stray }).pairingSource).toBe(
+      'geometry',
+    );
+  });
+
+  it("finds 2OMF's 16-strand barrel with shear 20 from its ladders", () => {
+    const data = mergeProteinData(
+      '2omf',
+      parsePdb(OMF_PDB),
+      parseDsspMmcif(OMF_DSSP),
+      parseDsspLadders(OMF_DSSP),
+    );
+    const chain = data.chains[0];
+    const a = analyseBarrel(chain.calphas, chain.segments, { ladders: chainLadders(chain) });
+    expect(a.pairingSource).toBe('dssp');
+    expect(a.cylindrical).toBe(true);
+    expect(a.strandCount).toBe(16);
+    // OmpF is a (16, 20) barrel; the Cα-geometry pairing gives 21.
+    expect(Math.round(a.shear)).toBe(20);
+  });
+
+  it("finds 7AHL's 14-strand assembly barrel with shear 14 from the cross-chain ladders", () => {
+    const data = mergeProteinData(
+      '7ahl',
+      parsePdb(AHL_PDB),
+      parseDsspMmcif(AHL_DSSP),
+      parseDsspLadders(AHL_DSSP),
+    );
+    const a = analyseAssemblyBarrel(data.chains);
+    expect(a.pairingSource).toBe('dssp');
+    expect(a.cylindrical).toBe(true);
+    expect(a.strandCount).toBe(14);
+    expect(Math.round(a.shear)).toBe(14);
+    expect(new Set(a.ringOrder.map((i) => a.strands[i].chainId)).size).toBe(7);
   });
 });

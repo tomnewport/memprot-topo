@@ -52,12 +52,20 @@ is a separate chunk, loaded the first time the 3-D view is shown.
 | `sim-id`      | MemProtMD simulation ID. Default `<pdb-id>_default_dppc`.                                                  |
 | `distortions` | URL of a MemProtMD bilayer-distortions file. Optional; if it fails to load, the default membrane is drawn. |
 | `ss-310`      | `helix` draws DSSP's 3₁₀ helices as helices. By default they are coil, as are polyproline II stretches.    |
+| `ss-source`   | `pdb-redo` draws PDB-REDO's DSSP for the deposited entry. By default DSSP is computed on `at.pdb` itself.  |
 
 The loader fetches the simulation's `at.pdb` from
-`memprotmd.bioch.ox.ac.uk` and the entry's DSSP from `pdb-redo.eu`, so the
-page needs network access to both. While loading it shows "Loading …"; on
-failure it shows the error. Changing `pdb-id`, `sim-id`, `distortions` or
-`ss-310` reloads.
+`memprotmd.bioch.ox.ac.uk` and the entry's DSSP from `pdb-redo.eu`. The
+helices, strands and β-ladders are computed with DSSP on the simulated
+structure's own backbone (see
+[secondary-structure.md](secondary-structure.md#dssp-on-the-drawn-structure)),
+so they match the coordinates drawn; PDB-REDO's file is used for the deposited
+chains and numbering, and for the secondary structure only with
+`ss-source="pdb-redo"` or when `at.pdb` has no full backbone. If PDB-REDO
+can't be reached, the structure is still drawn, in MemProtMD's numbering, with
+a console warning; with `ss-source="pdb-redo"` or a Cα-only file that is an
+error. While loading it shows "Loading …"; on failure it shows the error.
+Changing `pdb-id`, `sim-id`, `distortions`, `ss-310` or `ss-source` reloads.
 
 MemProtMD renumbers residues from 1 and writes every protomer on one chain,
 often with a blank chain ID. The loader matches the residues against the
@@ -83,14 +91,19 @@ the loader's shadow root, so a listener on the loader also hears them.
 <topology-display selection="A" dimension="2"></topology-display>
 
 <script type="module">
-  import { parsePdb, parseDsspMmcif, mergeProteinData } from 'memprot2d';
+  import { parsePdb, parseDsspMmcif, parseDsspLadders, mergeProteinData } from 'memprot2d';
 
   const [pdb, dssp] = await Promise.all([
     fetch('/data/5g53.pdb').then((r) => r.text()),
     fetch('/data/5g53.dssp.cif').then((r) => r.text()),
   ]);
   const view = document.querySelector('topology-display');
-  view.proteinData = mergeProteinData('5g53', parsePdb(pdb), parseDsspMmcif(dssp));
+  view.proteinData = mergeProteinData(
+    '5g53',
+    parsePdb(pdb),
+    parseDsspMmcif(dssp),
+    parseDsspLadders(dssp),
+  );
 </script>
 ```
 
@@ -119,6 +132,7 @@ interface ChainData {
   residueCount: number; // residues with a Cα
   segments: SecondaryStructureSegment[];
   calphas: Calpha[]; // in chain order
+  ladders?: BetaLadder[]; // DSSP's β-ladders touching this chain
 }
 
 interface SecondaryStructureSegment {
@@ -142,6 +156,9 @@ the event details are all author numbering, as in the PDB file.
 `parseDsspMmcif` reads the `auth_*` columns so that it matches `parsePdb`.
 It keeps DSSP's α and π helices and its strands; 3₁₀ helices only with
 `parseDsspMmcif(text, { helix310: true })`, and polyproline II never.
+`parseDsspLadders` reads DSSP's β-ladders (`_dssp_struct_ladder`), the
+hydrogen-bonded strand pairs; with them, strands are paired from DSSP rather
+than from Cα spacing ([beta-barrels.md](beta-barrels.md)). They are optional.
 
 Re-assigning the same object is a no-op; assign a new object to redraw.
 

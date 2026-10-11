@@ -29,8 +29,8 @@ PDB (Cα) + DSSP (mmCIF)            MemProtMD distortions file (optional)
 
 - `<topology-loader>` ([`components/topology-loader.ts`](../src/components/topology-loader.ts))
   fetches a MemProtMD simulation's `at.pdb` and PDB-REDO's DSSP for the entry,
-  and optionally a distortions file, then hands the result to a
-  `<topology-display>`.
+  and optionally a distortions file, computes DSSP on `at.pdb`, then hands
+  the result to a `<topology-display>`.
 - `<topology-display>` ([`components/topology-display.ts`](../src/components/topology-display.ts))
   can also be given `ProteinData` directly (the `protein-data` attribute or
   property). The demo does this with data pre-parsed at build time by
@@ -61,7 +61,8 @@ of this is drawn (`membraneAtDetail`). `membrane/profile.ts` turns it into the
 - [`orientation/`](../src/orientation/) decides which chains cross the
   bilayer; the display shows the largest transmembrane chain unless
   `selection` names another. See [chain-selection.md](chain-selection.md).
-- [`contacts/`](../src/contacts/) pairs β-strands from Cα geometry and
+- [`contacts/`](../src/contacts/) pairs β-strands from DSSP's ladders (or,
+  without them, Cα geometry) and
   measures β-barrels (strand number, shear, tilt, axis), for single chains and
   for multi-chain assembly barrels. Whether a chain is a closed barrel decides
   how it is unrolled. See [beta-barrels.md](beta-barrels.md).
@@ -139,9 +140,11 @@ The `dimension` attribute moves between the three (1 → 2 → 3).
   (`scroll-box.ts`; [sizing.md](sizing.md)), and the shadow-DOM styles
   (`topology-styles.ts`). Selection is described in
   [selection.md](selection.md).
-- [`secondary-structure/`](../src/secondary-structure/) is reserved for
-  computing DSSP in the browser on the coordinates actually drawn (#79); it
-  has no code yet.
+- [`secondary-structure/`](../src/secondary-structure/) computes DSSP in the
+  browser on the coordinates actually drawn (#79): `computeDssp` on the
+  backbone `parsePdbBackbone` reads, and `structureSecondaryStructure` to
+  number the result like the drawn chains. `<topology-loader>` uses it; see
+  [secondary-structure.md](secondary-structure.md#dssp-on-the-drawn-structure).
 
 ## Module map
 
@@ -159,7 +162,7 @@ The `dimension` attribute moves between the three (1 → 2 → 3).
 | [`src/sequence/`](../src/sequence/)                       | The 1-D sequence view and the 1-D ↔ 2-D transition.                   |
 | [`src/tracks/`](../src/tracks/)                           | Data tracks: configuration, sources, series and their resolution.     |
 | [`src/theme/`](../src/theme/)                             | Theme tokens, built-in themes, registry and in-place repaint.         |
-| [`src/secondary-structure/`](../src/secondary-structure/) | Reserved for in-browser DSSP (#79).                                   |
+| [`src/secondary-structure/`](../src/secondary-structure/) | DSSP on the structure's own backbone (#79).                           |
 
 Top-level files: [`src/index.ts`](../src/index.ts) is the library entry
 (the public exports), [`src/types.ts`](../src/types.ts) the shared

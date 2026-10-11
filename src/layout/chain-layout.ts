@@ -7,7 +7,7 @@ import {
   type UnrollResult,
   type Vec,
 } from '../unroll/index.js';
-import type { BarrelAnalysis } from '../contacts/index.js';
+import type { BarrelAnalysis, Vec3 } from '../contacts/index.js';
 import {
   MEMBRANE_REACH_A,
   membraneProfile,
@@ -40,6 +40,7 @@ import {
 } from './loops.js';
 import { residueLabelBox, type LabelBox } from './labels.js';
 import { zWindow } from './z-window.js';
+import { findSheets, sheetStrandAt } from './sheets.js';
 
 /** The 2-D plot's size, from the `scale` and `height` attributes (issue #27). */
 export interface PlotOptions {
@@ -84,6 +85,11 @@ export interface LayoutElement {
   sections: OutlineSection[];
   /** Author residue range it stands for in the selection; absent for faded (context) elements. */
   selectable?: ResidueSpan;
+  /**
+   * For a strand of an open β-sheet (issue #54): the sheet's unit normal at
+   * the strand, in the membrane frame. The 3-D view turns the strand's face to it.
+   */
+  sheetNormal?: Vec3;
 }
 
 /** A loop between elements, or the dashed connector across a chain break. */
@@ -239,11 +245,15 @@ export function layoutChain(
     : analysis.cylindrical
       ? unwrapBarrel(chain.calphas, { ssSegments, centre: analysis.centre })
       : unrollChain(chain.calphas, { ssSegments });
+  // Strands that pair into an open sheet are drawn as one block of parallel
+  // bars per sheet (issue #54).
+  const sheets = useUnwrap ? [] : findSheets(analysis);
+  const sheetAt = (resSeq: number) => sheetStrandAt(sheets, resSeq);
   const { layouts, totalArc } = asm
     ? barrelLayout(unroll.segments, ssSegments, true, pxPerA)
     : analysis.cylindrical
       ? barrelLayout(unroll.segments, ssSegments, false, pxPerA)
-      : layoutSegments(unroll.segments, ssSegments, pxPerA);
+      : layoutSegments(unroll.segments, ssSegments, pxPerA, sheets);
 
   // In barrel mode, hairpin loops leave each strand parallel to it (long tangent
   // handles following the strand tilt) and skip the centred vertical-extreme
@@ -297,7 +307,17 @@ export function layoutChain(
 
   // β-sheet contact ties. (Assembly barrels pool several chains that may share
   // residue numbers, so the single-chain contact map doesn't apply.)
-  const ties = showContacts && useUnwrap && !asm ? contactTies(analysis, layouts) : null;
+  const tied = useUnwrap
+    ? new Set(analysis.ringOrder)
+    : new Set(
+        analysis.strands
+          .filter((st) => sheetAt((st.segment.start + st.segment.end) >> 1))
+          .map((st) => st.index),
+      );
+  const ties =
+    showContacts && (useUnwrap || sheets.length > 0) && !asm
+      ? contactTies(analysis, layouts, tied)
+      : null;
 
   const label = (seg: number, sample: number, resSeq: number, isStart: boolean): void => {
     const samples = segments[seg].samples;
@@ -337,7 +357,8 @@ export function layoutChain(
     for (let j = 0; j < runs.length; j++) {
       const run = runs[j];
       if (run.type === 'helix' || run.type === 'strand') {
-        const withArrow = barrel && run.type === 'strand';
+        const inSheet = run.type === 'strand' ? sheetAt(run.startResSeq) : null;
+        const withArrow = (barrel || inSheet !== null) && run.type === 'strand';
         if (run.endResSampleIdx > run.startSample) {
           const centreline: OutlinePoint[] = [];
           for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
@@ -368,6 +389,7 @@ export function layoutChain(
               sections.length > 0 && !faded
                 ? { start: run.startResSeq, end: run.endResSeq }
                 : undefined,
+            ...(inSheet ? { sheetNormal: inSheet.strand.normal } : {}),
           });
         }
         // Faded neighbouring protomers are context only — don't clutter with labels.
@@ -394,7 +416,19 @@ export function layoutChain(
         startSample: run.startSample,
         endSample: run.endSample,
       };
-      const points = buildLoopPoints(prev, next, extreme, loopOpts);
+      // A hairpin within a sheet block leans over like a barrel hairpin.
+      const hairpin =
+        prevRun?.type === 'strand' &&
+        nextRun?.type === 'strand' &&
+        sheetAt(prevRun.startResSeq) !== null &&
+        sheetAt(nextRun.startResSeq) !== null;
+      const points = hairpin
+        ? buildLoopPoints(prev, next, null, {
+            ...loopOpts,
+            extremePoints: false,
+            tangentMagPx: BARREL.loopTangentPx,
+          })
+        : buildLoopPoints(prev, next, extreme, loopOpts);
       // Neighbouring protomers are context only, so only the focal chain's loops
       // take part in the selection.
       const selectable = points.length >= 2 && !faded && loopResidues.length > 0;
@@ -506,24 +540,29 @@ export function layoutChain(
 
 /**
  * The detected β-sheet residue contacts, as ties between paired strands. Only
- * meaningful in the cylindrical-unwrap layout, where residue (arc, z)
+ * meaningful in the cylindrical unwrap and the open-sheet blocks, where residue (arc, z)
  * positions reflect true 3-D adjacency, so a tie reads as "these two residues
  * hydrogen-bond across the sheet".
  */
-function contactTies(analysis: BarrelAnalysis, layouts: SegmentLayout[]): LayoutTie[] {
+function contactTies(
+  analysis: BarrelAnalysis,
+  layouts: SegmentLayout[],
+  /** Strands whose pairings are tied. */
+  tied: Set<number>,
+): LayoutTie[] {
   const pos = new Map<ResidueKey, { arc: number; z: number; seg: number; sample: number }>();
   for (let s = 0; s < layouts.length; s++) {
     for (const r of layouts[s].residues) {
       pos.set(residueKey(r), { arc: r.arc, z: r.z, seg: s, sample: r.sampleIndex });
     }
   }
-  // Only tie pairings between barrel-wall (ring) strands. Strands that fold
-  // inside the barrel render as coil at an unreliable arc near the axis, so a
-  // tie to them would land at an arbitrary position and read oddly.
-  const ring = new Set(analysis.ringOrder);
+  // Only tie pairings between barrel-wall (ring) strands, or open-sheet
+  // strands. Strands that fold inside the barrel render as coil at an
+  // unreliable arc near the axis, so a tie to them would land at an arbitrary
+  // position and read oddly.
   const ties: LayoutTie[] = [];
   for (const pairing of analysis.pairings) {
-    if (!ring.has(pairing.a) || !ring.has(pairing.b)) continue;
+    if (!tied.has(pairing.a) || !tied.has(pairing.b)) continue;
     for (const c of pairing.contacts) {
       const a = pos.get(c.aKey);
       const b = pos.get(c.bKey);
