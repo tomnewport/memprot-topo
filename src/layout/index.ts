@@ -6,6 +6,7 @@
 export * from './constants.js';
 export * from './runs.js';
 export * from './segments.js';
+export * from './sheets.js';
 export * from './loops.js';
 export * from './labels.js';
 export * from './chain-layout.js';

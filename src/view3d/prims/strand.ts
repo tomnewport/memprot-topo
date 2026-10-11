@@ -118,6 +118,7 @@ export function strandPrims(env: PrimEnv, ctx: FrameCtx, el: ModelElement): void
   const corners = new Float64Array(m * 16); // TL, TR, BL, BR × (x, y, depth, k)
   const hT = opt.strandThickness / 2;
   const tmp = env.tmp;
+  const local = el.sheetLocal;
   for (let i = 0; i < m; i++) {
     const s = secs[i];
     const fi = g0 + s.fi;
@@ -136,6 +137,22 @@ export function strandPrims(env: PrimEnv, ctx: FrameCtx, el: ModelElement): void
     N[i * 3] = sh;
     N[i * 3 + 1] = -ch;
     N[i * 3 + 2] = 0;
+    if (local) {
+      // Open-sheet strand: turn the face from the curtain's normal towards
+      // the sheet's as the strand rolls up (issue #54).
+      const t = lerp(pose.t[ga], pose.t[gb], f);
+      const la = (ga - g0) * 3;
+      const lb = (gb - g0) * 3;
+      const b = lerp(local[la], local[lb], f);
+      const nn = lerp(local[la + 1], local[lb + 1], f);
+      const nz = lerp(local[la + 2], local[lb + 2], f);
+      N[i * 3] = (1 - t) * sh + t * (b * ch + nn * sh);
+      N[i * 3 + 1] = (1 - t) * -ch + t * (b * sh - nn * ch);
+      N[i * 3 + 2] = t * nz;
+    }
+  }
+  if (local) faceSheet(C, W, N, m);
+  for (let i = 0; i < m; i++) {
     for (let c = 0; c < 4; c++) {
       const ws = c === 0 || c === 2 ? 1 : -1;
       const ns = c < 2 ? 1 : -1;
@@ -479,4 +496,55 @@ export function keepSections(
     }
   }
   return out;
+}
+
+/**
+ * Make each cross-section of an open-sheet strand square to the strand: the
+ * normal N loses its component along the centre line's tangent, and the
+ * width vector W turns to lie across the strand in the face, keeping its
+ * length and the side it pointed to.
+ */
+function faceSheet(C: Float64Array, W: Float64Array, N: Float64Array, m: number): void {
+  for (let i = 0; i < m; i++) {
+    const a = Math.max(0, i - 1);
+    const b = Math.min(m - 1, i + 1);
+    let tx = C[b * 3] - C[a * 3];
+    let ty = C[b * 3 + 1] - C[a * 3 + 1];
+    let tz = C[b * 3 + 2] - C[a * 3 + 2];
+    const tl = Math.hypot(tx, ty, tz);
+    let nx = N[i * 3];
+    let ny = N[i * 3 + 1];
+    let nz = N[i * 3 + 2];
+    if (tl > 1e-9) {
+      tx /= tl;
+      ty /= tl;
+      tz /= tl;
+      const d = nx * tx + ny * ty + nz * tz;
+      nx -= d * tx;
+      ny -= d * ty;
+      nz -= d * tz;
+    }
+    const nl = Math.hypot(nx, ny, nz);
+    if (nl < 1e-9) continue;
+    nx /= nl;
+    ny /= nl;
+    nz /= nl;
+    N[i * 3] = nx;
+    N[i * 3 + 1] = ny;
+    N[i * 3 + 2] = nz;
+    const wl = Math.hypot(W[i * 3], W[i * 3 + 1], W[i * 3 + 2]);
+    if (wl < 1e-12 || tl <= 1e-9) continue;
+    // Across = tangent × normal, on the side W pointed to.
+    let ax = ty * nz - tz * ny;
+    let ay = tz * nx - tx * nz;
+    let az = tx * ny - ty * nx;
+    const al = Math.hypot(ax, ay, az) || 1;
+    const sgn = ax * W[i * 3] + ay * W[i * 3 + 1] + az * W[i * 3 + 2] < 0 ? -1 : 1;
+    ax *= (sgn * wl) / al;
+    ay *= (sgn * wl) / al;
+    az *= (sgn * wl) / al;
+    W[i * 3] = ax;
+    W[i * 3 + 1] = ay;
+    W[i * 3 + 2] = az;
+  }
 }

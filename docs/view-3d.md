@@ -280,8 +280,11 @@ finished 3-D view stays vector (and exportable).
 - Painter's ordering is per section, so tightly interleaved geometry (e.g. a
   loop threading between two strands) can occasionally be ordered wrongly for a
   few pixels.
-- Strand ribbons lie in the curtain (correct for barrel walls). β-sheets in
-  non-barrel proteins are not yet oriented by their sheet plane.
+- Strand ribbons lie in the curtain (correct for barrel walls), except
+  strands of open β-sheets, which turn to their sheet's plane as they roll
+  up ([beta-barrels.md](beta-barrels.md#open-sheets-issue-54)). Where the 2-D
+  view draws such a strand right to left, the polyline curtain folds back on
+  itself until it unrolls, and loops are placed on their own stretch of it.
 - Rendering cost scales with chain length. In headless Chromium without GPU
   rasterisation, a 340-residue barrel takes about 17–25 ms of script per frame
   (plus style, layout and paint), so it animates at about 30 fps there.

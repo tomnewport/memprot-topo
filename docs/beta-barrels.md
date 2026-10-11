@@ -131,6 +131,33 @@ arc-length layout. In barrel mode only the wall strands are drawn as strands;
 unstable, so they hold the previous angle and read as part of the connecting
 loop rather than as spurious bars.
 
+### Open sheets (issue #54)
+
+Strands that pair but don't close into a barrel, such as the β-sandwich of a
+pentameric ligand-gated channel (3EAM, in the gallery) or a hairpin in a
+helical protein, would otherwise be drawn strand by strand along the
+arc-length unroll, where antiparallel neighbours fan into chevrons.
+[`findSheets`](../src/layout/sheets.ts) groups the paired strands of a chain
+that isn't drawn as a barrel into sheets (connected groups of two or more),
+and fits each a plane. Each strand of a sheet is then drawn as the sheet's
+flat projection of its trace, so a sheet's strands are parallel bars with
+antiparallel ones pointing the other way:
+
+- a sheet standing more than 30° from the membrane plane is seen along the
+  horizontal part of its normal, so heights stay real (`z`);
+- a flatter sheet is drawn face-on, its mean strand direction upwards, about
+  the height of its centre.
+
+Strands keep their place in sequence order, so loops never double back. A
+strand that follows another of the same sheet with only a loop between them
+(hairpins, meanders) is packed against it like a barrel-wall strand, two
+strand widths apart, and the hairpin loop leans over like a barrel hairpin.
+Sheet strands carry arrowheads, as barrel strands do.
+
+In the 3-D view each sheet strand turns its face from the curtain to the
+sheet's normal at that strand (the strand's axis crossed with the directions to
+its partners, so it follows the sheet's twist) as it rolls up.
+
 ---
 
 ## 4. Contact overlay
@@ -139,8 +166,8 @@ Setting the `show-contacts` attribute overlays the detected β-sheet residue
 contacts as faint ties between paired strands. Because the unwrap places
 residues at their true `(arc, z)`, each tie reads as "these two residues
 hydrogen-bond across the sheet". It is off by default to keep the diagram
-clean, and is only drawn in the cylindrical-unwrap layout where the positions
-are meaningful.
+clean, and is only drawn in the cylindrical-unwrap layout and on open sheets,
+where the positions are meaningful.
 
 ---
 

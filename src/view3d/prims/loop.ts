@@ -36,6 +36,17 @@ export function loopPrims(env: PrimEnv, ctx: FrameCtx, loop: ModelLoop): void {
   const { syn, synS, real, realS } = loop;
   const nSyn = synS.length;
   const nReal = realS.length;
+  // A polyline curtain's nodes are the samples: keep the loop on its own.
+  let range: [number, number] | undefined;
+  if (model.scene.mode === 'polyline' && nReal > 0) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let k = 0; k < nReal; k++) {
+      lo = Math.min(lo, real[k]);
+      hi = Math.max(hi, real[k]);
+    }
+    range = [lo, hi];
+  }
   for (let c = 0; c < count; c++) {
     const s = c / (count - 1);
     while (js < nSyn - 2 && synS[js + 1] < s) js++;
@@ -54,7 +65,7 @@ export function loopPrims(env: PrimEnv, ctx: FrameCtx, loop: ModelLoop): void {
     const rbb = lerp(pose.b[ra], pose.b[rb], fr);
     const cu = lerp(su + lerp(aU, bU, s), ru, eLoop);
     const cz = lerp(sz + lerp(aZ, bZ, s), rz, eLoop);
-    pose.curtain.place(cu, cz, rn * eLoop, rbb * eLoop, env.tmp);
+    pose.curtain.place(cu, cz, rn * eLoop, rbb * eLoop, env.tmp, 0, range);
     wx[c] = env.tmp[0];
     wy[c] = env.tmp[1];
     wz[c] = env.tmp[2];

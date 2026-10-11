@@ -330,6 +330,31 @@ export const PROTEINS = [
     },
   },
   {
+    pdbId: '3eam',
+    label: 'GLIC Pentameric Ligand-Gated Ion Channel',
+    topology: 'bundle',
+    ringRadius: 8,
+    data: {
+      pdbId: '3eam',
+      chains: [
+        {
+          chainId: 'A',
+          // Mixed α/β (issue #54): an extracellular β-sandwich domain of open,
+          // non-barrel sheets over four transmembrane helices. The synthetic
+          // fallback only draws the helices (the TM ranges of chain A's HELIX
+          // records); the β-sheets need the real coordinates.
+          residueCount: 315,
+          segments: [
+            { start: 201, end: 214, type: 'helix' },
+            { start: 220, end: 246, type: 'helix' },
+            { start: 253, end: 282, type: 'helix' },
+            { start: 284, end: 315, type: 'helix' },
+          ],
+        },
+      ],
+    },
+  },
+  {
     pdbId: '7ahl',
     label: 'Alpha-Hemolysin',
     topology: 'barrel',

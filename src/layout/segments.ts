@@ -8,6 +8,7 @@ import {
 import type { BarrelAnalysis } from '../contacts/index.js';
 import { BARREL, LOOP, PLOT, SS_BODY } from './constants.js';
 import { isSs, runsBySs, type SsRun } from './runs.js';
+import { projectToSheet, sheetStrandAt, type Sheet } from './sheets.js';
 
 /**
  * Walk the C-terminal samples of a strand backward and return the index of the
@@ -61,14 +62,24 @@ export interface SegmentLayout {
  * a fixed `LOOP.elementGapPx`, regardless of each loop's real arc length. Each
  * SS element keeps its own internal arc geometry; only the offset between
  * elements changes. Loops (and chain breaks) collapse to the fixed gap width.
+ *
+ * A strand of one of the open `sheets` (issue #54) is drawn as the sheet's
+ * flat projection of its samples instead (see `projectToSheet`), so the
+ * sheet's strands are parallel bars, antiparallel ones pointing the other
+ * way. A strand that follows another of the same sheet with only a loop
+ * between them is packed against it like a barrel-wall strand: slid along
+ * until its centreline is {@link BARREL.minStrandWidths} strand widths from
+ * the previous strand's, so hairpins and meanders read as sheets.
  */
 export function layoutSegments(
   segments: UnrolledSegment[],
   ssSegments: SecondaryStructureSegment[],
   /** Plot scale, px per Å (issue #27). */
   pxPerA: number = PLOT.arcPxPerA,
+  sheets: readonly Sheet[] = [],
 ): { layouts: SegmentLayout[]; totalArc: number } {
   const gapA = LOOP.elementGapPx / pxPerA;
+  const targetA = (BARREL.minStrandWidths * SS_BODY.halfWidthPx * 2) / pxPerA;
   const layouts: SegmentLayout[] = [];
   let cursor = 0;
   let maxArc = 0;
@@ -89,14 +100,63 @@ export function layoutSegments(
     }
 
     const shift = new Array<number>(n).fill(NaN);
+    // Sheet strands' samples, drawn from the sheet's projection.
+    const sheetDisplay = new Array<UnrolledPoint | null>(n).fill(null);
+    const runOf = new Array<number>(n).fill(-1);
+    // The last sheet strand placed, while only loops have followed it.
+    let prevStrand: {
+      sheet: number;
+      pts: UnrolledPoint[];
+      centre: number;
+      right: number;
+    } | null = null;
     let firstShift = 0;
     for (let r = 0; r < runs.length; r++) {
       const run = runs[r];
       const sh = cursor - segment.samples[run.startSample].arc;
       if (r === 0) firstShift = sh;
       const ownEnd = r < runs.length - 1 ? runs[r + 1].startSample : n;
-      for (let i = run.startSample; i < ownEnd; i++) shift[i] = sh;
-      if (run.type === 'helix' || run.type === 'strand') {
+      for (let i = run.startSample; i < ownEnd; i++) {
+        shift[i] = sh;
+        runOf[i] = r;
+      }
+      const mid = segment.residues[(run.residueStart + run.residueEnd) >> 1];
+      const hit =
+        run.type === 'strand' && segment.positions ? sheetStrandAt(sheets, mid.resSeq) : null;
+      if (hit) {
+        const pts: UnrolledPoint[] = [];
+        for (let i = run.startSample; i <= run.endResSampleIdx; i++) {
+          const q = projectToSheet(sheets[hit.sheet], segment.positions![i]);
+          pts.push({ arc: q.u, z: q.z });
+        }
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const p of pts) {
+          lo = Math.min(lo, p.arc);
+          hi = Math.max(hi, p.arc);
+        }
+        let anchor = cursor;
+        const packed = prevStrand !== null && prevStrand.sheet === hit.sheet;
+        if (prevStrand && packed) {
+          // Pack against the previous strand of the sheet, kept to its right.
+          let need = prevStrand.centre + targetA - (lo + hi) / 2 + lo;
+          for (const p of pts) {
+            for (const q of prevStrand.pts) {
+              const dz = p.z - q.z;
+              if (Math.abs(dz) >= targetA) continue;
+              need = Math.max(need, Math.sqrt(targetA * targetA - dz * dz) + q.arc - (p.arc - lo));
+            }
+          }
+          anchor = need;
+        }
+        const placed = pts.map((p) => ({ arc: anchor + p.arc - lo, z: p.z }));
+        placed.forEach((p, i) => (sheetDisplay[run.startSample + i] = p));
+        const right = Math.max(anchor + (hi - lo), packed ? prevStrand!.right : -Infinity);
+        prevStrand = { sheet: hit.sheet, pts: placed, centre: anchor + (hi - lo) / 2, right };
+        // A packed strand's loop takes no gap: the next element follows it.
+        cursor = packed ? right : anchor + (hi - lo);
+      } else if (run.type === 'helix' || run.type === 'strand') {
+        prevStrand = null;
         cursor += segment.samples[run.endResSampleIdx].arc - segment.samples[run.startSample].arc;
       } else {
         cursor += gapA;
@@ -109,8 +169,32 @@ export function layoutSegments(
       else shift[i] = last;
     }
 
-    const displaySamples = segment.samples.map((p, i) => ({ arc: p.arc + shift[i], z: p.z }));
-    layouts.push({ samples: displaySamples, residues: segment.residues, runs });
+    const displaySamples: UnrolledPoint[] = [];
+    let lastSheet = -1;
+    for (let i = 0; i < n; i++) {
+      const p = segment.samples[i];
+      const d = sheetDisplay[i];
+      if (d) {
+        displaySamples.push(d);
+        lastSheet = i;
+      } else if (lastSheet >= 0 && runOf[i] === runOf[lastSheet]) {
+        // Past a sheet strand's last residue, still in its run: carry on
+        // rigidly from that residue.
+        const q = segment.samples[lastSheet];
+        const e = displaySamples[lastSheet];
+        displaySamples.push({ arc: e.arc + (p.arc - q.arc), z: e.z + (p.z - q.z) });
+      } else {
+        lastSheet = -1;
+        displaySamples.push({ arc: p.arc + shift[i], z: p.z });
+      }
+    }
+    // Residues of sheet strands take their sample's display position.
+    const residues = segment.residues.map((r) =>
+      sheetDisplay[r.sampleIndex]
+        ? { ...r, arc: displaySamples[r.sampleIndex].arc, z: displaySamples[r.sampleIndex].z }
+        : r,
+    );
+    layouts.push({ samples: displaySamples, residues, runs });
     if (cursor > maxArc) maxArc = cursor;
     cursor += gapA;
   }
