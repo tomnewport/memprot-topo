@@ -116,16 +116,16 @@ export function loopPrims(env: PrimEnv, ctx: FrameCtx, loop: ModelLoop): void {
   const coreSpec: OpSpec = { layer: 2, key: 'tube', kind: 'stroke', linecap: cap };
   const outSpec: OpSpec = { layer: 1, key: 'tube-o', kind: 'stroke', linecap: cap };
   // Dashes of a chain break: as in 2-D at t = 0; in 3-D laid along the
-  // loop's length on screen (laid along its length in space, a stretch
-  // pointing at the viewer bunches them into a clump) and sized to the
-  // line, which is much wider than in 2-D.
+  // loop's length in space, so they stay pinned to the curve as the view
+  // turns (a stretch pointing at the viewer bunches them, as perspective
+  // would), and sized to the line, which is much wider than in 2-D. Both
+  // the pattern and the line width scale with kAvg, so a change in it
+  // doesn't move the dashes. The 3-D period is long enough that dashes on a
+  // stretch foreshortened to about half its length still show gaps.
   const dashPx = loop.discontinuous ? loop.synLength * ctx.pxA : 0;
+  const pxPerA = scale * kAvg;
   const dashOn = lerp(DASH_ON, core, sigma);
-  const dashPeriod = lerp(DASH_PERIOD, 3.5 * core, sigma);
-  const onScreen = new Float64Array(count);
-  for (let c = 1; c < count; c++) {
-    onScreen[c] = onScreen[c - 1] + Math.hypot(sx[c] - sx[c - 1], sy[c] - sy[c - 1]);
-  }
+  const dashPeriod = lerp(DASH_PERIOD, 5 * core, sigma);
   const edgeAlpha = clamp01((sigma - 0.05) / 0.3);
   const rb = outer / 2;
   const edgeW = 1.2;
@@ -170,9 +170,8 @@ export function loopPrims(env: PrimEnv, ctx: FrameCtx, loop: ModelLoop): void {
     py: number;
     sh: number;
     s: number;
-    /** Length along the loop in space (Å) and on screen (px). */
+    /** Length along the loop in space (Å). */
     a: number;
-    scr: number;
   }
   const at = (q: number, r: number, u: number): LoopPoint => {
     let px = lerp(ppx[q], ppx[r], u);
@@ -191,7 +190,6 @@ export function loopPrims(env: PrimEnv, ctx: FrameCtx, loop: ModelLoop): void {
       sh: lerp(shine[q], shine[r], u),
       s: lerp(q, r, u) / (count - 1),
       a: lerp(arc[q], arc[r], u),
-      scr: lerp(onScreen[q], onScreen[r], u),
     };
   };
   const piece = (P: LoopPoint[], lv: number, sub: number): void => {
@@ -250,7 +248,7 @@ export function loopPrims(env: PrimEnv, ctx: FrameCtx, loop: ModelLoop): void {
         run.stroke(edgeR, right, oC, edgeW, edgeAlpha);
       };
     } else {
-      const phases = P.map((p) => lerp(p.s * dashPx, p.scr, sigma));
+      const phases = P.map((p) => lerp(p.s * dashPx, p.a * pxPerA, sigma));
       const coreS = veiled(coreSpec, lv);
       const outS = veiled(outSpec, lv);
       emit = (run) => {
