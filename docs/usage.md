@@ -201,7 +201,7 @@ most attributes, each labelled with the attribute it sets.
 | ------------------------------------------------ | ---------------------------------------------------------------- |
 | [sizing.md](sizing.md)                           | `fit`, and the scrolling diagram box                             |
 | [selection.md](selection.md)                     | `selection` and the selection events                             |
-| [secondary-structure.md](secondary-structure.md) | `min-helix-length`, `min-strand-length`                          |
+| [secondary-structure.md](secondary-structure.md) | DSSP classes, `ss-310`, `min-helix-length`, `min-strand-length`  |
 | [residue-data.md](residue-data.md)               | `residue-colours`, `residue-widths`, `colour-*` and the legend   |
 | [membrane.md](membrane.md)                       | `membrane-*`, `distortions` and the MemProtMD distortions format |
 | [theming.md](theming.md)                         | `theme`, `theme-light`, `theme-dark`, `registerTheme`            |

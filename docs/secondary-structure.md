@@ -1,8 +1,92 @@
-# Minimum helix and strand length
+# Secondary structure: source, classes and minimum length
 
-Secondary-structure assignment (HELIX/SHEET records or DSSP) often reports
-helices and strands only a few residues long. Drawn as separate elements, they
-break a loop into short stubs, so `<topology-display>` treats any helix or
+`<topology-display>` draws three kinds of element: helices, strands and coil.
+This note covers where the assignment comes from, which DSSP classes map to
+which element, and the minimum length below which an element is drawn as coil.
+
+## Source
+
+Secondary structure comes from DSSP ([Kabsch & Sander,
+1983](https://doi.org/10.1002/bip.360221211)), which assigns each residue one
+of eight classes from its backbone hydrogen bonds (and, for polyproline II,
+its φ/ψ angles). The component reads DSSP's mmCIF output
+([`parseDsspMmcif`](../src/parser/dssp-mmcif.ts)), not the HELIX/SHEET records
+of the coordinate file: `parsePdb` reads only Cα atoms.
+
+- The demo and the [examples](../examples/README.md) use `*.dssp.cif` files
+  downloaded from [PDB-REDO's DSSP
+  service](https://pdb-redo.eu/dssp) ([Joosten et al.,
+  2014](https://doi.org/10.1107/S2052252514009324)), which runs DSSP 4
+  ([Hekkelman et al., 2025](https://doi.org/10.1101/2025.04.11.648460)).
+- `<topology-loader>` fetches the same service's mmCIF for the PDB entry
+  at load time.
+
+Either way DSSP is computed on the **deposited** structure, while the
+coordinates drawn are OPM's (demo) or MemProtMD's after simulation (loader).
+Helix ends and short strands can differ between the two, and MemProtMD's
+numbering is mapped back to the deposited one first (`mapToDeposited`).
+Computing DSSP in the browser on the drawn coordinates is planned (#79) but
+not implemented.
+
+## Class mapping
+
+DSSP 4 writes helices, PPII stretches, turns and bends as rows of
+`_struct_conf`, keyed by `conf_type_id`, and strands as rows of
+`_struct_sheet_range`. [`isHelixConfType`](../src/parser/dssp-mmcif.ts) decides
+which `_struct_conf` rows become helices; every `_struct_sheet_range` row
+becomes a strand.
+
+| DSSP class       | Letter | mmCIF record                                 | Drawn as                          |
+| ---------------- | ------ | -------------------------------------------- | --------------------------------- |
+| α helix          | H      | `_struct_conf` `HELX_RH_AL_P`                | helix                             |
+| π helix          | I      | `_struct_conf` `HELX_RH_PI_P`                | helix                             |
+| 3₁₀ helix        | G      | `_struct_conf` `HELX_RH_3T_P`                | coil; helix with `ss-310="helix"` |
+| polyproline II   | P      | `_struct_conf` `HELX_LH_PP_P`                | coil                              |
+| strand           | E      | `_struct_sheet_range`                        | strand                            |
+| isolated bridge  | B      | `_struct_sheet_range` (one-residue range)    | strand, then dropped as too short |
+| turn, bend, none | T, S   | `_struct_conf` `TURN_TY1_P`, `BEND`, `OTHER` | coil                              |
+| generic helix    | –      | `_struct_conf` `HELX_P`                      | helix (files from other programs) |
+
+The reasons:
+
+- **π with α.** Since version 2.1 DSSP gives π helices priority over α,
+  following [Cooley, Arp & Karplus
+  (2010)](https://doi.org/10.1016/j.jmb.2010.09.034), who argued that π helices
+  arise as one-residue insertions (π-bulges) in α helices. Drawn
+  separately, each one would split a transmembrane helix into three elements.
+  5G53 chain A has three: 55–59, 176–187 and 285–290.
+- **3₁₀ off by default.** 3₁₀ helices are short (DSSP's shortest is three
+  residues) and often sit at a helix end or in a loop, so drawn as helices
+  they add stubs next to the real helix; 5G53 chain A's only one, 138–141,
+  follows the helix 118–136 after a one-residue turn. `ss-310="helix"` on `<topology-loader>`, or
+  `parseDsspMmcif(text, { helix310: true })`, draws them.
+- **PPII as coil.** Polyproline II is a left-handed, extended conformation with
+  no backbone hydrogen bonds along it: a loop conformation, not a helix in a
+  topology diagram. DSSP has assigned it since version 4.0, under a
+  `HELX_` type id, which is why the parser lists helix types explicitly rather
+  than taking every `HELX_` row.
+- **Bridges.** DSSP writes an isolated β-bridge as a one-residue sheet range.
+  The parser keeps it as a strand and the minimum strand length (below)
+  removes it; at `min-strand-length="1"` it is drawn.
+
+![DSSP classes and drawn elements along 5G53 chain A](figures/dssp-classes-5g53.svg)
+
+_Figure 1. 5G53 chain A. Top: each residue coloured by its DSSP class. Middle:
+the elements drawn by default. Bottom: with `ss-310="helix"`. The three π
+stretches sit inside transmembrane helices and are drawn as part of them; the
+PPII stretch 263–266 in ECL3 is coil; the 3₁₀ helix 138–141 is drawn only with
+`ss-310="helix"`, as a separate four-residue helix after a one-residue turn.
+Generated by [`scripts/docs-figures.ts`](../scripts/docs-figures.ts) from
+[`examples/5g53.dssp.cif`](../examples/5g53.dssp.cif)._
+
+DSSP's mmCIF also lists the hydrogen-bonded strand ladders
+(`_dssp_struct_ladder`). These are not read: which strands pair is
+re-derived from Cα spacing ([beta-barrels.md § 2](beta-barrels.md)).
+
+## Minimum helix and strand length
+
+DSSP often reports helices and strands only a few residues long. Drawn as
+separate elements, they break a loop into short stubs, so `<topology-display>` treats any helix or
 strand shorter than a minimum as coil.
 
 | Attribute           | Default | Meaning                                          |
