@@ -9,8 +9,16 @@
  * MemProtMD's own model (`scripts/register-memprotmd.ts`). Proteins without
  * one are left as they are. The files are thinned copies
  * (`scripts/thin-distortions.mjs`).
+ *
+ * The distortions files don't share the z of the simulation's structure
+ * files: their midplane is 2–13 Å from that of the lipids in `at.pdb`
+ * (12.6 Å for 2OMF; see docs/membrane.md). So where MemProtMD's `at.pdb` is
+ * known, the moved structure also carries the bilayer read from its lipids,
+ * and is drawn on that rather than on the distortions file's midplane. 7AHL
+ * has no `at.pdb` here, so it is still placed by the distortions file.
  */
 import type { TopologyDisplay } from './components/topology-display.js';
+import type { StructureBilayer } from './membrane/structure.js';
 import type { ProteinData } from './types.js';
 
 /** Rigid transform into a MemProtMD simulation's frame: x′ = rotation · x + translation. */
@@ -21,6 +29,11 @@ export interface Registration {
   rmsd: number;
   /** MemProtMD model it was superposed on. */
   source: string;
+  /**
+   * The bilayer read from the lipids in that simulation's `at.pdb`
+   * (`parseStructureBilayer`), in the frame the transform leads to.
+   */
+  bilayer?: StructureBilayer;
 }
 
 export interface DemoDistortions {
@@ -46,6 +59,7 @@ export const DEMO_DISTORTIONS: Record<string, DemoDistortions> = {
       translation: [75.342673, 79.441951, 60.334653],
       rmsd: 0.121,
       source: '2j1n_default_dppc head contacts (1038 Cα)',
+      bilayer: { midplane: 51.77, bulk: { upper: 19.555, lower: -19.555 } },
     },
   },
   '2omf': {
@@ -59,6 +73,7 @@ export const DEMO_DISTORTIONS: Record<string, DemoDistortions> = {
       translation: [65.922312, 56.887071, 49.196959],
       rmsd: 0.204,
       source: '2omf_default_dppc head contacts (1020 Cα)',
+      bilayer: { midplane: 47.96, bulk: { upper: 19.97, lower: -19.97 } },
     },
   },
   '3k19': {
@@ -72,6 +87,7 @@ export const DEMO_DISTORTIONS: Record<string, DemoDistortions> = {
       translation: [74.764384, 77.767787, 56.502292],
       rmsd: 0.174,
       source: '3k19_default_dppc head contacts (1020 Cα)',
+      bilayer: { midplane: 50.485, bulk: { upper: 20.225, lower: -20.225 } },
     },
   },
   '5g53': {
@@ -85,6 +101,7 @@ export const DEMO_DISTORTIONS: Record<string, DemoDistortions> = {
       translation: [61.210348, 55.185245, 90.056628],
       rmsd: 0.364,
       source: '5g53_default_dppc head contacts (479 Cα)',
+      bilayer: { midplane: 91.67, bulk: { upper: 20.405, lower: -20.405 } },
     },
   },
   '7ahl': {
@@ -102,7 +119,10 @@ export const DEMO_DISTORTIONS: Record<string, DemoDistortions> = {
   },
 };
 
-/** A copy of `data` with every Cα moved by `reg`. */
+/**
+ * A copy of `data` with every Cα moved by `reg`, carrying `reg`'s bilayer
+ * (if it has one) as `membrane.bilayer`.
+ */
 export function inSimulationFrame(data: ProteinData, reg: Registration): ProteinData {
   const [r0, r1, r2] = reg.rotation;
   const [tx, ty, tz] = reg.translation;
@@ -117,6 +137,7 @@ export function inSimulationFrame(data: ProteinData, reg: Registration): Protein
         z: r2[0] * c.x + r2[1] * c.y + r2[2] * c.z + tz,
       })),
     })),
+    ...(reg.bilayer && { membrane: { ...data.membrane, bilayer: reg.bilayer } }),
   };
 }
 

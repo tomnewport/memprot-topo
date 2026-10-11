@@ -84,6 +84,20 @@ describe('demo distortions', () => {
     });
   });
 
+  it('carries the bilayer of MemProtMD’s lipids where at.pdb is known', () => {
+    // 7AHL has no at.pdb here, so it is placed by the distortions file.
+    const withBilayer = Object.keys(DEMO_DISTORTIONS).filter(
+      (id) => DEMO_DISTORTIONS[id].registration!.bilayer,
+    );
+    expect(withBilayer.sort()).toEqual(['2j1n', '2omf', '3k19', '5g53']);
+    const bilayer = { midplane: 47.96, bulk: { upper: 19.97, lower: -19.97 } };
+    const data = { ...opm7ahl(), membrane: { halfThickness: 12.6 } };
+    const moved = inSimulationFrame(data, { ...registration, bilayer });
+    expect(moved.membrane).toEqual({ halfThickness: 12.6, bilayer });
+    expect(data.membrane).toEqual({ halfThickness: 12.6 });
+    expect(inSimulationFrame(data, registration).membrane).toEqual({ halfThickness: 12.6 });
+  });
+
   it('puts OPM 7AHL onto MemProtMD’s own 7AHL model', () => {
     const moved = inSimulationFrame(opm7ahl(), registration).chains.flatMap((c) => c.calphas);
     // Every moved Cα lands on one of MemProtMD's (fixture rounded to 0.1 Å).
