@@ -14,3 +14,10 @@ export {
   type ResidueColourValues,
   type ResidueWidthValues,
 } from './residue-data.js';
+export {
+  exportSvg,
+  exportSvgElement,
+  type ExportView,
+  type ExportIcon,
+  type SvgExportOptions,
+} from './svg-export.js';

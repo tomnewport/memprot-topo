@@ -147,6 +147,15 @@ export class DimensionController {
       b.setAttribute('aria-pressed', Number(b.dataset.dimension) === shown ? 'true' : 'false');
     }
     bar.classList.toggle('is-3d', p > 1);
+    // SVG export covers the 1-D and 2-D views only.
+    const exportButton = bar.querySelector<HTMLButtonElement>('.export-button');
+    if (exportButton) {
+      exportButton.disabled = p > 1;
+      if (p > 1) {
+        bar.querySelector('.export-panel')?.remove();
+        exportButton.setAttribute('aria-expanded', 'false');
+      }
+    }
     // The views resize and scroll the picture, so the edges change too.
     this.host.onMove();
     if (p !== this._lastPosition) {
@@ -164,7 +173,7 @@ export class DimensionController {
 
 /**
  * The view bar: the view switch, 1D (sequence), 2D (topology) and 3D
- * (structure), then a hint and `extra` (the full-screen button). 3D is
+ * (structure), then a hint and `extra` (the export and full-screen buttons). 3D is
  * disabled when the chain has no 3-D view; otherwise pointing at or focusing
  * the bar calls `warm` once, ahead of the click.
  */
@@ -172,7 +181,7 @@ export function renderViewBar(
   available: boolean,
   onPick: (dimension: number) => void,
   warm: () => void,
-  extra: HTMLElement,
+  ...extra: HTMLElement[]
 ): HTMLDivElement {
   const bar = document.createElement('div');
   bar.className = 'dimension-bar';
@@ -202,7 +211,7 @@ export function renderViewBar(
   const hint = document.createElement('span');
   hint.className = 'dimension-hint';
   hint.textContent = 'Drag to rotate';
-  bar.append(group, hint, extra);
+  bar.append(group, hint, ...extra);
   if (!available) {
     buttons[2].disabled = true;
     buttons[2].title = 'No 3-D view for this chain: its 3-D coordinates are incomplete';
