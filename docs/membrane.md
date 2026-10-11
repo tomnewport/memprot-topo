@@ -265,20 +265,26 @@ per 2 Å square, about a quarter of the points). The demo's structures are
 OPM's, which fit neither frame above. OPM's membrane differs from
 MemProtMD's by a shift along the normal and a tilt, which vary by protein:
 
-| PDB  | OPM centre above MemProtMD's midplane | Tilt between normals | Cα RMSD of the superposition |
-| ---- | ------------------------------------- | -------------------- | ---------------------------- |
-| 7AHL | 11.3 Å                                | 6.6°                 | 0.35 Å (2051 Cα)             |
-| 2J1N | 5.3 Å                                 | 1.0°                 | 0.12 Å (1038 Cα)             |
-| 2OMF | −11.4 Å                               | 1.1°                 | 0.20 Å (1020 Cα)             |
-| 3K19 | 3.1 Å                                 | 1.2°                 | 0.17 Å (1020 Cα)             |
-| 5G53 | 0.5 Å                                 | 9.6°                 | 0.36 Å (479 Cα)              |
+| PDB  | OPM centre above the distortions file's midplane | … above `at.pdb`'s lipid midplane | Tilt between normals | Cα RMSD of the superposition |
+| ---- | ------------------------------------------------ | --------------------------------- | -------------------- | ---------------------------- |
+| 7AHL | 11.3 Å                                           | (no `at.pdb`)                     | 6.6°                 | 0.35 Å (2051 Cα)             |
+| 2J1N | 5.3 Å                                            | 8.6 Å                             | 1.0°                 | 0.12 Å (1038 Cα)             |
+| 2OMF | −11.4 Å                                          | 1.2 Å                             | 1.1°                 | 0.20 Å (1020 Cα)             |
+| 3K19 | 3.1 Å                                            | 6.0 Å                             | 1.2°                 | 0.17 Å (1020 Cα)             |
+| 5G53 | 0.5 Å                                            | −1.6 Å                            | 9.6°                 | 0.36 Å (479 Cα)              |
 
 A radial or z-only correction does not fix that, so each structure is moved
 into the simulation's frame by the rigid transform that superposes it on
 MemProtMD's own model (`src/demo-distortions.ts`), and then drawn as a
-box-frame structure. The structure is moved before the file is set, and moved
-back when the box is unchecked. Once moved, every structure passes the frame
-check above (shift = −midplane), and in the 2J1N, 2OMF and 3K19 files the
+box-frame structure. That model shares `at.pdb`'s frame, not the distortions
+file's z (see [Frames](#frames)), so for the four proteins whose `at.pdb` was
+fetched the moved structure also carries the bilayer read from those lipids
+(as `ProteinData.membrane.bilayer`) and is drawn on that midplane, as the
+loader draws `at.pdb`. Without it 2OMF sat 12.6 Å too low against its
+membrane. 7AHL is still placed on the distortions file's midplane. The
+structure is moved before the file is set, and moved back when the box is
+unchecked. Once moved, every structure passes the frame check above, and in
+the 2J1N, 2OMF and 3K19 files the
 centre of the hole in each leaflet's surface (the trimer's footprint) is within
 1.5 Å in xy of the moved protein's Cα centroid.
 
